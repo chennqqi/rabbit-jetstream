@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
 
 type fakeBackend struct {
@@ -20,6 +21,10 @@ type fakeBackend struct {
 	streams   []jetstream.Stream
 	consumers []jetstream.Consumer
 }
+
+type fakeMonitor struct{ snapshot monitoring.Snapshot }
+
+func (f fakeMonitor) Nodes(context.Context) monitoring.Snapshot { return f.snapshot }
 
 func (f *fakeBackend) Ready(context.Context) error { return f.err }
 func (f *fakeBackend) AccountInfo(context.Context) (*jetstream.Account, error) {
@@ -73,6 +78,7 @@ func TestReadOnlyManagementEndpoints(t *testing.T) {
 		contains []string
 	}{
 		{"/api/v1/cluster", []string{`"server_url":"nats://nats-1:4222"`, `"api_level":4`}},
+		{"/api/v1/nodes", []string{`"status":"available"`, `"name":"nats-1"`}},
 		{"/api/v1/streams?offset=1&limit=1", []string{`"name":"beta"`, `"total":2`, `"offset":1`}},
 		{"/api/v1/streams/alpha", []string{`"name":"alpha"`, `"messages":10`}},
 		{"/api/v1/streams/alpha/consumers", []string{`"name":"worker"`, `"pending":3`}},
@@ -120,5 +126,9 @@ func TestManagementEndpointErrors(t *testing.T) {
 }
 
 func newTestHandler(backend Backend) http.Handler {
-	return New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev")
+	monitor := fakeMonitor{snapshot: monitoring.Snapshot{
+		Status: "available", Total: 1, Available: 1,
+		Nodes: []monitoring.Node{{Name: "nats-1", Status: "available"}},
+	}}
+	return New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", monitor)
 }

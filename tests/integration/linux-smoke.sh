@@ -24,6 +24,7 @@ curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/cluster | grep -q
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams | grep -q '"name":"RJS_API"'
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API | grep -q '"replicas":1'
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers | grep -q '"name":"WORKER"'
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/nodes | grep -q '"available":1'
 
 docker image inspect rabbit-jetstream/nats-server:local \
   --format '{{if ne .Os "linux"}}{{json .}}{{end}}' | grep -q '^$'

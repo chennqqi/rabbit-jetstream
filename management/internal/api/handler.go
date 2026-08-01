@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
 
 type Backend interface {
@@ -21,25 +22,45 @@ type Backend interface {
 	ListConsumers(context.Context, string) ([]jetstream.Consumer, error)
 }
 
+type Monitor interface {
+	Nodes(context.Context) monitoring.Snapshot
+}
+
 type Handler struct {
 	client  Backend
+	monitor Monitor
 	logger  *slog.Logger
 	name    string
 	version string
 	started time.Time
 }
 
-func New(client Backend, logger *slog.Logger, name, version string) http.Handler {
-	h := &Handler{client: client, logger: logger, name: name, version: version, started: time.Now()}
+func New(client Backend, logger *slog.Logger, name, version string, monitors ...Monitor) http.Handler {
+	var monitor Monitor
+	if len(monitors) > 0 {
+		monitor = monitors[0]
+	}
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
 	mux.HandleFunc("GET /api/v1/info", h.info)
 	mux.HandleFunc("GET /api/v1/cluster", h.cluster)
+	mux.HandleFunc("GET /api/v1/nodes", h.nodes)
 	mux.HandleFunc("GET /api/v1/streams", h.streams)
 	mux.HandleFunc("GET /api/v1/streams/{stream}", h.stream)
 	mux.HandleFunc("GET /api/v1/streams/{stream}/consumers", h.consumers)
 	return h.logging(mux)
+}
+
+func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
+	if h.monitor == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "monitoring_unavailable", "NATS monitoring is not configured")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, h.monitor.Nodes(ctx))
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

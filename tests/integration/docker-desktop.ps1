@@ -39,10 +39,12 @@ try {
                 $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
                 $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API' -TimeoutSec 5
                 $Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers' -TimeoutSec 5
+                $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 5
                 if ($Cluster.account.streams -ne 1) { throw 'cluster stream count is incorrect' }
                 if ($Streams.total -ne 1 -or $Streams.items[0].name -ne 'RJS_API') { throw 'stream list is incorrect' }
                 if ($Stream.replicas -ne 1) { throw 'stream detail is incorrect' }
                 if ($Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'WORKER') { throw 'consumer list is incorrect' }
+                if ($Nodes.status -ne 'available' -or $Nodes.available -ne 1) { throw 'standalone node monitoring is incorrect' }
             }
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {
@@ -56,6 +58,8 @@ try {
     $Network = "${Project}_default"
     try {
         Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
+        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 5
+        if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'initial node monitoring is incorrect' }
         Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 stream add RJS_E2E --subjects rjs.e2e --storage file --replicas 3 --defaults
         Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 publish rjs.e2e before-failure
         Invoke-Docker compose -p $Project -f $Compose stop nats-1
@@ -63,6 +67,8 @@ try {
         Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-2:4222 publish rjs.e2e during-failure
         $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
         if ($Ready.status -ne 'ready') { throw 'management API failed during node outage' }
+        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
+        if ($Nodes.status -ne 'degraded' -or $Nodes.available -ne 2 -or $Nodes.unavailable -ne 1) { throw 'node outage was not reported correctly' }
         Invoke-Docker compose -p $Project -f $Compose start nats-1
         Wait-Healthy "${Project}-nats-1-1"
         $Info = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 stream info RJS_E2E --json | ConvertFrom-Json
@@ -74,6 +80,8 @@ try {
         if ($ManagedStream.messages -ne 2) { throw 'management API message count is incorrect' }
         if ([string]::IsNullOrWhiteSpace($ManagedStream.cluster.leader)) { throw 'management API did not report a leader' }
         if (@($ManagedStream.cluster.replicas | Where-Object current).Count -ne 2) { throw 'management API replica state is incorrect' }
+        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
+        if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'recovered node monitoring is incorrect' }
     } finally {
         Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
     }

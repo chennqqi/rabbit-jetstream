@@ -23,6 +23,7 @@ services:
       dockerfile: packaging/Dockerfile.management
     environment:
       RJS_NATS_URL: nats://nats:4222
+      RJS_NATS_MONITOR_URLS: http://nats:8222
     ports:
       - "8223:8223"
     depends_on:

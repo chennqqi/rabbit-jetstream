@@ -8,9 +8,9 @@
 | `RJS_NATS_USER` | 空 | 用户名 |
 | `RJS_NATS_PASSWORD` | 空 | 密码 |
 | `RJS_NATS_CREDS` | 空 | NATS credentials 文件；设置后优先于用户名密码 |
+| `RJS_NATS_MONITOR_URLS` | `http://127.0.0.1:8222` | NATS monitoring 基础地址，多个节点以逗号分隔 |
 | `RJS_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` |
 | `RJS_CONNECT_TIMEOUT` | `5s` | 初次连接超时 |
 | `RJS_SHUTDOWN_TIMEOUT` | `10s` | HTTP 优雅退出超时 |
 
-命令行 `server --http`、`--nats`、`--name` 会覆盖相应环境变量。生产环境应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。
-
+命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。

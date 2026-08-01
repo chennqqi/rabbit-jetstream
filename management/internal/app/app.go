@@ -10,6 +10,7 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/management/internal/api"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
 
 type App struct {
@@ -26,7 +27,7 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(client, logger, cfg.Name, version),
+		Handler:           api.New(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout)),
 		ReadHeaderTimeout: cfg.ConnectTimeout,
 	}
 	return &App{cfg: cfg, logger: logger, client: client, server: server}, nil

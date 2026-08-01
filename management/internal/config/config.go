@@ -15,6 +15,7 @@ type Config struct {
 	NATSUser        string
 	NATSPassword    string
 	NATSCreds       string
+	NATSMonitorURLs string
 	LogLevel        string
 	ConnectTimeout  time.Duration
 	ShutdownTimeout time.Duration
@@ -28,6 +29,7 @@ func FromEnv() Config {
 		NATSUser:        os.Getenv("RJS_NATS_USER"),
 		NATSPassword:    os.Getenv("RJS_NATS_PASSWORD"),
 		NATSCreds:       os.Getenv("RJS_NATS_CREDS"),
+		NATSMonitorURLs: env("RJS_NATS_MONITOR_URLS", "http://127.0.0.1:8222"),
 		LogLevel:        env("RJS_LOG_LEVEL", "info"),
 		ConnectTimeout:  duration("RJS_CONNECT_TIMEOUT", 5*time.Second),
 		ShutdownTimeout: duration("RJS_SHUTDOWN_TIMEOUT", 10*time.Second),
