@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`upstream/nats-server/` is the pinned Git subtree and server core. Do not edit it for management features. Go management code lives under `management/`, the operator CLI under `tools/rjsctl/`, and the console under `admin-ui/`. Cross-component suites belong in `tests/`; unit tests stay beside packages as `*_test.go`.
+`upstream/nats-server/` is the pinned Git subtree and server core. Do not edit it for management features. Go management code lives under `management/`, shared Queue contracts under `internal/topology/`, the operator CLI under `tools/rjsctl/`, and the console under `admin-ui/`. Cross-component suites belong in `tests/`; unit tests stay beside packages as `*_test.go`.
 
 Deployment assets live in `deploy/compose/` and `deploy/nats/`. Architecture, configuration, and milestone decisions belong in `docs/`. `outlink/rabbit-jetstream-go` is a development-only symbolic link to the separate SDK repository; do not import it into this module or commit its contents.
 

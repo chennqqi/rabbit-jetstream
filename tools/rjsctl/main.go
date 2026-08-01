@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 )
 
 var version = "dev"
@@ -21,12 +24,15 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue validate FILE | queue diff CURRENT DESIRED | version")
 		return nil
 	}
 	if args[0] == "version" {
 		fmt.Fprintln(stdout, version)
 		return nil
+	}
+	if args[0] == "queue" {
+		return runQueue(args[1:], stdout)
 	}
 	if args[0] != "status" {
 		return fmt.Errorf("unknown command %q", args[0])
@@ -53,4 +59,52 @@ func run(args []string, stdout, stderr io.Writer) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func runQueue(args []string, stdout io.Writer) error {
+	if len(args) < 2 {
+		return errors.New("usage: rjsctl queue validate FILE | queue diff CURRENT DESIRED")
+	}
+	switch args[0] {
+	case "validate":
+		if len(args) != 2 {
+			return errors.New("usage: rjsctl queue validate FILE")
+		}
+		queue, err := readQueue(args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "valid Queue %s (%s)\n", queue.Metadata.Name, queue.APIVersion)
+		return nil
+	case "diff":
+		if len(args) != 3 {
+			return errors.New("usage: rjsctl queue diff CURRENT DESIRED")
+		}
+		current, err := readQueue(args[1])
+		if err != nil {
+			return fmt.Errorf("current queue: %w", err)
+		}
+		desired, err := readQueue(args[2])
+		if err != nil {
+			return fmt.Errorf("desired queue: %w", err)
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(topology.Compare(*current, *desired))
+	default:
+		return fmt.Errorf("unknown queue command %q", args[0])
+	}
+}
+
+func readQueue(path string) (*topology.Queue, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer file.Close()
+	queue, err := topology.ParseQueue(file)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return queue, nil
 }

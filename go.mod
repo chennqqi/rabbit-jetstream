@@ -4,6 +4,8 @@ go 1.24
 
 require github.com/nats-io/nats.go v1.45.0
 
+require gopkg.in/yaml.v3 v3.0.1
+
 require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect

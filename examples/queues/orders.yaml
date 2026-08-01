@@ -1,0 +1,21 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: orders
+  labels:
+    team: commerce
+spec:
+  subjects:
+    - orders.created
+    - orders.updated
+  replicas: 3
+  storage: file
+  retention:
+    maxAge: 168h
+    maxBytes: 10GiB
+    maxMessages: 1000000
+  delivery:
+    ackWait: 30s
+    maxDeliver: 5
+  deadLetter:
+    queue: orders_dlq

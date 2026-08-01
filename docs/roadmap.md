@@ -18,7 +18,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 - [x] 只读账户、Stream、Consumer API，包含稳定模型、分页和错误结构；
 - [x] 节点及 NATS monitoring API 聚合，支持部分节点失败；
-- 队列声明模型及版本化 schema；
+- [x] Queue 声明模型、版本化 schema、严格 validate 和字段级 diff；
 - 幂等创建/查询/删除 stream 与 consumer；
 - direct、topic、fanout 路由约定；
 - TTL、长度限制、ack/redelivery、DLQ 基础策略；
