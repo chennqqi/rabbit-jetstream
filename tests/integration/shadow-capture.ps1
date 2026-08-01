@@ -27,9 +27,14 @@ try {
     $ContainerOutput = "/src/$([IO.Path]::GetFileName($Output))"
     Invoke-Docker run -d --name $RabbitCapture --network $Network -e RJS_RABBITMQ_URL=amqp://rjs:test@rabbit:5672/ -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate capture rabbitmq --queue shadow.capture --output "$ContainerOutput/rabbit.ndjson" --count 3 --timeout 30s
     Invoke-Docker run -d --name $NATSCapture --network $Network -e RJS_NATS_URL=nats://nats:4222 -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate capture jetstream --stream SHADOW --filter shadow.events --output "$ContainerOutput/jetstream.ndjson" --count 3 --timeout 30s
-    Invoke-Docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tests/helpers/shadow-publisher --mode publish --count 3
+    Invoke-Docker run --rm --network $Network -e RJS_RABBITMQ_URL=amqp://rjs:test@rabbit:5672/ -e RJS_NATS_URL=nats://nats:4222 -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate dual-write --input tests/fixtures/migration-dualwrite.ndjson --journal "$ContainerOutput/dualwrite.ndjson" --exchange shadow.events --routing-key events --subject shadow.events
     Wait-Container $RabbitCapture
     Wait-Container $NATSCapture
+    Invoke-Docker run --rm --network $Network -e RJS_RABBITMQ_URL=amqp://rjs:test@rabbit:5672/ -e RJS_NATS_URL=nats://nats:4222 -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate dual-write --input tests/fixtures/migration-dualwrite.ndjson --journal "$ContainerOutput/dualwrite.ndjson" --exchange shadow.events --routing-key events --subject shadow.events
+    $RabbitMessages = (& docker exec $Rabbit rabbitmqctl list_queues name messages --formatter json | ConvertFrom-Json | Where-Object { $_.name -eq 'shadow.capture' }).messages
+    if ($RabbitMessages -ne 0) { throw "dual-write resume republished $RabbitMessages RabbitMQ messages" }
+    $JournalEvents = @(Get-Content -LiteralPath (Join-Path $Output 'dualwrite.ndjson')).Count
+    if ($JournalEvents -ne 6) { throw "dual-write journal contains $JournalEvents events, expected 6" }
     Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate reconcile --source "$ContainerOutput/rabbit.ndjson" --target "$ContainerOutput/jetstream.ndjson" --output "$ContainerOutput/report.json" --min-source 3
     $Report = Get-Content -LiteralPath (Join-Path $Output 'report.json') -Raw | ConvertFrom-Json
     if (-not $Report.passed -or $Report.matched -ne 3) { throw 'shadow reconciliation report is incorrect' }

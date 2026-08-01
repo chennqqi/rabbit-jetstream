@@ -26,6 +26,22 @@ The default gate requires at least one unique source message and allows zero mis
 
 Publishing independently to two brokers cannot be atomic. Use a transactional application outbox with one stable message ID and independently recorded RabbitMQ and JetStream confirms. Retry JetStream with the same `Nats-Msg-Id`; never generate a new ID on retry. Do not acknowledge or delete an outbox row until both confirms are durable. Alert on oldest incomplete row and preserve the outbox through rollback.
 
+For controlled migration batches, the operator provides a recoverable dual-write adapter. Input is NDJSON; `payload_base64` contains the exact bytes sent to both brokers:
+
+```json
+{"id":"order-0001","payload_base64":"eyJvcmRlciI6MX0=","content_type":"application/json","headers":{"tenant":"one"}}
+```
+
+```sh
+RJS_RABBITMQ_URL='amqps://...' RJS_NATS_URL='nats://...' \
+rjsctl migrate dual-write --input outbox.ndjson --journal confirms.ndjson \
+  --exchange orders --routing-key created --subject rjs.q.orders.ingress
+```
+
+RabbitMQ publishes are persistent, mandatory, and require publisher confirms; unroutable returns fail the batch. JetStream publishes require PubAck and force `Nats-Msg-Id` to the input ID. Each broker confirmation is appended and synchronized to the journal separately. Re-running with the same journal skips confirmed sides. The command refuses duplicate input IDs, concurrent journal writers, corrupt journal events, or any payload/content-type/header drift for an existing ID.
+
+This journal narrows but cannot eliminate the crash interval between a broker confirm and its journal `fsync`. JetStream retries are deduplicated by `Nats-Msg-Id`; RabbitMQ can redeliver that interval, so downstream handlers must remain idempotent by message ID. A stale `.lock` must only be removed after proving the recorded PID is gone and archiving the journal. Never edit or truncate a journal without preserving the original as incident evidence.
+
 Create a RabbitMQ shadow queue bound to the same exchange/routing keys as the source queue. For JetStream, create a dedicated **Limits-retention** shadow Stream capturing the same ingress subject before the window starts. Never attach a shadow consumer to the managed Queue Stream: it uses WorkQueue retention, where an overlapping consumer is unsafe and may be rejected. The CLI enforces this restriction.
 
 Start both captures before publishing:

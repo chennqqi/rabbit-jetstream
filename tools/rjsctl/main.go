@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | audit list [flags] | diagnostics collect [flags] | backup create|verify|restore [flags] | migrate rabbitmq-definitions|capture|reconcile [flags] | queue list|validate|plan|diff|reconcile|apply|delete [flags] | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | audit list [flags] | diagnostics collect [flags] | backup create|verify|restore [flags] | migrate rabbitmq-definitions|dual-write|capture|reconcile [flags] | queue list|validate|plan|diff|reconcile|apply|delete [flags] | version")
 		return nil
 	}
 	if args[0] == "version" {

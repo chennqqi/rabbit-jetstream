@@ -20,6 +20,9 @@ func runMigrate(args []string, stdout, stderr io.Writer) error {
 	if args[0] == "capture" {
 		return runCapture(args[1:], stdout, stderr)
 	}
+	if args[0] == "dual-write" {
+		return runDualWrite(args[1:], stdout, stderr)
+	}
 	if args[0] == "reconcile" {
 		return runReconcile(args[1:], stdout, stderr)
 	}

@@ -34,10 +34,10 @@ func run(mode, rabbitURL, natsURL string, count int) error {
 		return err
 	}
 	defer channel.Close()
-	if err := channel.ExchangeDeclare("shadow.events", "direct", false, true, false, false, nil); err != nil {
+	if err := channel.ExchangeDeclare("shadow.events", "direct", false, false, false, false, nil); err != nil {
 		return err
 	}
-	if _, err := channel.QueueDeclare("shadow.capture", false, true, false, false, nil); err != nil {
+	if _, err := channel.QueueDeclare("shadow.capture", false, false, false, false, nil); err != nil {
 		return err
 	}
 	if err := channel.QueueBind("shadow.capture", "events", "shadow.events", false, nil); err != nil {
