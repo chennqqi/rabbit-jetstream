@@ -33,6 +33,8 @@ Set `RJS_COVERAGE_MIN` only to raise the threshold in stricter release pipelines
 
 Test evidence and benchmark reports are retained with each release. Claims of RabbitMQ replacement or performance advantage require published, repeatable workloads.
 
+The client compatibility contract is stored in `api/client-compatibility.json`. `go test ./tests/contract` rejects unknown fields, unsafe or duplicate entries, missing implementation evidence, missing guide coverage, and any accidental claim that AMQP or the native SDK is already available. Update the contract, guide, implementation evidence, and compatibility tests together; a documentation-only status upgrade is not acceptable.
+
 ## Linux Production Baseline
 
 Linux containers are the primary production target. Every pull request builds Linux images and runs the standalone smoke test plus a three-node, three-replica single-node-outage scenario. Image builds cover `linux/amd64` and `linux/arm64`. Windows tests are developer feedback only and cannot replace these gates.

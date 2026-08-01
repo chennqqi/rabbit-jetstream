@@ -4,7 +4,7 @@
 
 官方 `nats-server` 以 Git subtree 固定在 `upstream/nats-server/`，默认不做源码修改。本仓库主体负责 Server 发行、部署、管理后端、Admin UI、运维工具和生产验证。配套 Go SDK 位于独立仓库；`outlink/rabbit-jetstream-go` 只是开发期符号链接，不参与本仓库构建。
 
-> 当前是项目骨架，不宣称兼容 AMQP 或 RabbitMQ 客户端。协议兼容属于后续 Roadmap。
+> 当前版本不兼容 AMQP 线协议，现有 RabbitMQ 客户端不能无改动直连。准确边界见[客户端兼容矩阵](docs/client-migration.md)，协议网关属于后续 Roadmap。
 
 ## 快速开始
 
@@ -47,7 +47,7 @@ docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:local
 helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream --namespace messaging --create-namespace
 ```
 
-配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[API 版本策略](docs/api-versioning.md)、[RabbitMQ 迁移](docs/rabbitmq-migration.md)、[审计日志](docs/audit.md)、[凭据轮换](docs/credential-rotation.md)、[升级回滚](docs/upgrade-rollback.md)、[容量规划](docs/capacity-planning.md)、[可观测性](docs/observability.md)、[诊断包](docs/diagnostics.md)、[备份恢复](docs/backup-restore.md)、[Kubernetes 部署](docs/kubernetes.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
+配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[API 版本策略](docs/api-versioning.md)、[RabbitMQ 迁移](docs/rabbitmq-migration.md)、[客户端迁移与兼容矩阵](docs/client-migration.md)、[审计日志](docs/audit.md)、[凭据轮换](docs/credential-rotation.md)、[升级回滚](docs/upgrade-rollback.md)、[容量规划](docs/capacity-planning.md)、[可观测性](docs/observability.md)、[诊断包](docs/diagnostics.md)、[备份恢复](docs/backup-restore.md)、[Kubernetes 部署](docs/kubernetes.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
 
 ## 仓库结构
 

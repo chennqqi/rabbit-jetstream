@@ -1,0 +1,41 @@
+{
+  "schema": "rabbit-jetstream.io/client-compatibility/v1alpha1",
+  "scope": "current repository release",
+  "summary": {
+    "amqp_0_9_1_wire_compatible": false,
+    "rabbitmq_clients_connect_unchanged": false,
+    "native_sdk_available": false,
+    "direct_nats_client_supported": true
+  },
+  "client_paths": [
+    {"id": "rabbitmq-amqp-go", "examples": ["amqp091-go"], "status": "not_supported", "action": "Keep RabbitMQ or rewrite the application integration; this server has no AMQP listener."},
+    {"id": "rabbitmq-amqp-java", "examples": ["RabbitMQ Java Client", "Spring AMQP"], "status": "not_supported", "action": "Keep RabbitMQ or rewrite the application integration; this server has no AMQP listener."},
+    {"id": "rabbitmq-amqp-python", "examples": ["Pika", "aio-pika", "Celery AMQP transport"], "status": "not_supported", "action": "Keep RabbitMQ or rewrite the application integration; this server has no AMQP listener."},
+    {"id": "rabbitmq-amqp-dotnet", "examples": ["RabbitMQ.Client", "MassTransit RabbitMQ transport"], "status": "not_supported", "action": "Keep RabbitMQ or rewrite the application integration; this server has no AMQP listener."},
+    {"id": "nats-core-clients", "examples": ["nats.go", "jnats", "nats.py", "NATS.Net"], "status": "partial", "action": "Use JetStream primitives only with the resource and message contract documented here; exchange resolution and priority scheduling remain application responsibilities."},
+    {"id": "rabbit-jetstream-native-sdk", "examples": ["outlink/rabbit-jetstream-go"], "status": "planned", "action": "Develop and version in its independent repository; it is not part of this server build."}
+  ],
+  "features": [
+    {"id": "amqp-wire", "rabbitmq": "AMQP 0-9-1 TCP protocol", "server": "No AMQP listener", "status": "not_supported", "evidence": ["docs/architecture.md"]},
+    {"id": "durable-queue", "rabbitmq": "durable queue", "server": "file-backed WorkQueue Stream and durable pull Consumer", "status": "supported", "evidence": ["internal/topology/plan.go", "tests/integration/docker-desktop.ps1"]},
+    {"id": "direct-routing", "rabbitmq": "direct exchange binding", "server": "queue-scoped subject mapping", "status": "supported", "evidence": ["internal/topology/plan.go", "tests/integration/docker-desktop.ps1"]},
+    {"id": "topic-routing", "rabbitmq": "topic exchange with * and #", "server": "queue-scoped subject mapping including zero-token #", "status": "supported", "evidence": ["internal/topology/plan.go", "tests/integration/docker-desktop.ps1"]},
+    {"id": "fanout-routing", "rabbitmq": "fanout exchange", "server": "one queue-scoped publish per matching Queue", "status": "partial", "evidence": ["docs/queue-mapping.md"]},
+    {"id": "publisher-confirm", "rabbitmq": "publisher confirms and mandatory return", "server": "available in migration dual-write adapter; native SDK API pending", "status": "partial", "evidence": ["tools/rjsctl/migrate_dualwrite.go", "tests/integration/shadow-capture.ps1"]},
+    {"id": "stable-message-id", "rabbitmq": "message_id", "server": "Nats-Msg-Id contract and JetStream deduplication", "status": "supported", "evidence": ["docs/migration-cutover.md", "tools/rjsctl/migrate_dualwrite.go"]},
+    {"id": "manual-ack", "rabbitmq": "manual ack", "server": "explicit-ack durable Consumer; client abstraction pending", "status": "partial", "evidence": ["internal/topology/plan.go"]},
+    {"id": "redelivery", "rabbitmq": "nack/reject, requeue and redelivery", "server": "AckWait and MaxDeliver; exact reject/requeue API pending SDK", "status": "partial", "evidence": ["internal/topology/plan.go", "tests/integration/docker-desktop.ps1"]},
+    {"id": "prefetch-backpressure", "rabbitmq": "basic.qos prefetch", "server": "JetStream pull batch/concurrency controls; policy pending SDK", "status": "planned", "evidence": ["docs/roadmap.md"]},
+    {"id": "priority-queue", "rabbitmq": "x-max-priority", "server": "multiple priority subjects and starvation protection pending SDK", "status": "planned", "evidence": ["docs/roadmap.md"]},
+    {"id": "queue-ttl", "rabbitmq": "x-message-ttl", "server": "Stream MaxAge for queue-wide retention; per-message expiration is not equivalent", "status": "partial", "evidence": ["internal/migration/rabbitmq.go", "internal/topology/plan.go"]},
+    {"id": "length-limit", "rabbitmq": "x-max-length and x-max-length-bytes", "server": "Stream MaxMsgs and MaxBytes with discard-old", "status": "partial", "evidence": ["internal/migration/rabbitmq.go", "internal/topology/plan.go"]},
+    {"id": "dead-letter", "rabbitmq": "DLX routing", "server": "single Queue target through durable advisory republisher", "status": "partial", "evidence": ["docs/queue-mapping.md", "management/internal/jetstream/dlq.go"]},
+    {"id": "ordering", "rabbitmq": "queue delivery ordering", "server": "Stream sequence order; retries and concurrent consumers can reorder", "status": "partial", "evidence": ["docs/testing.md"]},
+    {"id": "transactions", "rabbitmq": "AMQP tx.select/commit/rollback", "server": "no transaction compatibility layer", "status": "not_supported", "evidence": ["docs/architecture.md"]},
+    {"id": "exclusive-auto-delete", "rabbitmq": "exclusive, auto-delete and transient queues", "server": "deliberately rejected by topology converter", "status": "not_supported", "evidence": ["internal/migration/rabbitmq.go"]},
+    {"id": "headers-plugin-exchanges", "rabbitmq": "headers and plugin exchange types", "server": "deliberately rejected by topology converter", "status": "not_supported", "evidence": ["internal/migration/rabbitmq.go"]},
+    {"id": "quorum-queue", "rabbitmq": "RabbitMQ quorum queue semantics", "server": "mapped to replicated JetStream resources, not protocol-identical semantics", "status": "partial", "evidence": ["internal/migration/rabbitmq.go", "docs/architecture.md"]},
+    {"id": "rabbitmq-stream", "rabbitmq": "RabbitMQ stream queue", "server": "requires a separate migration path", "status": "not_supported", "evidence": ["internal/migration/rabbitmq.go"]},
+    {"id": "rpc-reply-to", "rabbitmq": "reply-to and correlation_id conventions", "server": "no RabbitMQ-compatible client abstraction", "status": "planned", "evidence": ["docs/roadmap.md"]}
+  ]
+}
