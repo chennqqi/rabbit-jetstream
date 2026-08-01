@@ -16,6 +16,7 @@ The Stream uses WorkQueue retention. All SDK instances consuming the same logica
 
 ```bash
 rjsctl queue plan examples/queues/orders.yaml
+rjsctl queue reconcile --url http://127.0.0.1:8223 examples/queues/orders.yaml
 ```
 
 Every plan includes a deterministic 128-bit revision derived from the normalized Queue document. The revision and logical Queue identity are copied into resource metadata. Subject ordering does not change the revision.
@@ -25,3 +26,15 @@ Every plan includes a deterministic 128-bit revision derived from the normalized
 JetStream `MaxDeliver` stops delivery attempts but does not automatically move the message to another Stream. A Queue with `deadLetter` therefore plans an `advisory-republish` worker and declares the target Queue as a dependency. Until that server-side worker exists, apply must reject DLQ-enabled plans rather than silently promise RabbitMQ DLX behavior.
 
 This mapping intentionally covers Queue semantics only. Exchange-style direct/topic/fanout declarations and priority subjects require separate versioned contracts before they can enter an apply controller.
+
+## Read-only Reconcile
+
+`queue reconcile` reads the Stream and Consumer from the management API and emits ordered operations:
+
+- `create`: the resource is absent;
+- `update`: mutable fields differ;
+- `noop`: observed and desired state match;
+- `recreate`: immutable or destructive identity/storage semantics differ;
+- `reject`: the requested capability is not implemented.
+
+The result is `blocked` for destructive retention reductions, recreation, or unsupported DLQ workers. Reconcile only performs HTTP GET requests and never writes JetStream resources.

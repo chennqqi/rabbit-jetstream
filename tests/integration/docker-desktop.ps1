@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -24,7 +24,7 @@ function Wait-Healthy([string]$ContainerName) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
         try {
@@ -45,6 +45,15 @@ try {
                 if ($Stream.replicas -ne 1) { throw 'stream detail is incorrect' }
                 if ($Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'WORKER') { throw 'consumer list is incorrect' }
                 if ($Nodes.status -ne 'available' -or $Nodes.available -ne 1) { throw 'standalone node monitoring is incorrect' }
+            }
+            if ($Scenario -eq 'reconcile') {
+                $Network = "${Project}_default"
+                $Result = & docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+                if ($LASTEXITCODE -ne 0) { throw 'Linux rjsctl reconcile failed' }
+                if ($Result.status -ne 'ready' -or $Result.blocked) { throw 'reconcile did not produce a ready plan' }
+                if (@($Result.operations | Where-Object action -eq 'create').Count -ne 2) { throw 'reconcile did not plan two creates' }
+                $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
+                if ($Streams.total -ne 0) { throw 'reconcile unexpectedly wrote JetStream resources' }
             }
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {

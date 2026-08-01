@@ -20,6 +20,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 节点及 NATS monitoring API 聚合，支持部分节点失败；
 - [x] Queue 声明模型、版本化 schema、严格 validate 和字段级 diff；
 - [x] Queue 到 Stream/durable Consumer/DLQ 依赖的纯映射和确定性 plan；
+- [x] 观测状态到 create/update/noop/recreate/reject 的只读 reconcile；
 - 幂等创建/查询/删除 stream 与 consumer；
 - direct、topic、fanout 路由约定；
 - TTL、长度限制、ack/redelivery、DLQ 基础策略；

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,5 +58,28 @@ func TestQueueValidateRejectsInvalidFile(t *testing.T) {
 	}
 	if err := run([]string{"queue", "validate", path}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("validation succeeded")
+	}
+}
+
+func TestQueueReconcilePlansCreateWithoutWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queue.yaml")
+	if err := os.WriteFile(path, []byte(queueFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/streams/RJSQ_orders" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := run([]string{"queue", "reconcile", "--url", server.URL, path}, &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || !strings.Contains(output.String(), `"status": "ready"`) || strings.Count(output.String(), `"action": "create"`) != 2 {
+		t.Fatalf("requests = %d, output = %s", requests, output.String())
 	}
 }

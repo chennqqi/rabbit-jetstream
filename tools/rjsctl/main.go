@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
@@ -24,7 +26,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -32,7 +34,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	if args[0] == "queue" {
-		return runQueue(args[1:], stdout)
+		return runQueue(args[1:], stdout, stderr)
 	}
 	if args[0] != "status" {
 		return fmt.Errorf("unknown command %q", args[0])
@@ -61,9 +63,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	return encoder.Encode(value)
 }
 
-func runQueue(args []string, stdout io.Writer) error {
+func runQueue(args []string, stdout, stderr io.Writer) error {
 	if len(args) < 2 {
-		return errors.New("usage: rjsctl queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED")
+		return errors.New("usage: rjsctl queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE")
 	}
 	switch args[0] {
 	case "validate":
@@ -106,9 +108,83 @@ func runQueue(args []string, stdout io.Writer) error {
 		encoder := json.NewEncoder(stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(plan)
+	case "reconcile":
+		fs := flag.NewFlagSet("queue reconcile", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 1 {
+			return errors.New("usage: rjsctl queue reconcile [--url URL] FILE")
+		}
+		queue, err := readQueue(fs.Arg(0))
+		if err != nil {
+			return err
+		}
+		plan, err := topology.BuildPlan(*queue)
+		if err != nil {
+			return err
+		}
+		observed, err := readObservedTopology(*baseURL, plan)
+		if err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(topology.Reconcile(plan, observed))
 	default:
 		return fmt.Errorf("unknown queue command %q", args[0])
 	}
+}
+
+func readObservedTopology(baseURL string, plan topology.Plan) (topology.ObservedTopology, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	baseURL = strings.TrimRight(baseURL, "/")
+	streamPath := "/api/v1/streams/" + url.PathEscape(plan.Stream.Name)
+	var observed topology.ObservedTopology
+	status, err := getJSON(client, baseURL+streamPath, &observed.Stream)
+	if err != nil {
+		return observed, fmt.Errorf("read Stream state: %w", err)
+	}
+	if status == http.StatusNotFound {
+		observed.Stream = nil
+		return observed, nil
+	}
+	if status != http.StatusOK {
+		return observed, fmt.Errorf("read Stream state: management API returned %d", status)
+	}
+	var consumers struct {
+		Items []topology.ObservedConsumer `json:"items"`
+	}
+	status, err = getJSON(client, baseURL+streamPath+"/consumers?limit=200", &consumers)
+	if err != nil {
+		return observed, fmt.Errorf("read Consumer state: %w", err)
+	}
+	if status != http.StatusOK {
+		return observed, fmt.Errorf("read Consumer state: management API returned %d", status)
+	}
+	for index := range consumers.Items {
+		if consumers.Items[index].Name == plan.Consumer.Name {
+			observed.Consumer = &consumers.Items[index]
+			break
+		}
+	}
+	return observed, nil
+}
+
+func getJSON(client *http.Client, endpoint string, target any) (int, error) {
+	response, err := client.Get(endpoint)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(response.Body).Decode(target); err != nil {
+			return response.StatusCode, err
+		}
+	}
+	return response.StatusCode, nil
 }
 
 func readQueue(path string) (*topology.Queue, error) {

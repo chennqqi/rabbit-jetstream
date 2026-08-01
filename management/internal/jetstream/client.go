@@ -109,7 +109,9 @@ func (c *Client) ListConsumers(ctx context.Context, streamName string) ([]Consum
 func streamFromInfo(info *jsapi.StreamInfo) Stream {
 	return Stream{
 		Name: info.Config.Name, Subjects: info.Config.Subjects, Storage: storageLabel(info.Config.Storage),
-		Replicas: info.Config.Replicas, Created: info.Created, Messages: info.State.Msgs,
+		Replicas: info.Config.Replicas, Retention: retentionLabel(info.Config.Retention), Discard: discardLabel(info.Config.Discard),
+		MaxAgeNanos: info.Config.MaxAge.Nanoseconds(), MaxBytes: info.Config.MaxBytes, MaxMessages: info.Config.MaxMsgs,
+		Metadata: cloneMetadata(info.Config.Metadata), Created: info.Created, Messages: info.State.Msgs,
 		Bytes: info.State.Bytes, Consumers: info.State.Consumers, FirstSeq: info.State.FirstSeq,
 		LastSeq: info.State.LastSeq, Cluster: clusterFromInfo(info.Cluster),
 	}
@@ -118,8 +120,12 @@ func streamFromInfo(info *jsapi.StreamInfo) Stream {
 func consumerFromInfo(info *jsapi.ConsumerInfo) Consumer {
 	return Consumer{
 		Stream: info.Stream, Name: info.Name, Created: info.Created, Durable: info.Config.Durable,
-		FilterSubject: info.Config.FilterSubject, AckPolicy: ackPolicyLabel(info.Config.AckPolicy),
-		Pending: info.NumPending, AckPending: info.NumAckPending, Redelivered: info.NumRedelivered,
+		FilterSubject: info.Config.FilterSubject, FilterSubjects: append([]string(nil), info.Config.FilterSubjects...),
+		Mode: consumerMode(info.Config.DeliverSubject), DeliverPolicy: deliverPolicyLabel(info.Config.DeliverPolicy),
+		AckPolicy: ackPolicyLabel(info.Config.AckPolicy), AckWaitNanos: info.Config.AckWait.Nanoseconds(),
+		MaxDeliver: info.Config.MaxDeliver, ReplayPolicy: replayPolicyLabel(info.Config.ReplayPolicy),
+		Metadata: cloneMetadata(info.Config.Metadata),
+		Pending:  info.NumPending, AckPending: info.NumAckPending, Redelivered: info.NumRedelivered,
 		Waiting: info.NumWaiting, Delivered: info.Delivered.Consumer, Cluster: clusterFromInfo(info.Cluster),
 	}
 }
@@ -156,6 +162,63 @@ func ackPolicyLabel(policy jsapi.AckPolicy) string {
 	default:
 		return "explicit"
 	}
+}
+
+func retentionLabel(policy jsapi.RetentionPolicy) string {
+	switch policy {
+	case jsapi.WorkQueuePolicy:
+		return "workqueue"
+	case jsapi.InterestPolicy:
+		return "interest"
+	default:
+		return "limits"
+	}
+}
+
+func discardLabel(policy jsapi.DiscardPolicy) string {
+	if policy == jsapi.DiscardNew {
+		return "new"
+	}
+	return "old"
+}
+
+func consumerMode(deliverSubject string) string {
+	if deliverSubject != "" {
+		return "push"
+	}
+	return "pull"
+}
+
+func deliverPolicyLabel(policy jsapi.DeliverPolicy) string {
+	switch policy {
+	case jsapi.DeliverLastPolicy:
+		return "last"
+	case jsapi.DeliverNewPolicy:
+		return "new"
+	case jsapi.DeliverByStartSequencePolicy:
+		return "by_start_sequence"
+	case jsapi.DeliverByStartTimePolicy:
+		return "by_start_time"
+	case jsapi.DeliverLastPerSubjectPolicy:
+		return "last_per_subject"
+	default:
+		return "all"
+	}
+}
+
+func replayPolicyLabel(policy jsapi.ReplayPolicy) string {
+	if policy == jsapi.ReplayOriginalPolicy {
+		return "original"
+	}
+	return "instant"
+}
+
+func cloneMetadata(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func (c *Client) ServerURL() string { return c.conn.ConnectedUrl() }
