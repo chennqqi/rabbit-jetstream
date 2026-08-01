@@ -82,6 +82,10 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(schema, `"digest": {"type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$"}`) || !strings.Contains(helpers, `printf "%s@%s"`) {
 		t.Error("Helm chart no longer validates and renders immutable image digests")
 	}
+	notes := read("deploy/helm/rabbit-jetstream/templates/NOTES.txt")
+	if !strings.Contains(notes, "pin published images by digest") || strings.Contains(notes, "immutable image tags") {
+		t.Error("Helm production guidance must require digest-pinned images")
+	}
 	release := read(".github/workflows/release.yml")
 	for _, requirement := range []string{"needs: release-gates", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {

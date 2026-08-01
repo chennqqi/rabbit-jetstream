@@ -10,4 +10,4 @@ Retrieve the generated admin token:
 Run the installation health test:
   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 
-Before production use, publish immutable image tags, configure a StorageClass, back up the generated Secret, and review docs/kubernetes.md.
+Before production use, pin published images by digest, configure a StorageClass, back up the generated Secret, and review docs/kubernetes.md.
