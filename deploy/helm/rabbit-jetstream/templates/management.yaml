@@ -44,6 +44,7 @@ spec:
         prometheus.io/port: "8223"
         prometheus.io/path: /metrics
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
