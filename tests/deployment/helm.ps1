@@ -31,7 +31,7 @@ try {
     Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -summary /work/default.yaml
 
     $Rendered = Get-Content -LiteralPath $Default -Raw
-    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
+    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'minDomains: 3', 'whenUnsatisfiable: DoNotSchedule', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
         if (-not $Rendered.Contains($Required)) { throw "default Helm output is missing $Required" }
     }
 	if ([regex]::Matches($Rendered, '(?m)^\s+automountServiceAccountToken: false\r?$').Count -ne 2) {
@@ -57,6 +57,7 @@ try {
 
 	$SingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set nats.replicaCount=1) -join "`n"
 	if ($LASTEXITCODE -ne 0) { throw 'single-node Helm render failed' }
+	if (-not $SingleRendered.Contains('minDomains: 1')) { throw 'single-node Helm render has an invalid topology domain requirement' }
 	$SingleMatch = [regex]::Match($SingleRendered, '(?m)^  nats\.conf: \|\r?\n(?<config>(?:    [^\r\n]*(?:\r?\n|$))+)(?=---|\z)')
 	if (-not $SingleMatch.Success) { throw 'single-node NATS configuration was not found' }
 	$SingleConfig = [regex]::Replace($SingleMatch.Groups['config'].Value, '(?m)^    ', '')
@@ -180,6 +181,8 @@ try {
 
     & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set nats.replicaCount=2 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an even NATS replica count' }
+	$FiveRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --set nats.replicaCount=5) -join "`n"
+	if ($LASTEXITCODE -ne 0 -or -not $FiveRendered.Contains('minDomains: 5')) { throw 'five-node Helm render does not require five topology domains' }
 } finally {
     Pop-Location
     Remove-Item -LiteralPath $Temporary -Recurse -Force -ErrorAction SilentlyContinue

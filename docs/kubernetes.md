@@ -1,6 +1,6 @@
 # Kubernetes and Helm
 
-The chart under `deploy/helm/rabbit-jetstream` deploys the server distribution as a three-node JetStream StatefulSet and a two-replica management Deployment.
+The chart under `deploy/helm/rabbit-jetstream` requires Kubernetes 1.28 or newer and deploys the server distribution as a three-node JetStream StatefulSet and a two-replica management Deployment.
 
 ## Install
 
@@ -28,7 +28,7 @@ The `operator.image` value records the digest-pinned, on-demand `rjsctl` image s
 ## Production Checklist
 
 - Use immutable image tags/digests and a `Retain` StorageClass; the `local` image defaults are for development only.
-- Keep `nats.replicaCount` at 3 or 5 and ensure nodes span failure domains. A one-node chart is allowed only for development/recovery.
+- Keep `nats.replicaCount` at 3 or 5 and provide at least that many schedulable nodes with distinct `kubernetes.io/hostname` values. The chart uses `minDomains` plus `DoNotSchedule`, so it fails closed instead of co-locating durable replicas. A one-node chart is allowed only for development/recovery.
 - Keep management and NATS client services private. If Ingress is enabled, add authentication at the ingress and TLS; read-only management endpoints are otherwise unauthenticated.
 - With both Ingress and NetworkPolicy enabled, also set `networkPolicy.ingress.enabled=true` and provide non-empty `namespaceSelector` and `podSelector` maps matching only the ingress controller. The chart rejects an unrestricted cross-namespace path instead of opening port 8223 globally.
 - Enable `nats.tls` before crossing untrusted networks. The profile requires verified client certificates on both client and cluster-route ports; distribute dedicated client certificates to external publishers and consumers.
