@@ -1,0 +1,40 @@
+package contract_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	read := func(relative string) string {
+		t.Helper()
+		value, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(value)
+	}
+	for _, file := range []string{"packaging/Dockerfile.nats-server", "packaging/Dockerfile.management", "packaging/Dockerfile.operator"} {
+		if !strings.Contains(read(file), "golang:1.25.12-alpine") {
+			t.Errorf("%s is not pinned to the patched Go toolchain", file)
+		}
+	}
+	natsImage := read("packaging/Dockerfile.nats-server")
+	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.52.0") {
+		t.Error("NATS image lost its documented security dependency override")
+	}
+	operator := read("packaging/Dockerfile.operator")
+	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/net@v0.55.0") {
+		t.Error("operator image no longer builds the minimal patched nats CLI")
+	}
+	scanner := read("tests/security/scan.ps1")
+	if !strings.Contains(scanner, "govulncheck@v1.6.0") || !strings.Contains(scanner, "aquasec/trivy@sha256:") || !strings.Contains(scanner, "--severity 'HIGH,CRITICAL'") {
+		t.Error("security scanner versions or severity gate are not pinned")
+	}
+	if !strings.Contains(read(".github/workflows/ci.yml"), "./tests/security/scan.ps1") {
+		t.Error("CI no longer runs the repository security gate")
+	}
+}

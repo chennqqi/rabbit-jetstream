@@ -4,6 +4,8 @@
 
 The subtree is the message-server core of this distribution. Management APIs, UI, packaging, deployment defaults, and operational extensions belong outside this directory. Direct upstream edits require an architecture decision record explaining why configuration or an external component cannot solve the problem, plus a plan to upstream or continuously rebase the patch.
 
+The release image may apply a narrowly pinned build-time dependency security override without changing subtree files. `packaging/Dockerfile.nats-server` currently raises `golang.org/x/crypto` to `v0.52.0` because the official `v2.14.1` source pin predates fixes for the 2026 SSH vulnerability set. The override is visible as a Docker build argument, must pass upstream and repository integration/fault tests, and must be removed or advanced when a newer official NATS release incorporates an equal or newer dependency. Source behavior patches are not permitted through this mechanism.
+
 ## Updating
 
 Start from a clean branch, review the upstream release and upgrade notes, then run:

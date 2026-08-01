@@ -47,6 +47,18 @@ jobs:
         working-directory: upstream/nats-server
         run: go build .
 
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Scan reachable Go vulnerabilities and release images
+        shell: pwsh
+        run: ./tests/security/scan.ps1
+
   compose-validation:
     runs-on: ubuntu-latest
     steps:

@@ -23,6 +23,14 @@ The repository-wide 80% gate is executable and fails below the threshold:
 make coverage-check
 ```
 
+The security gate runs `govulncheck v1.6.0`, builds all three release images, and rejects fixable HIGH/CRITICAL findings using the digest-pinned Trivy 0.70.0 scanner:
+
+```powershell
+make test-security
+```
+
+The NATS image may apply only documented, version-pinned dependency security overrides at build time; it never edits the upstream subtree. Scanner database updates can change findings without a source change and must be triaged as release-blocking evidence, not silently allowlisted.
+
 From PowerShell, without WSL:
 
 ```powershell

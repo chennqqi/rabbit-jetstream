@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak test-helm test-rolling coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak test-helm test-rolling test-security coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -36,6 +36,9 @@ test-helm:
 
 test-rolling:
 	pwsh -File tests/integration/rolling-upgrade.ps1 -BuildLocal
+
+test-security:
+	pwsh -NoProfile -File tests/security/scan.ps1
 
 coverage:
 	go test -coverprofile=coverage.out ./...
