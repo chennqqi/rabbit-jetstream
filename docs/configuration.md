@@ -19,6 +19,8 @@
 | `RJS_OIDC_AUDITOR_ROLE` | `rabbit-jetstream-auditor` | 映射为 auditor 的 IdP 角色 |
 | `RJS_OIDC_ALLOW_INSECURE_ISSUER` | `false` | 仅本地测试允许 HTTP issuer；生产环境不得开启 |
 | `RJS_OTEL_TRACES_ENDPOINT` | 空 | OTLP/HTTP traces 完整 URL；为空时 tracing 关闭 |
+| `RJS_OTEL_METRICS_ENDPOINT` | 空 | OTLP/HTTP metrics 完整 URL；为空时 OTLP metrics 关闭 |
+| `RJS_OTEL_METRIC_INTERVAL` | `30s` | OTLP metrics 周期导出间隔 |
 | `RJS_OTEL_SAMPLE_RATIO` | `0.1` | 父级感知的采样率，范围 0–1 |
 | `RJS_OTEL_ALLOW_INSECURE` | `false` | 仅隔离测试环境允许 HTTP collector |
 | `RJS_METADATA_BUCKET` | `RJS_META` | Queue 声明使用的 JetStream KV bucket |

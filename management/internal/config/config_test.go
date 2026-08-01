@@ -20,6 +20,8 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	t.Setenv("RJS_OIDC_AUDITOR_ROLE", "platform-audit")
 	t.Setenv("RJS_OIDC_ALLOW_INSECURE_ISSUER", "true")
 	t.Setenv("RJS_OTEL_TRACES_ENDPOINT", "https://collector.example/v1/traces")
+	t.Setenv("RJS_OTEL_METRICS_ENDPOINT", "https://collector.example/v1/metrics")
+	t.Setenv("RJS_OTEL_METRIC_INTERVAL", "15s")
 	t.Setenv("RJS_OTEL_SAMPLE_RATIO", "0.25")
 	t.Setenv("RJS_OTEL_ALLOW_INSECURE", "true")
 	t.Setenv("RJS_METADATA_BUCKET", "TEST_META")
@@ -43,7 +45,7 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	if cfg.OIDCIssuer != "https://id.example.com" || cfg.OIDCAudience != "management" || cfg.OIDCRoleClaim != "groups" || cfg.OIDCOperatorRole != "platform-ops" || cfg.OIDCAuditorRole != "platform-audit" || !cfg.OIDCAllowInsecure {
 		t.Fatalf("OIDC config = %#v", cfg)
 	}
-	if cfg.OTLPTraceEndpoint != "https://collector.example/v1/traces" || cfg.OTELSampleRatio != 0.25 || !cfg.OTELAllowInsecure {
+	if cfg.OTLPTraceEndpoint != "https://collector.example/v1/traces" || cfg.OTLPMetricEndpoint != "https://collector.example/v1/metrics" || cfg.OTELMetricInterval != 15*time.Second || cfg.OTELSampleRatio != 0.25 || !cfg.OTELAllowInsecure {
 		t.Fatalf("telemetry config = %#v", cfg)
 	}
 	if cfg.MetadataBucket != "TEST_META" || cfg.MetadataReplicas != 3 {

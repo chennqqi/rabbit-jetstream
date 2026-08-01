@@ -28,6 +28,8 @@ management:
     limits: {memory: 512Mi}
   telemetry:
     tracesEndpoint: ""
+    metricsEndpoint: ""
+    metricInterval: 30s
     sampleRatio: 0.1
     allowInsecure: false
 

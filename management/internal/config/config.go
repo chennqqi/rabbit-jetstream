@@ -28,6 +28,8 @@ type Config struct {
 	OIDCAuditorRole    string
 	OIDCAllowInsecure  bool
 	OTLPTraceEndpoint  string
+	OTLPMetricEndpoint string
+	OTELMetricInterval time.Duration
 	OTELSampleRatio    float64
 	OTELAllowInsecure  bool
 	MetadataBucket     string
@@ -65,6 +67,8 @@ func FromEnv() Config {
 		OIDCAuditorRole:    env("RJS_OIDC_AUDITOR_ROLE", "rabbit-jetstream-auditor"),
 		OIDCAllowInsecure:  boolean("RJS_OIDC_ALLOW_INSECURE_ISSUER", false),
 		OTLPTraceEndpoint:  os.Getenv("RJS_OTEL_TRACES_ENDPOINT"),
+		OTLPMetricEndpoint: os.Getenv("RJS_OTEL_METRICS_ENDPOINT"),
+		OTELMetricInterval: positiveDuration("RJS_OTEL_METRIC_INTERVAL", 30*time.Second),
 		OTELSampleRatio:    ratio("RJS_OTEL_SAMPLE_RATIO", 0.1),
 		OTELAllowInsecure:  boolean("RJS_OTEL_ALLOW_INSECURE", false),
 		MetadataBucket:     env("RJS_METADATA_BUCKET", "RJS_META"),

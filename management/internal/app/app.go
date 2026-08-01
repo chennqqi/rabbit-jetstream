@@ -29,7 +29,7 @@ type App struct {
 func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 	telemetryCtx, telemetryCancel := context.WithTimeout(context.Background(), cfg.ConnectTimeout)
 	defer telemetryCancel()
-	shutdownTelemetry, err := observability.Init(telemetryCtx, observability.Config{Endpoint: cfg.OTLPTraceEndpoint, ServiceName: cfg.Name, ServiceVersion: version, SampleRatio: cfg.OTELSampleRatio, AllowInsecure: cfg.OTELAllowInsecure})
+	shutdownTelemetry, err := observability.Init(telemetryCtx, observability.Config{Endpoint: cfg.OTLPTraceEndpoint, MetricsEndpoint: cfg.OTLPMetricEndpoint, MetricInterval: cfg.OTELMetricInterval, ServiceName: cfg.Name, ServiceVersion: version, SampleRatio: cfg.OTELSampleRatio, AllowInsecure: cfg.OTELAllowInsecure})
 	if err != nil {
 		return nil, err
 	}

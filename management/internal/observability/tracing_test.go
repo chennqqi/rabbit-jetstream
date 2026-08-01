@@ -15,10 +15,11 @@ import (
 
 func TestProviderExportsSampledSpansWithServiceResource(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
-	provider, err := newProvider(exporter, Config{ServiceName: "rabbit-jetstream", ServiceVersion: "test", SampleRatio: 1})
+	res, err := newResource(Config{ServiceName: "rabbit-jetstream", ServiceVersion: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	provider := newTraceProvider(exporter, res, 1)
 	_, span := provider.Tracer("test").Start(context.Background(), "queue.apply")
 	span.End()
 	if err := provider.ForceFlush(context.Background()); err != nil {
@@ -75,10 +76,11 @@ func TestInitExportsOTLPHTTP(t *testing.T) {
 
 func TestProviderDropsUnsampledSpans(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
-	provider, err := newProvider(exporter, Config{ServiceName: "test", SampleRatio: 0})
+	res, err := newResource(Config{ServiceName: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	provider := newTraceProvider(exporter, res, 0)
 	_, span := provider.Tracer("test").Start(context.Background(), "dropped")
 	span.End()
 	_ = provider.ForceFlush(context.Background())
@@ -86,6 +88,39 @@ func TestProviderDropsUnsampledSpans(t *testing.T) {
 		t.Fatalf("unsampled spans=%+v", spans)
 	}
 	_ = provider.Shutdown(context.Background())
+}
+
+func TestInitExportsOTLPMetrics(t *testing.T) {
+	received := make(chan int, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.Path != "/v1/metrics" || r.Header.Get("Content-Type") != "application/x-protobuf" {
+			t.Errorf("path=%s content-type=%s", r.URL.Path, r.Header.Get("Content-Type"))
+		}
+		received <- len(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	shutdown, err := Init(context.Background(), Config{MetricsEndpoint: server.URL + "/v1/metrics", ServiceName: "integration", ServiceVersion: "test", SampleRatio: 0.1, MetricInterval: time.Hour, AllowInsecure: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter, err := otel.Meter("integration").Int64Counter("rjs.test.operations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter.Add(context.Background(), 1)
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case size := <-received:
+		if size == 0 {
+			t.Fatal("empty OTLP metrics request")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("OTLP metrics request was not received")
+	}
 }
 
 func TestInitRejectsUnsafeEndpointAndInvalidRatio(t *testing.T) {

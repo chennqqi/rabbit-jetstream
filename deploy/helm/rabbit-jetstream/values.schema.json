@@ -33,9 +33,11 @@
         "resources": {"type": "object"},
         "telemetry": {
           "type": "object", "additionalProperties": false,
-          "required": ["tracesEndpoint", "sampleRatio", "allowInsecure"],
+          "required": ["tracesEndpoint", "metricsEndpoint", "metricInterval", "sampleRatio", "allowInsecure"],
           "properties": {
             "tracesEndpoint": {"type": "string"},
+            "metricsEndpoint": {"type": "string"},
+            "metricInterval": {"type": "string", "minLength": 1},
             "sampleRatio": {"type": "number", "minimum": 0, "maximum": 1},
             "allowInsecure": {"type": "boolean"}
           }
