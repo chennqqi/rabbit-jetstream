@@ -151,11 +151,13 @@ jobs:
           NATS_DIGEST: ${{ steps.nats.outputs.digest }}
           MANAGEMENT_IMAGE: ${{ steps.names.outputs.management }}
           MANAGEMENT_DIGEST: ${{ steps.management.outputs.digest }}
+          OPERATOR_IMAGE: ${{ steps.names.outputs.operator }}
+          OPERATOR_DIGEST: ${{ steps.operator.outputs.digest }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           docker run --rm -v "$PWD:/src" -w /src alpine/helm:3.18.4 package deploy/helm/rabbit-jetstream --version "$version" --app-version "$GITHUB_REF_NAME" --destination dist
-          printf 'nats:\n  image:\n    repository: %s\n    digest: %s\nmanagement:\n  image:\n    repository: %s\n    digest: %s\n' "$NATS_IMAGE" "$NATS_DIGEST" "$MANAGEMENT_IMAGE" "$MANAGEMENT_DIGEST" > dist/release-images.yaml
+          printf 'nats:\n  image:\n    repository: %s\n    digest: %s\nmanagement:\n  image:\n    repository: %s\n    digest: %s\noperator:\n  image:\n    repository: %s\n    digest: %s\n' "$NATS_IMAGE" "$NATS_DIGEST" "$MANAGEMENT_IMAGE" "$MANAGEMENT_DIGEST" "$OPERATOR_IMAGE" "$OPERATOR_DIGEST" > dist/release-images.yaml
           cp evidence/performance-soak.json.evidence.json dist/
           (cd dist && sha256sum ./* > SHA256SUMS)
       - name: Attest release files

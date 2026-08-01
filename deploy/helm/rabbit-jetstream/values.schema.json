@@ -57,6 +57,11 @@
         }
       }
     },
+    "operator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["image"],
+      "properties": {"image": {"$ref": "#/definitions/image"}}
+    },
     "auth": {
       "type": "object", "additionalProperties": false,
       "required": ["existingSecret", "username", "oidc"],

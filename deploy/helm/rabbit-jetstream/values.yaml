@@ -45,6 +45,16 @@ management:
     sampleRatio: 0.1
     allowInsecure: false
 
+# The operator image is an on-demand administration artifact, not a resident
+# workload. Keeping it in chart values makes release-images.yaml directly
+# consumable by Helm while preserving its immutable digest for runbooks.
+operator:
+  image:
+    repository: rabbit-jetstream/operator
+    tag: local
+    digest: ""
+    pullPolicy: IfNotPresent
+
 auth:
   # Existing Secret keys: nats-username, nats-password,
   # nats-password-bcrypt, admin-token. Optional rotation/RBAC keys:

@@ -95,4 +95,9 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 			t.Errorf("release workflow lost requirement %q", requirement)
 		}
 	}
+	for _, operatorMetadata := range []string{"OPERATOR_IMAGE:", "OPERATOR_DIGEST:", `operator:\n  image:`, `"$OPERATOR_IMAGE" "$OPERATOR_DIGEST"`} {
+		if !strings.Contains(release, operatorMetadata) {
+			t.Errorf("release image metadata lost operator field %q", operatorMetadata)
+		}
+	}
 }

@@ -23,6 +23,8 @@ For GitOps or disaster recovery, create a Secret with `nats-username`, `nats-pas
 
 Production clusters should enable mutual TLS for NATS client and route traffic. Create a server Secret and a distinct management-client Secret, each containing `ca.crt`, `tls.crt`, and `tls.key`. The server certificate SANs must cover the client Service and every StatefulSet/headless-Service DNS name. Install with `--set nats.tls.enabled=true --set nats.tls.serverSecret=rjs-nats-server-tls --set nats.tls.clientSecret=rjs-management-nats-tls`. Override `nats.tls.serverName` only when the certificate uses a different stable DNS name. The chart mounts each Secret only into its intended workload and never generates private keys.
 
+The `operator.image` value records the digest-pinned, on-demand `rjsctl` image shipped with the same release. The chart deliberately does not create a permanent operator Pod; run that image only for an approved administration, backup, restore, diagnostic, or migration operation.
+
 ## Production Checklist
 
 - Use immutable image tags/digests and a `Retain` StorageClass; the `local` image defaults are for development only.
