@@ -1,0 +1,63 @@
+nameOverride: ""
+fullnameOverride: ""
+
+nats:
+  replicaCount: 3
+  image:
+    repository: rabbit-jetstream/nats-server
+    tag: local
+    pullPolicy: IfNotPresent
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+
+management:
+  replicaCount: 2
+  image:
+    repository: rabbit-jetstream/management
+    tag: local
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8223
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+auth:
+  # Existing Secret keys: nats-username, nats-password,
+  # nats-password-bcrypt, admin-token.
+  existingSecret: ""
+  username: rjs
+
+controller:
+  interval: 5s
+  leaseTTL: 15s
+
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: rabbit-jetstream.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,29 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rabbit-jetstream.fullname" . }}-nats
+  labels:
+    {{- include "rabbit-jetstream.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ if eq (int .Values.nats.replicaCount) 1 }}1{{ else }}{{ sub (int .Values.nats.replicaCount) 1 }}{{ end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "rabbit-jetstream.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: nats
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rabbit-jetstream.fullname" . }}-management
+  labels:
+    {{- include "rabbit-jetstream.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "rabbit-jetstream.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: management
+{{- end }}

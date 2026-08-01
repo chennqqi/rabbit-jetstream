@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-helm coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -21,6 +21,9 @@ test-linux-smoke:
 
 test-linux-fault:
 	bash tests/fault/single-node-recovery.sh
+
+test-helm:
+	pwsh -File tests/deployment/helm.ps1
 
 coverage:
 	go test -coverprofile=coverage.out ./...

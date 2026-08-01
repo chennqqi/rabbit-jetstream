@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rabbit-jetstream.fullname" . }}-nats
+  labels:
+    {{- include "rabbit-jetstream.labels" . | nindent 4 }}
+data:
+  nats.conf: |
+    server_name: $POD_NAME
+    port: 4222
+    http_port: 8222
+    authorization {
+      users: [{user: $RJS_NATS_USER, password: $RJS_NATS_PASSWORD_HASH}]
+    }
+    jetstream { store_dir: /data/jetstream }
+    {{- if gt (int .Values.nats.replicaCount) 1 }}
+    cluster {
+      name: rabbit-jetstream
+      port: 6222
+      routes: [
+      {{- range $index := until (int .Values.nats.replicaCount) }}
+        nats-route://{{ include "rabbit-jetstream.fullname" $ }}-nats-{{ $index }}.{{ include "rabbit-jetstream.fullname" $ }}-nats-headless:6222{{ if lt (add1 $index) (int $.Values.nats.replicaCount) }},{{ end }}
+      {{- end }}
+      ]
+    }
+    {{- end }}

@@ -1,0 +1,13 @@
+Rabbit JetStream has been installed with {{ .Values.nats.replicaCount }} NATS nodes and {{ .Values.management.replicaCount }} management replicas.
+
+Management service:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "rabbit-jetstream.fullname" . }}-management 8223:{{ .Values.management.service.port }}
+  open http://127.0.0.1:8223/admin/
+
+Retrieve the generated admin token:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "rabbit-jetstream.authSecret" . }} -o jsonpath='{.data.admin-token}' | base64 -d
+
+Run the installation health test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Before production use, publish immutable image tags, configure a StorageClass, back up the generated Secret, and review docs/kubernetes.md.

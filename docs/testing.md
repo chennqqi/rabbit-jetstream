@@ -37,6 +37,8 @@ Test evidence and benchmark reports are retained with each release. Claims of Ra
 
 Linux containers are the primary production target. Every pull request builds Linux images and runs the standalone smoke test plus a three-node, three-replica single-node-outage scenario. Image builds cover `linux/amd64` and `linux/arm64`. Windows tests are developer feedback only and cannot replace these gates.
 
+Helm changes run `tests/deployment/helm.ps1`: chart lint, values-schema rejection, Kubernetes API schema validation, rendered NATS configuration parsing, authenticated standalone readiness, and a real three-node JetStream quorum/controller-leader check through Docker Desktop or a Linux CI runner.
+
 Run the same checks through Docker Desktop's Linux engine:
 
 ```bash

@@ -70,6 +70,7 @@ Controller 使用同一 KV bucket 中的 CAS 租约选出唯一 leader。Leader 
 
 - 单机方案用于开发和低风险环境；集群方案默认 3 个 JetStream 节点、资源副本数 3；
 - 管理服务保持无状态并至少运行 2 个实例，由负载均衡提供入口；
+- Helm chart 使用 StatefulSet/PVC 部署 JetStream，Deployment 部署双管理副本，并通过 PDB、拓扑分散和 NetworkPolicy 建立 Kubernetes 高可用基线；
 - 生产使用 NKeys/JWT 或 credentials、TLS/mTLS，不在配置或 API 中回显密钥；
 - 管理 API 最终采用 OIDC/RBAC，变更操作写入不可抵赖审计日志；
 - 备份以 JetStream snapshot/restore 为基础，覆盖 account 内普通与隐藏 KV/Object Store Stream；恢复前校验清单并定期执行数据卷销毁演练。多 Stream 快照为顺序采集，需要业务静默才能获得跨 Stream 一致时间点。
