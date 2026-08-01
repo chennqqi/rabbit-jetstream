@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak test-helm test-rolling test-security coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-rolling test-security coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -30,6 +30,9 @@ test-scale:
 
 test-soak:
 	pwsh -NoProfile -File tests/performance/jetstream.ps1 -Mode soak -Output performance-soak.json -Baseline performance-baseline.json
+
+verify-soak:
+	go run ./tools/perfevidence -evidence performance-soak.json.evidence.json -require-soak
 
 test-helm:
 	pwsh -File tests/deployment/helm.ps1

@@ -29,4 +29,12 @@ Override `-PayloadBytes`, `-Publishers`, and `-Batch` to model each production w
 
 Create a baseline on the same dedicated hosts, Docker/NATS limits, storage, kernel, architecture, payload size, publisher count, batch size, and replica topology as the candidate. The gate refuses workload-shape mismatches. By default it fails when publish or consume throughput drops more than 20%, or publish P99 rises more than 30%. Tighten thresholds using the service SLO; do not widen them to make a release pass.
 
-Retain the candidate report, resource samples, baseline, image digests, host/storage specification, command line, and test timestamps with the release. Review resource samples for sustained growth, throttling, disk saturation, compaction behavior, and recovery headroom. A passing integrity report does not by itself prove capacity, and results from Docker Desktop must not be presented as Linux production hardware performance.
+Soak mode writes four inseparable release artifacts: the candidate report, `.resources.ndjson`, `.baseline.json`, and `.evidence.json`. The evidence manifest records SHA-256 for the other three files, source revision, built NATS image ID, exact workload parameters, regression limits, Docker host/kernel/CPU/memory/storage details, and sample interval. It is independently verified before the command succeeds.
+
+Recheck retained evidence before promotion or after copying it:
+
+```powershell
+go run ./tools/perfevidence -evidence performance-soak.json.evidence.json -require-soak
+```
+
+The verifier rejects modified or missing artifacts, a run shorter than 24 hours, incomplete/corrupt messages, mismatched workload shape, excessive throughput/P99 regression, sparse resource sampling, or fewer than three sampled nodes. Review resource samples for sustained growth, throttling, disk saturation, compaction behavior, and recovery headroom. A passing integrity report does not by itself prove capacity, and results from Docker Desktop must not be presented as Linux production hardware performance.

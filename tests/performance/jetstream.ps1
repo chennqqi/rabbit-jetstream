@@ -21,6 +21,7 @@ $Temporary = Join-Path $RepositoryRoot ".tmp-rjs-perf-$Suffix"
 $ContainerTemporary = "/src/$([IO.Path]::GetFileName($Temporary))"
 
 function Invoke-Docker { & docker @args; if ($LASTEXITCODE -ne 0) { throw "docker command failed: docker $args" } }
+function Get-SHA256([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Assert-Report([string]$Path) {
     $Report = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
     if ($Report.schema -ne 'rabbit-jetstream.io/performance-report/v1alpha1') { throw 'unknown performance report schema' }
@@ -55,6 +56,8 @@ switch ($Mode) {
         if ($Duration -eq [TimeSpan]::Zero) { $Duration = [TimeSpan]::FromHours(24) }
         if ($Duration -lt [TimeSpan]::FromHours(24)) { throw 'release soak duration must be at least 24 hours' }
         if ($Messages -ne 0 -or $Output -eq '' -or $Baseline -eq '') { throw 'soak mode requires -Output and -Baseline and does not accept -Messages' }
+        & git diff --quiet HEAD --
+        if ($LASTEXITCODE -ne 0) { throw 'release soak requires a clean tracked source tree' }
     }
 }
 
@@ -100,6 +103,40 @@ try {
         if (Test-Path -LiteralPath $Output) { throw "output already exists: $Output" }
         Copy-Item -LiteralPath $ReportPath -Destination $Output
         Copy-Item -LiteralPath $ResourcePath -Destination "$Output.resources.ndjson"
+    }
+    if ($Mode -in @('duration','soak') -and $Baseline -ne '' -and $Output -ne '') {
+        $CandidatePath = (Resolve-Path -LiteralPath $Output).Path
+        $EvidencePath = "$CandidatePath.evidence.json"
+        $BaselineCopy = "$CandidatePath.baseline.json"
+        if ((Test-Path -LiteralPath $EvidencePath) -or (Test-Path -LiteralPath $BaselineCopy)) { throw 'soak evidence output already exists' }
+        Copy-Item -LiteralPath $Baseline -Destination $BaselineCopy
+        $DockerHost = & docker info --format '{{json .}}' | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0) { throw 'unable to inspect Docker host for soak evidence' }
+        $ImageID = & docker image inspect rabbit-jetstream/nats-server:performance-test --format '{{.Id}}'
+        if ($LASTEXITCODE -ne 0 -or -not $ImageID) { throw 'unable to record NATS image ID' }
+        $SourceRevision = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $SourceRevision) { throw 'unable to record source revision' }
+        $ResourceOutput = "$CandidatePath.resources.ndjson"
+        $Evidence = [ordered]@{
+            schema = 'rabbit-jetstream.io/performance-evidence/v1alpha1'
+            mode = $Mode
+            generated_at = [DateTime]::UtcNow.ToString('o')
+            source_revision = $SourceRevision
+            nats_image_id = $ImageID.Trim()
+            command = @('tests/performance/jetstream.ps1','-Mode',$Mode,'-Duration',$Duration.ToString(),'-PayloadBytes',"$PayloadBytes",'-Publishers',"$Publishers",'-Batch',"$Batch",'-SampleIntervalSeconds',"$SampleIntervalSeconds",'-Baseline',[IO.Path]::GetFileName($BaselineCopy),'-Output',[IO.Path]::GetFileName($CandidatePath))
+            sample_interval_seconds = $SampleIntervalSeconds
+            max_throughput_regression_percent = $MaxThroughputRegressionPercent
+            max_p99_regression_percent = $MaxP99RegressionPercent
+            host = [ordered]@{ operating_system=$DockerHost.OperatingSystem; os_type=$DockerHost.OSType; architecture=$DockerHost.Architecture; kernel_version=$DockerHost.KernelVersion; cpus=$DockerHost.NCPU; memory_bytes=$DockerHost.MemTotal; storage_driver=$DockerHost.Driver }
+            report = [ordered]@{ file=[IO.Path]::GetFileName($CandidatePath); sha256=Get-SHA256 $CandidatePath }
+            resources = [ordered]@{ file=[IO.Path]::GetFileName($ResourceOutput); sha256=Get-SHA256 $ResourceOutput }
+            baseline = [ordered]@{ file=[IO.Path]::GetFileName($BaselineCopy); sha256=Get-SHA256 $BaselineCopy }
+        }
+        $Evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding utf8NoBOM
+        $VerifyArguments = @('run','./tools/perfevidence','-evidence',$EvidencePath)
+        if ($Mode -eq 'soak') { $VerifyArguments += '-require-soak' }
+        & go @VerifyArguments
+        if ($LASTEXITCODE -ne 0) { throw 'generated performance evidence failed independent verification' }
     }
     Write-Output ("performance verified: messages={0} publish={1:N0}/s consume={2:N0}/s p99={3:N2}ms" -f $Report.published,$Report.publish_messages_per_second,$Report.consume_messages_per_second,$Report.publish_latency_p99_millis)
 } finally {
