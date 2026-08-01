@@ -27,7 +27,42 @@ type execRunner struct{}
 func (execRunner) Run(name string, args []string, stdout, stderr io.Writer) error {
 	command := exec.Command(name, args...)
 	command.Stdout, command.Stderr = stdout, stderr
+	command.Env = natsCLIEnvironment(os.Environ(), os.Getenv)
 	return command.Run()
+}
+
+func natsCLIEnvironment(base []string, getenv func(string) string) []string {
+	result := append([]string(nil), base...)
+	existing := make(map[string]struct{}, len(base))
+	for _, entry := range base {
+		if key, _, ok := strings.Cut(entry, "="); ok {
+			existing[key] = struct{}{}
+		}
+	}
+	appendMapping := func(source, destination string) {
+		if _, set := existing[destination]; set {
+			return
+		}
+		if value := getenv(source); value != "" {
+			result = append(result, destination+"="+value)
+		}
+	}
+	appendMapping("RJS_NATS_URL", "NATS_URL")
+	_, standardUser := existing["NATS_USER"]
+	_, standardPassword := existing["NATS_PASSWORD"]
+	_, standardCreds := existing["NATS_CREDS"]
+	if !standardUser && !standardPassword && !standardCreds {
+		if getenv("RJS_NATS_CREDS") != "" {
+			appendMapping("RJS_NATS_CREDS", "NATS_CREDS")
+		} else {
+			appendMapping("RJS_NATS_USER", "NATS_USER")
+			appendMapping("RJS_NATS_PASSWORD", "NATS_PASSWORD")
+		}
+	}
+	for _, mapping := range [][2]string{{"RJS_NATS_TLS_CA", "NATS_CA"}, {"RJS_NATS_TLS_CERT", "NATS_CERT"}, {"RJS_NATS_TLS_KEY", "NATS_KEY"}} {
+		appendMapping(mapping[0], mapping[1])
+	}
+	return result
 }
 
 type backupManifest struct {

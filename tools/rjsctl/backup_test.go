@@ -182,3 +182,28 @@ func TestBackupHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNATSCLIEnvironmentBridgesRJSConnectionSettingsWithoutOverridingStandardValues(t *testing.T) {
+	values := map[string]string{
+		"RJS_NATS_URL": "tls://nats:4222", "RJS_NATS_USER": "rjs", "RJS_NATS_PASSWORD": "secret",
+		"RJS_NATS_CREDS": "/tls/user.creds", "RJS_NATS_TLS_CA": "/tls/ca.crt", "RJS_NATS_TLS_CERT": "/tls/client.crt", "RJS_NATS_TLS_KEY": "/tls/client.key",
+	}
+	got := natsCLIEnvironment([]string{"PATH=/bin", "NATS_USER=standard"}, func(key string) string { return values[key] })
+	joined := strings.Join(got, "\n")
+	for _, expected := range []string{"NATS_URL=tls://nats:4222", "NATS_USER=standard", "NATS_CA=/tls/ca.crt", "NATS_CERT=/tls/client.crt", "NATS_KEY=/tls/client.key"} {
+		if strings.Count(joined, expected) != 1 {
+			t.Fatalf("environment missing or duplicates %q: %v", expected, got)
+		}
+	}
+	if strings.Contains(joined, "NATS_USER=rjs") {
+		t.Fatalf("standard NATS_USER was overridden: %v", got)
+	}
+	if strings.Contains(joined, "NATS_PASSWORD=secret") || strings.Contains(joined, "NATS_CREDS=/tls/user.creds") {
+		t.Fatalf("RJS authentication was mixed with standard authentication: %v", got)
+	}
+	credentialsOnly := natsCLIEnvironment(nil, func(key string) string { return values[key] })
+	credentialsJoined := strings.Join(credentialsOnly, "\n")
+	if !strings.Contains(credentialsJoined, "NATS_CREDS=/tls/user.creds") || strings.Contains(credentialsJoined, "NATS_USER=") || strings.Contains(credentialsJoined, "NATS_PASSWORD=") {
+		t.Fatalf("credentials did not take precedence: %v", credentialsOnly)
+	}
+}

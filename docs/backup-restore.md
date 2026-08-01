@@ -34,7 +34,7 @@ Restore verifies every file before contacting NATS and refuses to proceed if any
 - Stream snapshots are sequential, not an account-wide atomic snapshot. Quiesce publishers and controllers when cross-Stream consistency is required.
 - Backup data contains message payloads and may contain application secrets. Encrypt it, restrict access, copy it off-cluster and apply retention policy.
 - SHA-256 detects corruption but does not prove authenticity. Protect or externally sign `manifest.json` in untrusted storage.
-- Never put credentials in `--server`; the CLI rejects URL userinfo. Mount a credentials file or inject standard `NATS_*` authentication environment variables.
+- Never put credentials in `--server`; the CLI rejects URL userinfo. Mount a credentials file or inject standard `NATS_*` authentication environment variables. For consistency with management and migration commands, `rjsctl` also maps `RJS_NATS_URL`, `RJS_NATS_USER`, `RJS_NATS_PASSWORD`, `RJS_NATS_CREDS`, `RJS_NATS_TLS_CA`, `RJS_NATS_TLS_CERT`, and `RJS_NATS_TLS_KEY` into the corresponding `nats` CLI environment without overriding explicitly set `NATS_*` values.
 - Run `tests/integration/backup-restore.ps1` regularly against disposable infrastructure. A stored backup without a successful restore drill is not considered recoverable.
 
 The automated drill creates a Queue, publishes three messages, snapshots its data plus the metadata KV Stream, destroys the JetStream volume, restores into a clean node, and verifies the Queue declaration, durable Consumer and message count.
