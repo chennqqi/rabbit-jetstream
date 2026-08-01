@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/api"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
@@ -40,7 +41,7 @@ func (a *App) Run(ctx context.Context) error {
 	go a.controller.Run(ctx)
 	errCh := make(chan error, 1)
 	go func() {
-		a.logger.Info("management service started", "name", a.cfg.Name, "http", a.cfg.HTTPAddr, "nats", a.client.ServerURL())
+		a.logger.Info("management service started", "name", a.cfg.Name, "http", a.cfg.HTTPAddr, "nats", redact.URL(a.client.ServerURL()))
 		errCh <- a.server.ListenAndServe()
 	}()
 

@@ -4,8 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="$repo_root/deploy/compose/standalone.yml"
 project="rjs-linux-smoke-${GITHUB_RUN_ID:-local}"
+bundle="$repo_root/.tmp-rjs-diagnostics-${GITHUB_RUN_ID:-local}.zip"
 
 cleanup() {
+  rm -f "$bundle"
   docker compose -p "$project" -f "$compose_file" down -v --remove-orphans
 }
 trap cleanup EXIT
@@ -25,6 +27,13 @@ curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams | grep -q
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API | grep -q '"replicas":1'
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers | grep -q '"name":"WORKER"'
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/nodes | grep -q '"available":1'
+
+docker run --rm --network "$network" -v "$repo_root:/src" -w /src golang:1.25-bookworm \
+  go run ./tools/rjsctl diagnostics collect --url http://management:8223 \
+  --output "/src/$(basename "$bundle")"
+unzip -t "$bundle"
+unzip -p "$bundle" manifest.json | grep -q 'rabbit-jetstream.io/diagnostics/v1alpha1'
+unzip -p "$bundle" manifest.json | grep -q '"sha256"'
 
 docker image inspect rabbit-jetstream/nats-server:local \
   --format '{{if ne .Os "linux"}}{{json .}}{{end}}' | grep -q '^$'

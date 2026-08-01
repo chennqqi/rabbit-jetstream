@@ -26,6 +26,7 @@ type fakeBackend struct {
 	deleteResult topology.DeleteResult
 	deleteCalls  int
 	declarations []topology.Declaration
+	serverURL    string
 }
 
 type fakeMonitor struct{ snapshot monitoring.Snapshot }
@@ -38,7 +39,12 @@ func (f *fakeBackend) Ready(context.Context) error { return f.err }
 func (f *fakeBackend) AccountInfo(context.Context) (*jetstream.Account, error) {
 	return &f.account, f.err
 }
-func (f *fakeBackend) ServerURL() string { return "nats://nats-1:4222" }
+func (f *fakeBackend) ServerURL() string {
+	if f.serverURL != "" {
+		return f.serverURL
+	}
+	return "nats://nats-1:4222"
+}
 func (f *fakeBackend) ListStreams(context.Context) ([]jetstream.Stream, error) {
 	return f.streams, f.err
 }
@@ -121,6 +127,18 @@ func TestReadyAndInfoEndpoints(t *testing.T) {
 	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "not_ready") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestManagementResponsesRedactNATSCredentials(t *testing.T) {
+	backend := &fakeBackend{serverURL: "nats://operator:super-secret@nats-1:4222"}
+	handler := newTestHandler(backend)
+	for _, path := range []string{"/api/v1/info", "/api/v1/cluster"} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "super-secret") || strings.Contains(recorder.Body.String(), "operator") || !strings.Contains(recorder.Body.String(), "nats://nats-1:4222") {
+			t.Fatalf("path=%s status=%d body=%s", path, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 

@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | diagnostics collect [--url URL] [--output FILE] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -36,6 +36,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if args[0] == "queue" {
 		return runQueue(args[1:], stdout, stderr)
+	}
+	if args[0] == "diagnostics" {
+		return runDiagnostics(args[1:], stdout, stderr)
 	}
 	if args[0] != "status" {
 		return fmt.Errorf("unknown command %q", args[0])
@@ -62,6 +65,29 @@ func run(args []string, stdout, stderr io.Writer) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func runDiagnostics(args []string, stdout, stderr io.Writer) error {
+	if len(args) < 1 || args[0] != "collect" {
+		return errors.New("usage: rjsctl diagnostics collect [--url URL] [--output FILE]")
+	}
+	fs := flag.NewFlagSet("diagnostics collect", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+	now := time.Now().UTC()
+	output := fs.String("output", defaultDiagnosticOutput(now), "diagnostics ZIP path")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: rjsctl diagnostics collect [--url URL] [--output FILE]")
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	if err := collectDiagnostics(client, *baseURL, *output, now); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "diagnostics bundle written to %s\n", *output)
+	return nil
 }
 
 func runQueue(args []string, stdout, stderr io.Writer) error {

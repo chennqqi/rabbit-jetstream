@@ -52,13 +52,15 @@
 ## 5. 服务端组件
 
 - `management-api`：队列/策略/用户可见拓扑、健康与诊断接口；
-- `operator-cli`：部署检查、状态、声明、导入导出和诊断包；
+- `operator-cli`：部署检查、状态、声明、导入导出和带脱敏/校验清单的诊断包；
 - `webui`：复用管理 API，不直接持有 NATS 管理凭据；
 - `controller`：把声明式队列策略收敛为 JetStream streams/consumers；
 - `observability`：内嵌 Prometheus 指标、JetStream advisories、告警规则；审计日志与 OpenTelemetry 按 Roadmap 增量加入；
 - `amqp-gateway`（未来）：独立可选组件，不侵入 JetStream。
 
 当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。只读 Admin UI 内嵌在管理二进制并通过 `/admin/` 提供集群、Queue、Stream、Consumer、controller 和 DLQ 状态；写操作、OIDC/RBAC 与更完整策略控制继续按 Roadmap 增量加入。
+
+`rjsctl diagnostics collect` 通过只读管理 API 采集运行快照，不读取消息负载或 credentials 文件。诊断 ZIP 允许单个端点失败，清单记录每个文件的状态、大小与 SHA-256；敏感字段和 URL 用户信息在写盘前脱敏。
 
 Controller 使用同一 KV bucket 中的 CAS 租约选出唯一 leader。Leader 周期读取声明并仅执行安全的 create/update/noop；需要 recreation、保留策略缩减或未实现能力的计划保持 blocked，不自动执行破坏性操作。每个声明前续租，优雅退出时条件释放租约；实例异常退出时由 TTL 保证接管上界。
 

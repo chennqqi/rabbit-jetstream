@@ -14,6 +14,7 @@ import (
 	"time"
 
 	adminui "github.com/chennqqi/rabbit-jetstream/admin-ui"
+	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
@@ -273,7 +274,7 @@ func (h *Handler) info(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": h.name, "version": h.version, "uptime_seconds": int64(time.Since(h.started).Seconds()),
-		"nats_url":  h.client.ServerURL(),
+		"nats_url":  redact.URL(h.client.ServerURL()),
 		"jetstream": map[string]any{"memory_used": info.MemoryUsed, "storage_used": info.StorageUsed, "streams": info.Streams, "consumers": info.Consumers},
 	})
 }
@@ -286,7 +287,7 @@ func (h *Handler) cluster(w http.ResponseWriter, r *http.Request) {
 		writeBackendError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"server_url": h.client.ServerURL(), "account": account})
+	writeJSON(w, http.StatusOK, map[string]any{"server_url": redact.URL(h.client.ServerURL()), "account": account})
 }
 
 func (h *Handler) streams(w http.ResponseWriter, r *http.Request) {

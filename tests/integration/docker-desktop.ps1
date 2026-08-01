@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics', 'controller', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -41,10 +41,11 @@ function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics', 'diagnostics')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
+		$DiagnosticBundle = Join-Path $RepositoryRoot ".tmp-rjs-diagnostics-$PID.zip"
 		if ($Scenario -in @('apply', 'delete', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
 			if ($Scenario -eq 'metrics') {
@@ -181,6 +182,24 @@ try {
 				$RuleCount = @($Rules.data.groups.rules).Count
 				if ($RuleCount -lt 6) { throw "Prometheus loaded only $RuleCount alert rules" }
 			}
+			if ($Scenario -eq 'diagnostics') {
+				$ContainerOutput = "/src/$([IO.Path]::GetFileName($DiagnosticBundle))"
+				Invoke-Docker run --rm --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
+				$Archive = [IO.Compression.ZipFile]::OpenRead($DiagnosticBundle)
+				try {
+					$Names = @($Archive.Entries | ForEach-Object FullName)
+					foreach ($Required in @('manifest.json', 'health.json', 'readiness.json', 'info.json', 'cluster.json', 'nodes.json', 'queues.json', 'streams.json', 'controller.json', 'metrics.txt')) {
+						if ($Required -notin $Names) { throw "diagnostics bundle is missing $Required" }
+					}
+					$ManifestEntry = $Archive.GetEntry('manifest.json')
+					$Reader = [IO.StreamReader]::new($ManifestEntry.Open())
+					try { $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json } finally { $Reader.Dispose() }
+					if ($Manifest.schema -ne 'rabbit-jetstream.io/diagnostics/v1alpha1' -or @($Manifest.entries).Count -ne 9) { throw 'diagnostics manifest is invalid' }
+					if (@($Manifest.entries | Where-Object { -not $_.sha256 -or $_.size -le 0 }).Count -ne 0) { throw 'diagnostics manifest has unverifiable entries' }
+				} finally {
+					$Archive.Dispose()
+				}
+			}
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {
 			if ($Scenario -eq 'metrics') {
@@ -189,6 +208,7 @@ try {
 				Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
 			}
 			$env:RJS_ADMIN_TOKEN = $PreviousAdminToken
+			Remove-Item -LiteralPath $DiagnosticBundle -Force -ErrorAction SilentlyContinue
         }
         return
     }
