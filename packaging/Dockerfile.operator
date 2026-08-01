@@ -1,4 +1,6 @@
-FROM golang:1.25.12-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.12-alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
 ARG NATSCLI_VERSION=v0.4.0
 ARG VERSION=dev
 WORKDIR /src
@@ -6,19 +8,17 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY internal ./internal
 COPY tools ./tools
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/rjsctl ./tools/rjsctl \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/rjsctl ./tools/rjsctl \
     && mkdir /src/natscli-build \
     && cd /src/natscli-build \
     && go mod init rabbit-jetstream.local/natscli-build \
     && go get github.com/nats-io/natscli/nats@${NATSCLI_VERSION} \
     && go get golang.org/x/crypto@v0.52.0 golang.org/x/net@v0.55.0 golang.org/x/text@v0.39.0 golang.org/x/term@v0.43.0 github.com/minio/highwayhash@v1.0.4 \
-    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/nats github.com/nats-io/natscli/nats
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/nats github.com/nats-io/natscli/nats
 
-FROM alpine:3.23
-RUN apk add --no-cache ca-certificates
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/rjsctl /usr/local/bin/rjsctl
 COPY --from=build /out/nats /usr/local/bin/nats
 ENV XDG_DATA_HOME=/tmp/nats-data
 ENV XDG_CONFIG_HOME=/tmp/nats-config
-USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/rjsctl"]
