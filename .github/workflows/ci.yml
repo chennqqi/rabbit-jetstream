@@ -98,6 +98,14 @@ jobs:
         shell: pwsh
         run: ./tests/integration/backup-restore.ps1
 
+  rabbitmq-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Convert and validate RabbitMQ definitions
+        shell: pwsh
+        run: ./tests/integration/migration.ps1
+
   linux-images:
     runs-on: ubuntu-latest
     strategy:

@@ -1,0 +1,20 @@
+{
+  "rabbit_version": "4.2.0",
+  "queues": [
+    {"name":"orders","vhost":"/","durable":true,"auto_delete":false,"arguments":{"x-queue-type":"quorum","x-message-ttl":60000,"x-max-length":10000,"x-max-length-bytes":1048576,"x-dead-letter-exchange":"failed"}},
+    {"name":"orders_dlq","vhost":"/","durable":true,"auto_delete":false,"arguments":{}},
+    {"name":"audit","vhost":"/","durable":true,"auto_delete":false,"arguments":{}}
+  ],
+  "exchanges": [
+    {"name":"orders_direct","vhost":"/","type":"direct","durable":true,"auto_delete":false,"internal":false,"arguments":{}},
+    {"name":"commerce","vhost":"/","type":"topic","durable":true,"auto_delete":false,"internal":false,"arguments":{}},
+    {"name":"broadcasts","vhost":"/","type":"fanout","durable":true,"auto_delete":false,"internal":false,"arguments":{}},
+    {"name":"failed","vhost":"/","type":"fanout","durable":true,"auto_delete":false,"internal":false,"arguments":{}}
+  ],
+  "bindings": [
+    {"source":"orders_direct","vhost":"/","destination":"orders","destination_type":"queue","routing_key":"orders.created","arguments":{}},
+    {"source":"commerce","vhost":"/","destination":"orders","destination_type":"queue","routing_key":"orders.*","arguments":{}},
+    {"source":"broadcasts","vhost":"/","destination":"audit","destination_type":"queue","routing_key":"","arguments":{}},
+    {"source":"failed","vhost":"/","destination":"orders_dlq","destination_type":"queue","routing_key":"","arguments":{}}
+  ]
+}

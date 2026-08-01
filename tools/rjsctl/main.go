@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | audit list [--url URL] [--token TOKEN] [--offset N] [--limit N] | diagnostics collect [--url URL] [--output FILE] | backup create|verify|restore [flags] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | audit list [flags] | diagnostics collect [flags] | backup create|verify|restore [flags] | migrate rabbitmq-definitions --output DIR [flags] FILE | queue list|validate|plan|diff|reconcile|apply|delete [flags] | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -45,6 +45,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if args[0] == "audit" {
 		return runAudit(args[1:], stdout, stderr)
+	}
+	if args[0] == "migrate" {
+		return runMigrate(args[1:], stdout, stderr)
 	}
 	if args[0] != "status" {
 		return fmt.Errorf("unknown command %q", args[0])
