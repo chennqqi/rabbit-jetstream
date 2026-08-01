@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/api"
@@ -57,16 +58,25 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 	if len(operatorTokens) == 0 && cfg.AdminToken != "" {
 		operatorTokens = []string{cfg.AdminToken}
 	}
-	server := &http.Server{
-		Addr: cfg.HTTPAddr,
-		Handler: api.NewWithControllerAuth(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, api.AuthConfig{
-			OperatorTokens: operatorTokens,
-			AuditorTokens:  cfg.AuditTokens,
-			OIDC:           oidcVerifier,
-		}),
-		ReadHeaderTimeout: cfg.ConnectTimeout,
-	}
+	handler := api.NewWithControllerAuth(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, api.AuthConfig{
+		OperatorTokens: operatorTokens,
+		AuditorTokens:  cfg.AuditTokens,
+		OIDC:           oidcVerifier,
+	})
+	server := newHTTPServer(cfg.HTTPAddr, handler, cfg.ConnectTimeout)
 	return &App{cfg: cfg, logger: logger, client: client, server: server, controller: control, shutdownTelemetry: shutdownTelemetry}, nil
+}
+
+func newHTTPServer(address string, handler http.Handler, readHeaderTimeout time.Duration) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+	}
 }
 
 func (a *App) Run(ctx context.Context) error {
