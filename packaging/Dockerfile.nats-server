@@ -1,11 +1,15 @@
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src/upstream/nats-server
 COPY upstream/nats-server/ ./
-RUN CGO_ENABLED=0 go build -trimpath -o /out/nats-server .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/nats-server . \
+    && mkdir -p /out/data/jetstream
 
 FROM alpine:3.23
-RUN addgroup -S nats && adduser -S -G nats nats
 COPY --from=build /out/nats-server /usr/local/bin/nats-server
-USER nats
+COPY --chown=65532:65532 --from=build /out/data /data
+USER 65532:65532
 EXPOSE 4222 6222 8222
+VOLUME ["/data"]
 ENTRYPOINT ["/usr/local/bin/nats-server"]

@@ -1,4 +1,4 @@
-.PHONY: build build-upstream test test-race coverage fmt run
+.PHONY: build build-upstream test test-race test-linux-smoke test-linux-fault coverage fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -12,6 +12,12 @@ test:
 
 test-race:
 	go test -race ./...
+
+test-linux-smoke:
+	bash tests/integration/linux-smoke.sh
+
+test-linux-fault:
+	bash tests/fault/single-node-recovery.sh
 
 coverage:
 	go test -coverprofile=coverage.out ./...

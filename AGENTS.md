@@ -15,6 +15,8 @@ Deployment assets live in `deploy/compose/` and `deploy/nats/`. Architecture, co
 - `docker compose -f deploy/compose/standalone.yml up -d`: start a local JetStream node.
 - `docker compose -f deploy/compose/cluster.yml config`: validate the three-node deployment definition.
 - `go vet ./...`: run static checks before submitting changes.
+- `make test-linux-smoke`: build and test the Linux standalone distribution.
+- `make test-linux-fault`: verify writes and recovery during a one-node outage.
 
 ## Coding Style & Naming Conventions
 

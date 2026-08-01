@@ -18,3 +18,14 @@ Replacing RabbitMQ makes correctness and recoverability release requirements, no
 - Flaky tests are production defects. Quarantine requires an owner, linked issue, and expiry date.
 
 Test evidence and benchmark reports are retained with each release. Claims of RabbitMQ replacement or performance advantage require published, repeatable workloads.
+
+## Linux Production Baseline
+
+Linux containers are the primary production target. Every pull request builds Linux images and runs the standalone smoke test plus a three-node, three-replica single-node-outage scenario. Image builds cover `linux/amd64` and `linux/arm64`. Windows tests are developer feedback only and cannot replace these gates.
+
+Run the same checks through Docker Desktop's Linux engine:
+
+```bash
+make test-linux-smoke
+make test-linux-fault
+```
