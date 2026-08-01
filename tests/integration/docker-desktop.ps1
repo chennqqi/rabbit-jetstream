@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -24,11 +24,11 @@ function Wait-Healthy([string]$ContainerName) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
-		if ($Scenario -eq 'apply') { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -in @('apply', 'delete')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
             $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
@@ -68,6 +68,24 @@ try {
 				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
 				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 5
 				if ($Stream.replicas -ne 1 -or $Stream.max_bytes -ne 16777216 -or $Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic' -or $Consumers.items[0].max_deliver -ne 7) { throw 'applied resources are incorrect' }
+			}
+			if ($Scenario -eq 'delete') {
+				$Network = "${Project}_default"
+				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish basic.test retained-message
+				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic 2>$null
+				if ($LASTEXITCODE -eq 0) { throw 'non-empty Queue deletion unexpectedly succeeded without force' }
+				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
+				if ($Stream.messages -ne 1) { throw 'blocked delete changed the Stream' }
+				$Deleted = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic --force basic | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $Deleted.status -ne 'deleted' -or $Deleted.messages -ne 1) { throw 'forced delete failed' }
+				$Again = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $Again.status -ne 'noop') { throw 'repeated delete was not idempotent' }
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 stream add RJSQ_foreign --subjects foreign.serve --storage file --replicas 1 --defaults
+				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm foreign --force foreign 2>$null
+				if ($LASTEXITCODE -eq 0) { throw 'foreign Stream deletion unexpectedly succeeded' }
+				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -TimeoutSec 5
+				if ($Foreign.name -ne 'RJSQ_foreign') { throw 'foreign Stream ownership protection failed' }
 			}
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {

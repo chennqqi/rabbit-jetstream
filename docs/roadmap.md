@@ -22,6 +22,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] Queue 到 Stream/durable Consumer/DLQ 依赖的纯映射和确定性 plan；
 - [x] 观测状态到 create/update/noop/recreate/reject 的只读 reconcile；
 - [x] Bearer Token 保护的声明式 Queue apply，支持安全 create/update 与重复 apply noop；
+- [x] 所有权校验、非空保护和显式确认的幂等 Queue delete；
 - 幂等创建/查询/删除 stream 与 consumer；
 - direct、topic、fanout 路由约定；
 - TTL、长度限制、ack/redelivery、DLQ 基础策略；

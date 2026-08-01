@@ -17,11 +17,13 @@ import (
 )
 
 type fakeBackend struct {
-	err         error
-	account     jetstream.Account
-	streams     []jetstream.Stream
-	consumers   []jetstream.Consumer
-	applyResult topology.ReconcileResult
+	err          error
+	account      jetstream.Account
+	streams      []jetstream.Stream
+	consumers    []jetstream.Consumer
+	applyResult  topology.ReconcileResult
+	deleteResult topology.DeleteResult
+	deleteCalls  int
 }
 
 type fakeMonitor struct{ snapshot monitoring.Snapshot }
@@ -52,6 +54,10 @@ func (f *fakeBackend) ListConsumers(context.Context, string) ([]jetstream.Consum
 }
 func (f *fakeBackend) Apply(context.Context, topology.Plan) (topology.ReconcileResult, error) {
 	return f.applyResult, f.err
+}
+func (f *fakeBackend) DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error) {
+	f.deleteCalls++
+	return f.deleteResult, f.err
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -162,6 +168,39 @@ func TestApplyQueueIsDisabledWithoutToken(t *testing.T) {
 	newTestHandler(&fakeBackend{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader("{}")))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestDeleteQueueRequiresExactConfirmation(t *testing.T) {
+	backend := &fakeBackend{deleteResult: topology.DeleteResult{Queue: "orders", Stream: "RJSQ_orders", Status: "deleted"}}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || backend.deleteCalls != 0 {
+		t.Fatalf("status = %d, calls = %d", rec.Code, backend.deleteCalls)
+	}
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders?force=true", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("X-RJS-Confirm-Queue", "orders")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || backend.deleteCalls != 1 {
+		t.Fatalf("status = %d, calls = %d", rec.Code, backend.deleteCalls)
+	}
+}
+
+func TestDeleteQueueReturnsConflictWhenBlocked(t *testing.T) {
+	backend := &fakeBackend{deleteResult: topology.DeleteResult{Queue: "orders", Status: "blocked", Blocked: true, Messages: 2}}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("X-RJS-Confirm-Queue", "orders")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
 

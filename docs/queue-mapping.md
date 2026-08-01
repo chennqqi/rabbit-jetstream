@@ -49,3 +49,12 @@ rjsctl queue apply --url http://127.0.0.1:8223 examples/queues/orders.yaml
 ```
 
 Apply runs the same reconcile first. It executes only `create`, safe `update`, and `noop` operations; blocked recreation, retention reduction, and DLQ plans return HTTP 409 without writes. Creation is recoverable rather than transactional: if Consumer creation fails after Stream creation, repeating apply resumes from the observed partial state.
+
+## Safe Delete
+
+Deletion requires the admin token and an exact Queue-name confirmation. It only removes Streams carrying matching `rabbit-jetstream.io/queue` ownership metadata. Non-empty Streams return HTTP 409 unless `--force` is supplied; missing resources return `noop`.
+
+```bash
+rjsctl queue delete --confirm orders orders
+rjsctl queue delete --confirm orders --force orders
+```

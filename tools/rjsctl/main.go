@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -172,6 +172,54 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("management API returned %s: %s", response.Status, readErrorBody(response.Body))
 		}
 		var result topology.ReconcileResult
+		if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	case "delete":
+		fs := flag.NewFlagSet("queue delete", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+		token := fs.String("token", os.Getenv("RJS_ADMIN_TOKEN"), "management API bearer token")
+		confirm := fs.String("confirm", "", "Queue name confirmation")
+		force := fs.Bool("force", false, "delete a Stream containing messages")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 1 {
+			return errors.New("usage: rjsctl queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME")
+		}
+		name := fs.Arg(0)
+		if !topology.ValidQueueName(name) {
+			return errors.New("invalid Queue name")
+		}
+		if *token == "" {
+			return errors.New("queue delete requires --token or RJS_ADMIN_TOKEN")
+		}
+		if *confirm != name {
+			return errors.New("--confirm must exactly match the Queue name")
+		}
+		endpoint := strings.TrimRight(*baseURL, "/") + "/api/v1/queues/" + url.PathEscape(name)
+		if *force {
+			endpoint += "?force=true"
+		}
+		request, err := http.NewRequest(http.MethodDelete, endpoint, nil)
+		if err != nil {
+			return err
+		}
+		request.Header.Set("Authorization", "Bearer "+*token)
+		request.Header.Set("X-RJS-Confirm-Queue", name)
+		response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return fmt.Errorf("management API returned %s: %s", response.Status, readErrorBody(response.Body))
+		}
+		var result topology.DeleteResult
 		if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 			return err
 		}

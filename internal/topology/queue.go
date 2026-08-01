@@ -21,6 +21,8 @@ const (
 
 var queueNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+func ValidQueueName(name string) bool { return queueNamePattern.MatchString(name) }
+
 type Queue struct {
 	APIVersion string    `yaml:"apiVersion" json:"apiVersion"`
 	Kind       string    `yaml:"kind" json:"kind"`

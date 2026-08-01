@@ -24,6 +24,7 @@ type Backend interface {
 	Stream(context.Context, string) (*jetstream.Stream, error)
 	ListConsumers(context.Context, string) ([]jetstream.Consumer, error)
 	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
+	DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error)
 }
 
 type Monitor interface {
@@ -56,18 +57,44 @@ func New(client Backend, logger *slog.Logger, name, version string, monitor Moni
 	mux.HandleFunc("GET /api/v1/streams/{stream}", h.stream)
 	mux.HandleFunc("GET /api/v1/streams/{stream}/consumers", h.consumers)
 	mux.HandleFunc("PUT /api/v1/queues/{queue}", h.applyQueue)
+	mux.HandleFunc("DELETE /api/v1/queues/{queue}", h.deleteQueue)
 	return h.logging(mux)
 }
 
-func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
-	if h.adminToken == "" {
-		writeAPIError(w, http.StatusNotFound, "write_api_disabled", "write API is disabled")
+func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeWrite(w, r) {
 		return
 	}
-	want := "Bearer " + h.adminToken
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(want)) != 1 {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
+	name := r.PathValue("queue")
+	if !topology.ValidQueueName(name) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_queue_name", "invalid Queue name")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-RJS-Confirm-Queue")), []byte(name)) != 1 {
+		writeAPIError(w, http.StatusBadRequest, "confirmation_required", "X-RJS-Confirm-Queue must exactly match the Queue name")
+		return
+	}
+	force, err := strconv.ParseBool(r.URL.Query().Get("force"))
+	if err != nil && r.URL.Query().Get("force") != "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_force", "force must be true or false")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	result, err := h.client.DeleteQueue(ctx, name, force)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	status := http.StatusOK
+	if result.Blocked {
+		status = http.StatusConflict
+	}
+	writeJSON(w, status, result)
+}
+
+func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeWrite(w, r) {
 		return
 	}
 	defer r.Body.Close()
@@ -97,6 +124,20 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusConflict
 	}
 	writeJSON(w, status, result)
+}
+
+func (h *Handler) authorizeWrite(w http.ResponseWriter, r *http.Request) bool {
+	if h.adminToken == "" {
+		writeAPIError(w, http.StatusNotFound, "write_api_disabled", "write API is disabled")
+		return false
+	}
+	want := "Bearer " + h.adminToken
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(want)) != 1 {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {

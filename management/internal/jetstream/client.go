@@ -139,6 +139,36 @@ func (c *Client) Apply(ctx context.Context, plan topology.Plan) (topology.Reconc
 	return result, nil
 }
 
+func (c *Client) DeleteQueue(ctx context.Context, name string, force bool) (topology.DeleteResult, error) {
+	result := topology.DeleteResult{Queue: name, Stream: topology.StreamName(name), Forced: force}
+	stream, err := c.Stream(ctx, result.Stream)
+	if errors.Is(err, ErrNotFound) {
+		result.Status = "noop"
+		return result, nil
+	}
+	if err != nil {
+		return result, err
+	}
+	result.Messages = stream.Messages
+	if stream.Metadata["rabbit-jetstream.io/queue"] != name {
+		result.Status, result.Blocked, result.Reason = "blocked", true, "Stream is not owned by this Queue"
+		return result, nil
+	}
+	if stream.Messages > 0 && !force {
+		result.Status, result.Blocked, result.Reason = "blocked", true, "Stream contains messages; force is required"
+		return result, nil
+	}
+	if err := c.js.DeleteStream(ctx, result.Stream); err != nil {
+		if errors.Is(err, jsapi.ErrStreamNotFound) {
+			result.Status = "noop"
+			return result, nil
+		}
+		return result, fmt.Errorf("delete stream %s: %w", result.Stream, err)
+	}
+	result.Status = "deleted"
+	return result, nil
+}
+
 func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topology.ObservedTopology, error) {
 	var observed topology.ObservedTopology
 	stream, err := c.Stream(ctx, plan.Stream.Name)

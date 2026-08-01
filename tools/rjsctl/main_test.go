@@ -119,3 +119,29 @@ func TestQueueApplyRequiresToken(t *testing.T) {
 		t.Fatal("apply succeeded without token")
 	}
 }
+
+func TestQueueDeleteUsesAuthenticatedConfirmedRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/queues/orders" || r.URL.Query().Get("force") != "true" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("X-RJS-Confirm-Queue") != "orders" {
+			t.Fatal("missing delete authorization or confirmation")
+		}
+		_, _ = w.Write([]byte(`{"queue":"orders","stream":"RJSQ_orders","status":"deleted","blocked":false,"forced":true,"messages":1}`))
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := run([]string{"queue", "delete", "--url", server.URL, "--token", "secret", "--confirm", "orders", "--force", "orders"}, &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"status": "deleted"`) {
+		t.Fatalf("output = %s", output.String())
+	}
+}
+
+func TestQueueDeleteRejectsMissingConfirmation(t *testing.T) {
+	if err := run([]string{"queue", "delete", "--token", "secret", "orders"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("delete succeeded without confirmation")
+	}
+}
