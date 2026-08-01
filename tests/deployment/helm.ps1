@@ -31,7 +31,7 @@ try {
     Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -summary /work/default.yaml
 
     $Rendered = Get-Content -LiteralPath $Default -Raw
-    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'minDomains: 3', 'whenUnsatisfiable: DoNotSchedule', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
+    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'persistentVolumeClaimRetentionPolicy:', 'whenDeleted: Retain', 'whenScaled: Retain', 'minDomains: 3', 'whenUnsatisfiable: DoNotSchedule', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
         if (-not $Rendered.Contains($Required)) { throw "default Helm output is missing $Required" }
     }
 	if ([regex]::Matches($Rendered, '(?m)^\s+automountServiceAccountToken: false\r?$').Count -ne 2) {

@@ -8,6 +8,9 @@ metadata:
 spec:
   serviceName: {{ include "rabbit-jetstream.fullname" . }}-nats-headless
   replicas: {{ .Values.nats.replicaCount }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   podManagementPolicy: Parallel
   updateStrategy: {type: RollingUpdate}
   selector:
