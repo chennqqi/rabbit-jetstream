@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	adminui "github.com/chennqqi/rabbit-jetstream/admin-ui"
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
@@ -79,6 +80,17 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 	mux.HandleFunc("GET /api/v1/queues", h.queues)
 	mux.HandleFunc("GET /api/v1/queues/{queue}", h.queue)
 	mux.HandleFunc("GET /api/v1/controller", h.controllerStatus)
+	mux.Handle("GET /admin/", adminui.Handler())
+	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
+	})
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
+	})
 	return h.logging(mux)
 }
 

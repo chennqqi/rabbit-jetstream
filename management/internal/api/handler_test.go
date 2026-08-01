@@ -99,6 +99,25 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestAdminUIEndpoints(t *testing.T) {
+	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil)
+	for _, test := range []struct {
+		path, location, content string
+		status                  int
+	}{
+		{"/", "/admin/", "", http.StatusTemporaryRedirect},
+		{"/admin", "/admin/", "", http.StatusPermanentRedirect},
+		{"/admin/", "", "Rabbit JetStream", http.StatusOK},
+		{"/admin/app.js", "", "loadDashboard", http.StatusOK},
+	} {
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if recorder.Code != test.status || (test.location != "" && recorder.Header().Get("Location") != test.location) || (test.content != "" && !strings.Contains(recorder.Body.String(), test.content)) {
+			t.Fatalf("%s: status=%d location=%q body=%q", test.path, recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
+		}
+	}
+}
+
 func TestControllerStatusEndpoint(t *testing.T) {
 	h := NewWithController(&fakeBackend{}, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, fakeController{status: controller.Status{InstanceID: "one", Leader: true}}, "")
 	rec := httptest.NewRecorder()

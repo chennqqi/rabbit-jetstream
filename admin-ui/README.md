@@ -1,5 +1,5 @@
 # Admin UI
 
-This directory is reserved for the browser-based administration console. It consumes the versioned management API and must never connect to NATS with operator credentials directly.
+The dependency-free administration console is embedded into `rjs-management` and served at `/admin/`. It consumes only the versioned management HTTP API and never connects to NATS directly.
 
-The first screens will cover cluster health, streams/queues, consumers, backlog, delivery failures, and diagnostic exports. The frontend stack will be selected before implementation and recorded in an ADR.
+The current read-only MVP covers service and cluster health, JetStream capacity, Queue declarations, Stream backlog, consumer delivery state, controller leadership, and DLQ transfer counters. Keep source assets in `dist/`; tests ensure the embedded files remain available in the production binary.

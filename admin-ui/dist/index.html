@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Rabbit JetStream · Operations</title>
+  <link rel="stylesheet" href="/admin/styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="brand"><span class="mark" aria-hidden="true">RJ</span><div><strong>Rabbit JetStream</strong><small>Operations console</small></div></div>
+    <div class="top-actions"><span id="last-updated">Not connected</span><button id="refresh" type="button">Refresh</button></div>
+  </header>
+  <div class="layout">
+    <nav aria-label="Main navigation">
+      <a class="active" href="#overview">Overview</a>
+      <a href="#queues">Queues</a>
+      <a href="#nodes">Nodes</a>
+      <div class="nav-foot"><span id="service-dot" class="dot neutral"></span><span id="service-state">Checking service</span></div>
+    </nav>
+    <main id="main">
+      <section id="overview" class="hero">
+        <div><p class="eyebrow">CONTROL PLANE</p><h1>System overview</h1><p id="service-meta" class="muted">Loading management and JetStream state…</p></div>
+        <div id="alert" class="alert" hidden role="alert"></div>
+      </section>
+      <section class="metrics" aria-label="Key metrics">
+        <article><span>Cluster state</span><strong id="metric-health">—</strong><small id="metric-nodes">— nodes</small></article>
+        <article><span>Declared queues</span><strong id="metric-queues">—</strong><small id="metric-streams">— streams</small></article>
+        <article><span>Queued messages</span><strong id="metric-messages">—</strong><small id="metric-storage">— stored</small></article>
+        <article><span>DLQ transfers</span><strong id="metric-dlq">—</strong><small id="metric-controller">controller unknown</small></article>
+      </section>
+      <section id="queues" class="panel">
+        <div class="panel-head"><div><p class="eyebrow">WORKLOAD</p><h2>Queues</h2></div><label class="search"><span class="sr-only">Filter queues</span><input id="queue-filter" type="search" placeholder="Filter queues…" autocomplete="off"></label></div>
+        <div class="table-wrap"><table><thead><tr><th>Queue</th><th>State</th><th class="number">Messages</th><th class="number">Consumers</th><th>Storage</th><th>Replicas</th><th>Revision</th></tr></thead><tbody id="queue-rows"><tr><td colspan="7" class="empty">Loading queues…</td></tr></tbody></table></div>
+      </section>
+      <section id="nodes" class="panel">
+        <div class="panel-head"><div><p class="eyebrow">INFRASTRUCTURE</p><h2>Nodes</h2></div><span id="node-summary" class="muted"></span></div>
+        <div id="node-grid" class="node-grid"><p class="empty">Loading nodes…</p></div>
+      </section>
+    </main>
+  </div>
+  <dialog id="queue-dialog"><div class="dialog-head"><div><p class="eyebrow">QUEUE DETAIL</p><h2 id="dialog-title">Queue</h2></div><button id="dialog-close" class="icon-button" aria-label="Close">×</button></div><div id="dialog-body"></div></dialog>
+  <script src="/admin/app.js" defer></script>
+</body>
+</html>

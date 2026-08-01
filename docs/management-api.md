@@ -1,5 +1,7 @@
 # Management API
 
+The embedded read-only Admin UI is served at `/admin/` and consumes only the endpoints below. `/` redirects to the console; health and API paths remain unchanged.
+
 The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitoring integrations. Responses use JSON. Collection endpoints return `items`, `total`, `offset`, and `limit`; the default limit is 50 and the maximum is 200. Queue writes are disabled unless `RJS_ADMIN_TOKEN` is configured.
 
 ## Endpoints

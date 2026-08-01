@@ -45,7 +45,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 ## M3：运维产品化与 WebUI
 
-- 队列、consumer、消息积压、节点和集群页面；
+- [x] 队列、consumer、消息积压、节点和集群只读页面；
 - Prometheus/OpenTelemetry、告警模板和诊断包；
 - OIDC/RBAC、审计日志、凭据轮换；
 - Helm chart、滚动升级、备份恢复及容量手册；

@@ -18,6 +18,7 @@ go run ./tools/rjsctl status
 
 默认管理端点为 `http://127.0.0.1:8223`：
 
+- `/admin/`：内嵌只读 Admin UI；
 - `GET /healthz`：进程存活；
 - `GET /readyz`：JetStream 可用；
 - `GET /api/v1/info`：服务及 JetStream 账户摘要。
@@ -46,7 +47,7 @@ go run ./tools/rjsctl queue list --url http://127.0.0.1:8223
 ```text
 upstream/nats-server/   固定版本的官方 NATS Server Git subtree
 management/             Go 管理 API 与控制面
-admin-ui/               Web 管理界面
+admin-ui/               内嵌 Web 管理界面及静态资源
 tools/rjsctl/           运维 CLI
 deploy/                 单机和集群编排
 packaging/              NATS Server 与管理面的发行镜像
