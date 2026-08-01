@@ -23,11 +23,12 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 观测状态到 create/update/noop/recreate/reject 的只读 reconcile；
 - [x] Bearer Token 保护的声明式 Queue apply，支持安全 create/update 与重复 apply noop；
 - [x] 所有权校验、非空保护和显式确认的幂等 Queue delete；
+- [x] 基于 JetStream KV 的 Queue 声明/revision 持久化与重启恢复查询；
 - 幂等创建/查询/删除 stream 与 consumer；
 - direct、topic、fanout 路由约定；
 - TTL、长度限制、ack/redelivery、DLQ 基础策略；
 - CLI/API 的声明式 apply、diff、delete；
-- 基于 JetStream KV 的元数据与 leader election。
+- 基于 JetStream KV 的 leader election 与多管理实例并发写收敛。
 
 验收：进程重启及管理实例切换不丢声明；重复 apply 无副作用；端到端测试覆盖发布、消费、重投和 DLQ。
 

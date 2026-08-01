@@ -10,6 +10,8 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	t.Setenv("RJS_NATS_MONITOR_URLS", "http://nats-1:8222,http://nats-2:8222")
 	t.Setenv("RJS_CONNECT_TIMEOUT", "3s")
 	t.Setenv("RJS_ADMIN_TOKEN", "secret")
+	t.Setenv("RJS_METADATA_BUCKET", "TEST_META")
+	t.Setenv("RJS_METADATA_REPLICAS", "3")
 	cfg := FromEnv()
 	if cfg.NATSURL != "nats://nats-1:4222" || cfg.NATSMonitorURLs != "http://nats-1:8222,http://nats-2:8222" {
 		t.Fatalf("unexpected config: %#v", cfg)
@@ -19,6 +21,9 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	}
 	if cfg.AdminToken != "secret" {
 		t.Fatalf("admin token was not loaded")
+	}
+	if cfg.MetadataBucket != "TEST_META" || cfg.MetadataReplicas != 3 {
+		t.Fatalf("metadata config = %#v", cfg)
 	}
 }
 

@@ -58,7 +58,7 @@
 - `observability`：Prometheus 指标、JetStream advisories、审计日志；
 - `amqp-gateway`（未来）：独立可选组件，不侵入 JetStream。
 
-当前骨架包含上游 Server subtree、发行打包，以及管理 API/CLI 的基础承载层。Admin UI、业务资源 API 与 controller 将按 Roadmap 增量加入。
+当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。Admin UI 与持续运行的 controller 将按 Roadmap 增量加入。
 
 ## 6. 高可用与安全
 

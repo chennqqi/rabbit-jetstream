@@ -9,6 +9,9 @@
 | `RJS_NATS_PASSWORD` | 空 | 密码 |
 | `RJS_NATS_CREDS` | 空 | NATS credentials 文件；设置后优先于用户名密码 |
 | `RJS_NATS_MONITOR_URLS` | `http://127.0.0.1:8222` | NATS monitoring 基础地址，多个节点以逗号分隔 |
+| `RJS_ADMIN_TOKEN` | 空 | 启用 apply/delete 写 API 的 Bearer Token；为空时写 API 关闭 |
+| `RJS_METADATA_BUCKET` | `RJS_META` | Queue 声明使用的 JetStream KV bucket |
+| `RJS_METADATA_REPLICAS` | `1` | KV 副本数，仅允许 1、3、5；生产三节点集群应设为 3 |
 | `RJS_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` |
 | `RJS_CONNECT_TIMEOUT` | `5s` | 初次连接超时 |
 | `RJS_SHUTDOWN_TIMEOUT` | `10s` | HTTP 优雅退出超时 |

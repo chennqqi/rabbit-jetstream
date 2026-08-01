@@ -1,6 +1,6 @@
 # Management API
 
-The versioned API is read-only during M1. It is intended for `rjsctl`, Admin UI, diagnostics, and monitoring integrations. Responses use JSON. Collection endpoints return `items`, `total`, `offset`, and `limit`; the default limit is 50 and the maximum is 200.
+The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitoring integrations. Responses use JSON. Collection endpoints return `items`, `total`, `offset`, and `limit`; the default limit is 50 and the maximum is 200. Queue writes are disabled unless `RJS_ADMIN_TOKEN` is configured.
 
 ## Endpoints
 
@@ -14,6 +14,9 @@ The versioned API is read-only during M1. It is intended for `rjsctl`, Admin UI,
 | `GET /api/v1/streams` | Paginated Stream summaries |
 | `GET /api/v1/streams/{stream}` | Stream configuration, state, leader, and replicas |
 | `GET /api/v1/streams/{stream}/consumers` | Paginated Consumer delivery and backlog state |
+| `GET /api/v1/queues` | Queue declarations persisted in JetStream KV |
+| `PUT /api/v1/queues/{queue}` | Authenticated, reconciled Queue apply |
+| `DELETE /api/v1/queues/{queue}` | Authenticated Queue deletion with explicit confirmation |
 
 Example:
 
@@ -30,3 +33,5 @@ Errors have a stable envelope:
 `400` indicates invalid pagination, `404` a missing resource, and `503` unavailable JetStream management data. Node/process metrics come from explicitly configured NATS monitoring endpoints and are not inferred from account data.
 
 `/api/v1/nodes` collects each configured monitoring endpoint concurrently. Its top-level status is `available`, `degraded`, or `unavailable`. Individual nodes preserve endpoint-specific errors so one failed member does not hide healthy members. Credentials embedded in monitoring URLs are never returned.
+
+Write requests require `Authorization: Bearer <token>`. Delete additionally requires `X-RJS-Confirm-Queue` to exactly match the path name. Unsafe reconcile plans and non-empty deletion without `force=true` return `409` without performing the destructive operation.

@@ -25,6 +25,7 @@ services:
       RJS_NATS_URL: nats://nats:4222
       RJS_NATS_MONITOR_URLS: http://nats:8222
       RJS_ADMIN_TOKEN: ${RJS_ADMIN_TOKEN:-}
+      RJS_METADATA_REPLICAS: 1
     ports:
       - "8223:8223"
     depends_on:

@@ -24,6 +24,7 @@ type fakeBackend struct {
 	applyResult  topology.ReconcileResult
 	deleteResult topology.DeleteResult
 	deleteCalls  int
+	declarations []topology.Declaration
 }
 
 type fakeMonitor struct{ snapshot monitoring.Snapshot }
@@ -59,6 +60,9 @@ func (f *fakeBackend) DeleteQueue(context.Context, string, bool) (topology.Delet
 	f.deleteCalls++
 	return f.deleteResult, f.err
 }
+func (f *fakeBackend) ListDeclarations(context.Context) ([]topology.Declaration, error) {
+	return f.declarations, f.err
+}
 
 func TestHealthEndpoint(t *testing.T) {
 	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil)
@@ -79,9 +83,10 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestReadOnlyManagementEndpoints(t *testing.T) {
 	backend := &fakeBackend{
-		account:   jetstream.Account{Streams: 2, Consumers: 1, APILevel: 4},
-		streams:   []jetstream.Stream{{Name: "alpha", Messages: 10}, {Name: "beta", Messages: 20}},
-		consumers: []jetstream.Consumer{{Stream: "alpha", Name: "worker", Pending: 3}},
+		account:      jetstream.Account{Streams: 2, Consumers: 1, APILevel: 4},
+		streams:      []jetstream.Stream{{Name: "alpha", Messages: 10}, {Name: "beta", Messages: 20}},
+		consumers:    []jetstream.Consumer{{Stream: "alpha", Name: "worker", Pending: 3}},
+		declarations: []topology.Declaration{{APIVersion: topology.DeclarationAPIVersion, Queue: "orders", Revision: "abc"}},
 	}
 	handler := newTestHandler(backend)
 	tests := []struct {
@@ -93,6 +98,7 @@ func TestReadOnlyManagementEndpoints(t *testing.T) {
 		{"/api/v1/streams?offset=1&limit=1", []string{`"name":"beta"`, `"total":2`, `"offset":1`}},
 		{"/api/v1/streams/alpha", []string{`"name":"alpha"`, `"messages":10`}},
 		{"/api/v1/streams/alpha/consumers", []string{`"name":"worker"`, `"pending":3`}},
+		{"/api/v1/queues", []string{`"queue":"orders"`, `"revision":"abc"`}},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {

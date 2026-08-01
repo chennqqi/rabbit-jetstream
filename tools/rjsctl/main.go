@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -65,10 +65,32 @@ func run(args []string, stdout, stderr io.Writer) error {
 }
 
 func runQueue(args []string, stdout, stderr io.Writer) error {
-	if len(args) < 2 {
-		return errors.New("usage: rjsctl queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE")
+	if len(args) < 1 {
+		return errors.New("usage: rjsctl queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE")
 	}
 	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("queue list", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return errors.New("usage: rjsctl queue list [--url URL]")
+		}
+		client := &http.Client{Timeout: 5 * time.Second}
+		var declarations any
+		status, err := getJSON(client, strings.TrimRight(*baseURL, "/")+"/api/v1/queues?limit=200", &declarations)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("management API returned %d", status)
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(declarations)
 	case "validate":
 		if len(args) != 2 {
 			return errors.New("usage: rjsctl queue validate FILE")

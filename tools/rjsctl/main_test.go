@@ -145,3 +145,20 @@ func TestQueueDeleteRejectsMissingConfirmation(t *testing.T) {
 		t.Fatal("delete succeeded without confirmation")
 	}
 }
+
+func TestQueueListReadsDeclarations(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/queues" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"items":[{"queue":"orders","revision":"abc"}],"total":1,"offset":0,"limit":200}`))
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := run([]string{"queue", "list", "--url", server.URL}, &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"revision": "abc"`) {
+		t.Fatalf("output = %s", output.String())
+	}
+}

@@ -2,6 +2,7 @@ package jetstream
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -17,8 +18,10 @@ import (
 var ErrNotFound = errors.New("resource not found")
 
 type Client struct {
-	conn *nats.Conn
-	js   jsapi.JetStream
+	conn             *nats.Conn
+	js               jsapi.JetStream
+	metadataBucket   string
+	metadataReplicas int
 }
 
 func Connect(cfg config.Config) (*Client, error) {
@@ -42,7 +45,7 @@ func Connect(cfg config.Config) (*Client, error) {
 		conn.Close()
 		return nil, fmt.Errorf("create JetStream client: %w", err)
 	}
-	return &Client{conn: conn, js: js}, nil
+	return &Client{conn: conn, js: js, metadataBucket: cfg.MetadataBucket, metadataReplicas: cfg.MetadataReplicas}, nil
 }
 
 func (c *Client) Ready(ctx context.Context) error {
@@ -114,8 +117,11 @@ func (c *Client) Apply(ctx context.Context, plan topology.Plan) (topology.Reconc
 		return topology.ReconcileResult{}, err
 	}
 	result := topology.Reconcile(plan, observed)
-	if result.Blocked || result.Status == "noop" {
+	if result.Blocked {
 		return result, nil
+	}
+	if result.Status == "noop" {
+		return result, c.persistDeclaration(ctx, plan)
 	}
 	streamConfig := jsapi.StreamConfig{
 		Name: plan.Stream.Name, Subjects: plan.Stream.Subjects, Storage: storageType(plan.Stream.Storage),
@@ -136,6 +142,78 @@ func (c *Client) Apply(ctx context.Context, plan topology.Plan) (topology.Reconc
 	if _, err := c.js.CreateOrUpdateConsumer(ctx, plan.Stream.Name, consumerConfig); err != nil {
 		return result, fmt.Errorf("apply consumer %s: %w", plan.Consumer.Name, err)
 	}
+	return result, c.persistDeclaration(ctx, plan)
+}
+
+func (c *Client) persistDeclaration(ctx context.Context, plan topology.Plan) error {
+	kv, err := c.metadataStore(ctx, true)
+	if err != nil {
+		return fmt.Errorf("open metadata bucket %s: %w", c.metadataBucket, err)
+	}
+	key := "queues." + plan.Queue
+	if entry, err := kv.Get(ctx, key); err == nil {
+		var current topology.Declaration
+		if json.Unmarshal(entry.Value(), &current) == nil && current.Revision == plan.Revision {
+			return nil
+		}
+	} else if !errors.Is(err, jsapi.ErrKeyNotFound) {
+		return fmt.Errorf("read Queue declaration %s: %w", plan.Queue, err)
+	}
+	record := topology.Declaration{APIVersion: topology.DeclarationAPIVersion, Queue: plan.Queue, Revision: plan.Revision, Plan: plan, AppliedAt: time.Now().UTC()}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("encode Queue declaration: %w", err)
+	}
+	if _, err := kv.Put(ctx, key, encoded); err != nil {
+		return fmt.Errorf("persist Queue declaration %s: %w", plan.Queue, err)
+	}
+	return nil
+}
+
+func (c *Client) metadataStore(ctx context.Context, create bool) (jsapi.KeyValue, error) {
+	kv, err := c.js.KeyValue(ctx, c.metadataBucket)
+	if err == nil || !errors.Is(err, jsapi.ErrBucketNotFound) || !create {
+		return kv, err
+	}
+	kv, err = c.js.CreateKeyValue(ctx, jsapi.KeyValueConfig{Bucket: c.metadataBucket, Description: "rabbit-jetstream Queue declarations", History: 5, Storage: jsapi.FileStorage, Replicas: c.metadataReplicas})
+	if errors.Is(err, jsapi.ErrBucketExists) {
+		return c.js.KeyValue(ctx, c.metadataBucket)
+	}
+	return kv, err
+}
+
+func (c *Client) ListDeclarations(ctx context.Context) ([]topology.Declaration, error) {
+	kv, err := c.metadataStore(ctx, false)
+	if errors.Is(err, jsapi.ErrBucketNotFound) {
+		return []topology.Declaration{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open metadata bucket %s: %w", c.metadataBucket, err)
+	}
+	keys, err := kv.Keys(ctx, jsapi.IgnoreDeletes())
+	if errors.Is(err, jsapi.ErrNoKeysFound) {
+		return []topology.Declaration{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list Queue declarations: %w", err)
+	}
+	result := make([]topology.Declaration, 0, len(keys))
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "queues.") {
+			continue
+		}
+		entry, err := kv.Get(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("read declaration %s: %w", key, err)
+		}
+		var declaration topology.Declaration
+		if err := json.Unmarshal(entry.Value(), &declaration); err != nil {
+			return nil, fmt.Errorf("decode declaration %s: %w", key, err)
+		}
+		declaration.KVRevision = entry.Revision()
+		result = append(result, declaration)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Queue < result[j].Queue })
 	return result, nil
 }
 
@@ -143,7 +221,15 @@ func (c *Client) DeleteQueue(ctx context.Context, name string, force bool) (topo
 	result := topology.DeleteResult{Queue: name, Stream: topology.StreamName(name), Forced: force}
 	stream, err := c.Stream(ctx, result.Stream)
 	if errors.Is(err, ErrNotFound) {
-		result.Status = "noop"
+		deleted, deleteErr := c.deleteDeclaration(ctx, name)
+		if deleteErr != nil {
+			return result, deleteErr
+		}
+		if deleted {
+			result.Status = "deleted"
+		} else {
+			result.Status = "noop"
+		}
 		return result, nil
 	}
 	if err != nil {
@@ -166,7 +252,30 @@ func (c *Client) DeleteQueue(ctx context.Context, name string, force bool) (topo
 		return result, fmt.Errorf("delete stream %s: %w", result.Stream, err)
 	}
 	result.Status = "deleted"
+	if _, err := c.deleteDeclaration(ctx, name); err != nil {
+		return result, err
+	}
 	return result, nil
+}
+
+func (c *Client) deleteDeclaration(ctx context.Context, name string) (bool, error) {
+	kv, err := c.metadataStore(ctx, false)
+	if errors.Is(err, jsapi.ErrBucketNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("open metadata bucket %s: %w", c.metadataBucket, err)
+	}
+	key := "queues." + name
+	if _, err := kv.Get(ctx, key); errors.Is(err, jsapi.ErrKeyNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("read Queue declaration %s: %w", name, err)
+	}
+	if err := kv.Delete(ctx, key); err != nil {
+		return false, fmt.Errorf("delete Queue declaration %s: %w", name, err)
+	}
+	return true, nil
 }
 
 func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topology.ObservedTopology, error) {

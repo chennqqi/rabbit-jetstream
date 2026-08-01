@@ -25,6 +25,7 @@ type Backend interface {
 	ListConsumers(context.Context, string) ([]jetstream.Consumer, error)
 	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
 	DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error)
+	ListDeclarations(context.Context) ([]topology.Declaration, error)
 }
 
 type Monitor interface {
@@ -58,7 +59,24 @@ func New(client Backend, logger *slog.Logger, name, version string, monitor Moni
 	mux.HandleFunc("GET /api/v1/streams/{stream}/consumers", h.consumers)
 	mux.HandleFunc("PUT /api/v1/queues/{queue}", h.applyQueue)
 	mux.HandleFunc("DELETE /api/v1/queues/{queue}", h.deleteQueue)
+	mux.HandleFunc("GET /api/v1/queues", h.queues)
 	return h.logging(mux)
+}
+
+func (h *Handler) queues(w http.ResponseWriter, r *http.Request) {
+	offset, limit, err := pagination(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_pagination", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	items, err := h.client.ListDeclarations(ctx)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page(items, offset, limit))
 }
 
 func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
