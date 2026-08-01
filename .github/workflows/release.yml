@@ -156,7 +156,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           mkdir -p dist
-          docker run --rm -v "$PWD:/src" -w /src alpine/helm:3.18.4 package deploy/helm/rabbit-jetstream --version "$version" --app-version "$GITHUB_REF_NAME" --destination dist
+          docker run --rm -v "$PWD:/src" -w /src alpine/helm:3.18.4@sha256:e7ecbf4a200dea73d64bfb8cb0936829164945f2b4d02a0274093073ee8d264f package deploy/helm/rabbit-jetstream --version "$version" --app-version "$GITHUB_REF_NAME" --destination dist
           printf 'nats:\n  image:\n    repository: %s\n    digest: %s\nmanagement:\n  image:\n    repository: %s\n    digest: %s\noperator:\n  image:\n    repository: %s\n    digest: %s\n' "$NATS_IMAGE" "$NATS_DIGEST" "$MANAGEMENT_IMAGE" "$MANAGEMENT_DIGEST" "$OPERATOR_IMAGE" "$OPERATOR_DIGEST" > dist/release-images.yaml
           cp evidence/performance-soak.json.evidence.json dist/
           (cd dist && sha256sum ./* > SHA256SUMS)

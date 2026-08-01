@@ -18,8 +18,14 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		return string(value)
 	}
 	for _, file := range []string{"packaging/Dockerfile.nats-server", "packaging/Dockerfile.management", "packaging/Dockerfile.operator"} {
-		if !strings.Contains(read(file), "golang:1.25.12-alpine") {
+		content := read(file)
+		if !strings.Contains(content, "golang:1.25.12-alpine") {
 			t.Errorf("%s is not pinned to the patched Go toolchain", file)
+		}
+		for lineNumber, line := range strings.Split(content, "\n") {
+			if strings.HasPrefix(line, "FROM ") && !strings.Contains(line, "@sha256:") {
+				t.Errorf("%s base image on line %d is not digest-pinned: %s", file, lineNumber+1, line)
+			}
 		}
 	}
 	natsImage := read("packaging/Dockerfile.nats-server")
@@ -81,6 +87,18 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 				t.Errorf("%s lost container hardening %q", file, requirement)
 			}
 		}
+		if !strings.Contains(compose, "prom/prometheus:v3.12.0-distroless@sha256:") {
+			t.Errorf("%s uses a mutable Prometheus image", file)
+		}
+	}
+	if !strings.Contains(read("deploy/helm/rabbit-jetstream/templates/tests/health.yaml"), "busybox:1.37.0@sha256:") {
+		t.Error("Helm health hook uses a mutable image")
+	}
+	helmTest := read("tests/deployment/helm.ps1")
+	for _, image := range []string{"alpine/helm:3.18.4@sha256:", "ghcr.io/yannh/kubeconform:v0.6.7@sha256:", "busybox:1.37.0@sha256:"} {
+		if !strings.Contains(helmTest, image) {
+			t.Errorf("Helm deployment test uses mutable helper %q", image)
+		}
 	}
 	for _, file := range []string{"tests/coverage/check.sh", "tests/coverage/check.ps1"} {
 		content := read(file)
@@ -104,7 +122,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		}
 	}
 	release := read(".github/workflows/release.yml")
-	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
+	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "alpine/helm:3.18.4@sha256:", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {
 			t.Errorf("release workflow lost requirement %q", requirement)
 		}

@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $GoToolImage = 'golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58'
 $NATSBoxImage = 'natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c'
+$AlpineImage = 'alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40'
 
 function Invoke-Docker {
     & docker @args
@@ -36,7 +37,7 @@ function Get-HTTPStatusEventually([string]$Uri, [hashtable]$Headers) {
 }
 
 function Get-NetworkJson([string]$Network, [string]$Uri) {
-    $Value = & docker run --rm --network $Network alpine:3.23 wget -q -O - $Uri | ConvertFrom-Json
+    $Value = & docker run --rm --network $Network $AlpineImage wget -q -O - $Uri | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) { throw "failed to query $Uri on $Network" }
     return $Value
 }

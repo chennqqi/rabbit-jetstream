@@ -57,7 +57,7 @@ services:
       nats:
         condition: service_healthy
   prometheus:
-    image: prom/prometheus:v3.12.0-distroless
+    image: prom/prometheus:v3.12.0-distroless@sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2
     profiles: [observability]
     restart: unless-stopped
     command:

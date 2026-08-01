@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Chart = 'deploy/helm/rabbit-jetstream'
+$HelmImage = 'alpine/helm:3.18.4@sha256:e7ecbf4a200dea73d64bfb8cb0936829164945f2b4d02a0274093073ee8d264f'
+$KubeconformImage = 'ghcr.io/yannh/kubeconform:v0.6.7@sha256:0925177fb05b44ce18574076141b5c3d83235e1904d3f952182ac99ddc45762c'
+$BusyBoxImage = 'busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
 $Temporary = Join-Path ([IO.Path]::GetTempPath()) ("rjs-helm-{0}" -f [guid]::NewGuid())
 New-Item -ItemType Directory -Path $Temporary | Out-Null
 
@@ -20,12 +23,12 @@ function Build-DockerImage([string]$Dockerfile, [string]$Tag) {
 
 Push-Location $RepositoryRoot
 try {
-    Invoke-Docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 lint $Chart
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage lint $Chart
 
     $Default = Join-Path $Temporary 'default.yaml'
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging | Set-Content -LiteralPath $Default -Encoding utf8NoBOM
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging | Set-Content -LiteralPath $Default -Encoding utf8NoBOM
     if ($LASTEXITCODE -ne 0) { throw 'default Helm render failed' }
-    Invoke-Docker run --rm -v "${Temporary}:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /work/default.yaml
+    Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -summary /work/default.yaml
 
     $Rendered = Get-Content -LiteralPath $Default -Raw
     foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
@@ -51,7 +54,7 @@ try {
 	Build-DockerImage 'packaging/Dockerfile.nats-server' 'rabbit-jetstream/nats-server:helm-test'
 	Invoke-Docker run --rm -e POD_NAME=rjs-test-0 -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD_HASH=$NATSPasswordHash" -v "${Temporary}:/work:ro" rabbit-jetstream/nats-server:helm-test -t -c /work/nats.conf
 
-	$SingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set nats.replicaCount=1) -join "`n"
+	$SingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set nats.replicaCount=1) -join "`n"
 	if ($LASTEXITCODE -ne 0) { throw 'single-node Helm render failed' }
 	$SingleMatch = [regex]::Match($SingleRendered, '(?m)^  nats\.conf: \|\r?\n(?<config>(?:    [^\r\n]*(?:\r?\n|$))+)(?=---|\z)')
 	if (-not $SingleMatch.Success) { throw 'single-node NATS configuration was not found' }
@@ -68,7 +71,7 @@ try {
 		Invoke-Docker run -d --name $ManagementContainer --network $Network --network-alias management -e RJS_NATS_URL=nats://production-rabbit-jetstream-nats:4222 -e RJS_NATS_MONITOR_URLS=http://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:8222 -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD=$NATSPassword" -e RJS_ADMIN_TOKEN=test-admin-token -e RJS_METADATA_REPLICAS=1 -e RJS_INSTANCE_ID=helm-runtime-test rabbit-jetstream/management:helm-test
 		$Ready = $false
 		foreach ($Attempt in 1..30) {
-			& docker run --rm --network $Network busybox:1.37.0 wget -q -O - http://management:8223/readyz 2>$null | Out-Null
+			& docker run --rm --network $Network $BusyBoxImage wget -q -O - http://management:8223/readyz 2>$null | Out-Null
 			if ($LASTEXITCODE -eq 0) { $Ready = $true; break }
 			Start-Sleep -Seconds 1
 		}
@@ -95,7 +98,7 @@ try {
 		Invoke-Docker run -d --name $ClusterManagement --network $ClusterNetwork --network-alias cluster-management -e 'RJS_NATS_URL=nats://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:4222,nats://production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless:4222,nats://production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless:4222' -e 'RJS_NATS_MONITOR_URLS=http://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:8222,http://production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless:8222,http://production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless:8222' -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD=$NATSPassword" -e RJS_ADMIN_TOKEN=test-admin-token -e RJS_METADATA_REPLICAS=3 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s -e RJS_INSTANCE_ID=helm-cluster-test rabbit-jetstream/management:helm-test
 		$Leader = $false
 		foreach ($Attempt in 1..45) {
-			$Status = & docker run --rm --network $ClusterNetwork busybox:1.37.0 wget -q -O - http://cluster-management:8223/api/v1/controller 2>$null
+			$Status = & docker run --rm --network $ClusterNetwork $BusyBoxImage wget -q -O - http://cluster-management:8223/api/v1/controller 2>$null
 			if ($LASTEXITCODE -eq 0 -and ($Status -join '') -match '"leader":true') { $Leader = $true; break }
 			Start-Sleep -Seconds 1
 		}
@@ -110,24 +113,24 @@ try {
 	}
 
     $Optional = Join-Path $Temporary 'optional.yaml'
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set serviceMonitor.enabled=true --set ingress.enabled=true | Set-Content -LiteralPath $Optional -Encoding utf8NoBOM
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set serviceMonitor.enabled=true --set ingress.enabled=true | Set-Content -LiteralPath $Optional -Encoding utf8NoBOM
     if ($LASTEXITCODE -ne 0) { throw 'optional Helm render failed' }
-    Invoke-Docker run --rm -v "${Temporary}:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -ignore-missing-schemas -summary /work/optional.yaml
+    Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -ignore-missing-schemas -summary /work/optional.yaml
 
-    $ExistingSecret = & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set auth.existingSecret=production-auth
+    $ExistingSecret = & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set auth.existingSecret=production-auth
     if ($LASTEXITCODE -ne 0 -or ($ExistingSecret -join "`n") -match '(?m)^kind: Secret$') { throw 'existing Secret mode rendered a generated Secret' }
 
     $Digest = 'sha256:' + ('a' * 64)
-    $DigestRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set-string "nats.image.digest=$Digest" --set-string "management.image.digest=$Digest") -join "`n"
+    $DigestRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set-string "nats.image.digest=$Digest" --set-string "management.image.digest=$Digest") -join "`n"
     if ($LASTEXITCODE -ne 0 -or -not $DigestRendered.Contains("rabbit-jetstream/nats-server@$Digest") -or -not $DigestRendered.Contains("rabbit-jetstream/management@$Digest")) { throw 'immutable image digests were not rendered correctly' }
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set-string "operator.image.digest=$Digest" | Out-Null
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set-string "operator.image.digest=$Digest" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'operator release digest was rejected by the Helm values schema' }
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set-string nats.image.digest=sha256:bad 2>$null | Out-Null
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set-string nats.image.digest=sha256:bad 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an invalid image digest' }
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set-string operator.image.digest=sha256:bad 2>$null | Out-Null
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set-string operator.image.digest=sha256:bad 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an invalid operator image digest' }
 
-    $TLSRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
+    $TLSRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'mTLS Helm render failed' }
     foreach ($Required in @('tls://production-rabbit-jetstream-nats:4222', 'RJS_NATS_TLS_CA', 'RJS_NATS_TLS_CERT', 'RJS_NATS_TLS_KEY', 'verify: true', 'secretName: production-nats-server-tls', 'secretName: production-nats-client-tls')) {
         if (-not $TLSRendered.Contains($Required)) { throw "mTLS Helm output is missing $Required" }
@@ -135,7 +138,7 @@ try {
 	$TLSDirectory = Join-Path $Temporary 'tls'
 	& go run ./tests/helpers/tls-fixture --output $TLSDirectory
 	if ($LASTEXITCODE -ne 0) { throw 'test TLS certificate generation failed' }
-	$TLSSingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set nats.replicaCount=1 --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
+	$TLSSingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set nats.replicaCount=1 --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
 	$TLSConfigMatch = [regex]::Match($TLSSingleRendered, '(?m)^  nats\.conf: \|\r?\n(?<config>(?:    [^\r\n]*(?:\r?\n|$))+)(?=---|\z)')
 	if (-not $TLSConfigMatch.Success) { throw 'mTLS NATS configuration was not found' }
 	$TLSConfig = [regex]::Replace($TLSConfigMatch.Groups['config'].Value, '(?m)^    ', '')
@@ -150,7 +153,7 @@ try {
 		Invoke-Docker run -d --name $TLSManagement --network $TLSNetwork --network-alias tls-management -e RJS_NATS_URL=tls://production-rabbit-jetstream-nats:4222 -e RJS_NATS_MONITOR_URLS=http://production-rabbit-jetstream-nats:8222 -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD=$NATSPassword" -e RJS_NATS_TLS_CA=/etc/nats-tls/ca.crt -e RJS_NATS_TLS_CERT=/etc/nats-tls/tls.crt -e RJS_NATS_TLS_KEY=/etc/nats-tls/tls.key -e RJS_NATS_TLS_SERVER_NAME=production-rabbit-jetstream-nats -e RJS_ADMIN_TOKEN=test-admin-token -e RJS_METADATA_REPLICAS=1 -v "${TLSDirectory}:/etc/nats-tls:ro" rabbit-jetstream/management:helm-test
 		$TLSReady = $false
 		foreach ($Attempt in 1..30) {
-			& docker run --rm --network $TLSNetwork busybox:1.37.0 wget -q -O - http://tls-management:8223/readyz 2>$null | Out-Null
+			& docker run --rm --network $TLSNetwork $BusyBoxImage wget -q -O - http://tls-management:8223/readyz 2>$null | Out-Null
 			if ($LASTEXITCODE -eq 0) { $TLSReady = $true; break }
 			Start-Sleep -Seconds 1
 		}
@@ -163,10 +166,10 @@ try {
 		& docker rm -f -v $TLSManagement $TLSNATS 2>$null | Out-Null
 		& docker network rm $TLSNetwork 2>$null | Out-Null
 	}
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set nats.tls.enabled=true 2>$null | Out-Null
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set nats.tls.enabled=true 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'mTLS Helm render accepted a missing certificate Secret' }
 
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set nats.replicaCount=2 2>$null | Out-Null
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set nats.replicaCount=2 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an even NATS replica count' }
 } finally {
     Pop-Location
