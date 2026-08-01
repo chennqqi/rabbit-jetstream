@@ -1,0 +1,106 @@
+openapi: 3.1.0
+info:
+  title: Rabbit JetStream Management API
+  version: 1.0.0
+  description: Stable v1 control-plane and operations contract.
+servers:
+  - url: /
+paths:
+  /healthz:
+    get: {operationId: health, responses: {'200': {$ref: '#/components/responses/JSON'}}}
+  /readyz:
+    get:
+      operationId: readiness
+      responses:
+        '200': {$ref: '#/components/responses/JSON'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/openapi.yaml:
+    get: {operationId: openapiV1, responses: {'200': {description: OpenAPI contract, content: {application/yaml: {schema: {type: string}}}}}}
+  /api/v1/info:
+    get: {operationId: info, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
+  /api/v1/cluster:
+    get: {operationId: cluster, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
+  /api/v1/nodes:
+    get: {operationId: listNodes, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
+  /api/v1/streams:
+    get:
+      operationId: listStreams
+      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/streams/{stream}:
+    parameters: [{$ref: '#/components/parameters/Stream'}]
+    get:
+      operationId: getStream
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '404': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/streams/{stream}/consumers:
+    parameters: [{$ref: '#/components/parameters/Stream'}]
+    get:
+      operationId: listConsumers
+      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/queues:
+    get:
+      operationId: listQueues
+      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/queues/{queue}:
+    parameters: [{$ref: '#/components/parameters/Queue'}]
+    get:
+      operationId: getQueue
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '404': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+    put:
+      operationId: applyQueue
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IfNoneMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Queue'}}}}
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}, '428': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+    delete:
+      operationId: deleteQueue
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IfNoneMatch'}
+        - {name: X-RJS-Confirm-Queue, in: header, required: true, schema: {type: string}}
+        - {name: force, in: query, schema: {type: boolean, default: false}}
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}, '428': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/controller:
+    get: {operationId: controllerStatus, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
+  /api/v1/audit:
+    get:
+      operationId: listAuditEvents
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+    Stream: {name: stream, in: path, required: true, schema: {type: string}}
+    Queue: {name: queue, in: path, required: true, schema: {type: string}}
+    IfMatch: {name: If-Match, in: header, schema: {type: string}}
+    IfNoneMatch: {name: If-None-Match, in: header, schema: {type: string}}
+  responses:
+    JSON: {description: Successful JSON response, content: {application/json: {schema: {type: object}}}}
+    Error: {description: Stable error envelope, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties: {code: {type: string}, message: {type: string}}
+    Queue:
+      type: object
+      required: [apiVersion, kind, metadata, spec]
+      properties:
+        apiVersion: {type: string, const: rabbit-jetstream.io/v1alpha1}
+        kind: {type: string, const: Queue}
+        metadata:
+          type: object
+          required: [name]
+          properties: {name: {type: string}}
+        spec: {type: object}

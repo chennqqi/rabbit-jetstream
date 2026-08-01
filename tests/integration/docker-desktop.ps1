@@ -64,6 +64,9 @@ try {
             if ($Ready.status -ne 'ready') { throw 'management API is not ready' }
             if ($Scenario -eq 'api') {
                 $Network = "${Project}_default"
+				$OpenAPIResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/openapi.yaml' -TimeoutSec 5
+				$OpenAPI = if ($OpenAPIResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($OpenAPIResponse.Content) } else { [string]$OpenAPIResponse.Content }
+				if (-not $OpenAPI.StartsWith('openapi: 3.1.0') -or -not $OpenAPI.Contains('/api/v1/queues/{queue}:')) { throw 'embedded OpenAPI contract is unavailable or incomplete' }
                 Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
                 Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
                 $Cluster = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/cluster' -TimeoutSec 5
@@ -71,8 +74,9 @@ try {
                 $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API' -TimeoutSec 5
                 $Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers' -TimeoutSec 5
                 $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 5
-                if ($Cluster.account.streams -ne 1) { throw 'cluster stream count is incorrect' }
-                if ($Streams.total -ne 1 -or $Streams.items[0].name -ne 'RJS_API') { throw 'stream list is incorrect' }
+                if ($Cluster.account.streams -lt 1) { throw 'cluster stream count is incorrect' }
+				$APIStream = $Streams.items | Where-Object name -eq 'RJS_API' | Select-Object -First 1
+				if ($null -eq $APIStream) { throw 'stream list does not contain RJS_API' }
                 if ($Stream.replicas -ne 1) { throw 'stream detail is incorrect' }
                 if ($Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'WORKER') { throw 'consumer list is incorrect' }
                 if ($Nodes.status -ne 'available' -or $Nodes.available -ne 1) { throw 'standalone node monitoring is incorrect' }

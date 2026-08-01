@@ -18,6 +18,7 @@ import (
 	"time"
 
 	adminui "github.com/chennqqi/rabbit-jetstream/admin-ui"
+	contract "github.com/chennqqi/rabbit-jetstream/api"
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
@@ -93,6 +94,11 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
+	mux.HandleFunc("GET /api/v1/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		_, _ = w.Write(contract.OpenAPI)
+	})
 	mux.HandleFunc("GET /api/v1/info", h.info)
 	mux.HandleFunc("GET /api/v1/cluster", h.cluster)
 	mux.HandleFunc("GET /api/v1/nodes", h.nodes)

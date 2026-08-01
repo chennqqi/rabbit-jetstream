@@ -6,6 +6,8 @@ The embedded read-only Admin UI is served at `/admin/` and consumes only the end
 
 The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitoring integrations. Responses use JSON. Collection endpoints return `items`, `total`, `offset`, and `limit`; the default limit is 50 and the maximum is 200. Queue writes are disabled unless an operator token is configured.
 
+The compatibility rules and machine-readable contract are defined in [Management API Versioning](api-versioning.md).
+
 Reported NATS and monitoring URLs never include URL user information. `rjsctl diagnostics collect` composes the read-only endpoints into a redacted, checksummed support bundle; see [Diagnostic Bundles](diagnostics.md).
 
 ## Endpoints
@@ -14,6 +16,7 @@ Reported NATS and monitoring URLs never include URL user information. `rjsctl di
 |---|---|
 | `GET /healthz` | Process liveness; does not imply JetStream availability |
 | `GET /readyz` | JetStream account readiness |
+| `GET /api/v1/openapi.yaml` | Embedded OpenAPI 3.1 contract for this v1 server build |
 | `GET /metrics` | Prometheus service, JetStream, Queue, node, controller, DLQ, and HTTP metrics |
 | `GET /api/v1/info` | Distribution and account usage summary |
 | `GET /api/v1/cluster` | Connected server and JetStream account/API usage |

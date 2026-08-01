@@ -55,7 +55,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 三/五节点 StatefulSet、双管理副本、PVC/PDB/NetworkPolicy 的 Helm chart；
 - [x] 三节点滚动升级/回滚自动化演练及容量规划手册；
 - [x] 全 account Stream/KV/Consumer 备份、校验、恢复与数据卷销毁演练；
-- 管理 API 版本兼容策略。
+- [x] 内嵌 OpenAPI v1 契约、路由一致性测试及破坏性变更 CI 门禁。
 
 验收：三节点故障与滚动升级演练通过；关键 SLI 有仪表盘和告警；权限与审计测试通过。
 

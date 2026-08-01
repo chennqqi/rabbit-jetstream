@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -25,6 +27,11 @@ jobs:
         run: go test -race ./...
       - name: Enforce repository coverage
         run: make coverage-check
+      - name: Reject breaking management API changes
+        run: |
+          if git show HEAD^:api/openapi.yaml >/tmp/rjs-openapi-baseline.yaml 2>/dev/null; then
+            go run ./tools/apicompat --baseline /tmp/rjs-openapi-baseline.yaml --current api/openapi.yaml
+          fi
       - name: Build management tools
         run: make build
 

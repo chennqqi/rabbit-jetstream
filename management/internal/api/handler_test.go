@@ -139,6 +139,14 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestOpenAPIContractIsServed(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	newTestHandler(&fakeBackend{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil))
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "application/yaml" || !strings.HasPrefix(recorder.Body.String(), "openapi: 3.1.0") {
+		t.Fatalf("status=%d headers=%v body=%s", recorder.Code, recorder.Header(), recorder.Body.String())
+	}
+}
+
 func TestReadyAndInfoEndpoints(t *testing.T) {
 	backend := &fakeBackend{account: jetstream.Account{MemoryUsed: 10, StorageUsed: 20, Streams: 2, Consumers: 3}}
 	h := newTestHandler(backend)
