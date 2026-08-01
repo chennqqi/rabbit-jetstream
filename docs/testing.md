@@ -29,3 +29,10 @@ Run the same checks through Docker Desktop's Linux engine:
 make test-linux-smoke
 make test-linux-fault
 ```
+
+On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
+
+```powershell
+.\tests\integration\docker-desktop.ps1 standalone
+.\tests\integration\docker-desktop.ps1 fault
+```

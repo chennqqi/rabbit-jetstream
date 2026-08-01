@@ -11,4 +11,5 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags=
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/rjs-management /usr/local/bin/rjs-management
 EXPOSE 8223
+HEALTHCHECK --interval=5s --timeout=3s --retries=12 CMD ["/usr/local/bin/rjs-management", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/rjs-management"]
