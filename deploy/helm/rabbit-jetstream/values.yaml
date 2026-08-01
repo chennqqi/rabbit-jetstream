@@ -6,6 +6,7 @@ nats:
   image:
     repository: rabbit-jetstream/nats-server
     tag: local
+    digest: ""
     pullPolicy: IfNotPresent
   storage:
     size: 20Gi
@@ -29,6 +30,7 @@ management:
   image:
     repository: rabbit-jetstream/management
     tag: local
+    digest: ""
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP

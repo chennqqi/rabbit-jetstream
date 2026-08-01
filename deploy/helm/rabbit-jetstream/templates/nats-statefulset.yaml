@@ -34,7 +34,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: nats
-          image: "{{ .Values.nats.image.repository }}:{{ .Values.nats.image.tag }}"
+          image: "{{ include "rabbit-jetstream.natsImage" . }}"
           imagePullPolicy: {{ .Values.nats.image.pullPolicy }}
           args: ["-c", "/etc/nats/nats.conf"]
           env:

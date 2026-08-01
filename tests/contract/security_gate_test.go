@@ -75,4 +75,9 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 			t.Errorf("%s does not enforce the critical-package coverage gate", file)
 		}
 	}
+	schema := read("deploy/helm/rabbit-jetstream/values.schema.json")
+	helpers := read("deploy/helm/rabbit-jetstream/templates/_helpers.tpl")
+	if !strings.Contains(schema, `"digest": {"type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$"}`) || !strings.Contains(helpers, `printf "%s@%s"`) {
+		t.Error("Helm chart no longer validates and renders immutable image digests")
+	}
 }

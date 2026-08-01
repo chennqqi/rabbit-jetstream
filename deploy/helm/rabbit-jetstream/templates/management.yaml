@@ -52,7 +52,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: management
-          image: "{{ .Values.management.image.repository }}:{{ .Values.management.image.tag }}"
+          image: "{{ include "rabbit-jetstream.managementImage" . }}"
           imagePullPolicy: {{ .Values.management.image.pullPolicy }}
           env:
             - {name: RJS_NATS_URL, value: "{{ if .Values.nats.tls.enabled }}tls{{ else }}nats{{ end }}://{{ include "rabbit-jetstream.fullname" . }}-nats:4222"}

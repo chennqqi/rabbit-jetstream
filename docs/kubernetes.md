@@ -4,15 +4,15 @@ The chart under `deploy/helm/rabbit-jetstream` deploys the server distribution a
 
 ## Install
 
-Publish the repository images with immutable tags, then provide those tags and a production StorageClass:
+Publish the repository images, resolve their immutable registry digests, then provide those digests and a production StorageClass. When `digest` is non-empty it takes precedence over `tag`:
 
 ```bash
 helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream \
   --namespace messaging --create-namespace \
   --set nats.image.repository=registry.example/rabbit-jetstream/nats-server \
-  --set nats.image.tag=2.14.1-rjs.1 \
+  --set-string nats.image.digest=sha256:<64-hex-digest> \
   --set management.image.repository=registry.example/rabbit-jetstream/management \
-  --set management.image.tag=0.1.0 \
+  --set-string management.image.digest=sha256:<64-hex-digest> \
   --set nats.storage.storageClass=fast-retain
 helm test rabbit-jetstream --namespace messaging
 ```

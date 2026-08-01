@@ -114,6 +114,12 @@ try {
     $ExistingSecret = & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set auth.existingSecret=production-auth
     if ($LASTEXITCODE -ne 0 -or ($ExistingSecret -join "`n") -match '(?m)^kind: Secret$') { throw 'existing Secret mode rendered a generated Secret' }
 
+    $Digest = 'sha256:' + ('a' * 64)
+    $DigestRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set-string "nats.image.digest=$Digest" --set-string "management.image.digest=$Digest") -join "`n"
+    if ($LASTEXITCODE -ne 0 -or -not $DigestRendered.Contains("rabbit-jetstream/nats-server@$Digest") -or -not $DigestRendered.Contains("rabbit-jetstream/management@$Digest")) { throw 'immutable image digests were not rendered correctly' }
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set-string nats.image.digest=sha256:bad 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an invalid image digest' }
+
     $TLSRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'mTLS Helm render failed' }
     foreach ($Required in @('tls://production-rabbit-jetstream-nats:4222', 'RJS_NATS_TLS_CA', 'RJS_NATS_TLS_CERT', 'RJS_NATS_TLS_KEY', 'verify: true', 'secretName: production-nats-server-tls', 'secretName: production-nats-client-tls')) {

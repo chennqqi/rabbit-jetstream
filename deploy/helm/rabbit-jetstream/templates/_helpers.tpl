@@ -13,6 +13,14 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end }}
 
+{{- define "rabbit-jetstream.natsImage" -}}
+{{- if .Values.nats.image.digest -}}{{ printf "%s@%s" .Values.nats.image.repository .Values.nats.image.digest }}{{- else -}}{{ printf "%s:%s" .Values.nats.image.repository .Values.nats.image.tag }}{{- end -}}
+{{- end }}
+
+{{- define "rabbit-jetstream.managementImage" -}}
+{{- if .Values.management.image.digest -}}{{ printf "%s@%s" .Values.management.image.repository .Values.management.image.digest }}{{- else -}}{{ printf "%s:%s" .Values.management.image.repository .Values.management.image.tag }}{{- end -}}
+{{- end }}
+
 {{- define "rabbit-jetstream.authSecret" -}}
 {{- default (printf "%s-auth" (include "rabbit-jetstream.fullname" .)) .Values.auth.existingSecret }}
 {{- end }}
