@@ -14,19 +14,28 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/observability"
 )
 
 type App struct {
-	cfg        config.Config
-	logger     *slog.Logger
-	client     *jetstream.Client
-	server     *http.Server
-	controller *controller.Controller
+	cfg               config.Config
+	logger            *slog.Logger
+	client            *jetstream.Client
+	server            *http.Server
+	controller        *controller.Controller
+	shutdownTelemetry func(context.Context) error
 }
 
 func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
+	telemetryCtx, telemetryCancel := context.WithTimeout(context.Background(), cfg.ConnectTimeout)
+	defer telemetryCancel()
+	shutdownTelemetry, err := observability.Init(telemetryCtx, observability.Config{Endpoint: cfg.OTLPTraceEndpoint, ServiceName: cfg.Name, ServiceVersion: version, SampleRatio: cfg.OTELSampleRatio, AllowInsecure: cfg.OTELAllowInsecure})
+	if err != nil {
+		return nil, err
+	}
 	client, err := jetstream.Connect(cfg)
 	if err != nil {
+		_ = shutdownTelemetry(context.Background())
 		return nil, err
 	}
 	control := controller.New(client, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
@@ -37,6 +46,7 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 		oidcVerifier, err = managementauth.NewOIDC(ctx, managementauth.OIDCConfig{Issuer: cfg.OIDCIssuer, Audience: cfg.OIDCAudience, RoleClaim: cfg.OIDCRoleClaim, OperatorRole: cfg.OIDCOperatorRole, AuditorRole: cfg.OIDCAuditorRole, AllowInsecureIssuer: cfg.OIDCAllowInsecure})
 		if err != nil {
 			client.Close()
+			_ = shutdownTelemetry(context.Background())
 			return nil, err
 		}
 	}
@@ -53,7 +63,7 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 		}),
 		ReadHeaderTimeout: cfg.ConnectTimeout,
 	}
-	return &App{cfg: cfg, logger: logger, client: client, server: server, controller: control}, nil
+	return &App{cfg: cfg, logger: logger, client: client, server: server, controller: control, shutdownTelemetry: shutdownTelemetry}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
@@ -78,4 +88,11 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
-func (a *App) Close() { a.client.Close() }
+func (a *App) Close() {
+	a.client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.ShutdownTimeout)
+	defer cancel()
+	if err := a.shutdownTelemetry(ctx); err != nil {
+		a.logger.Error("flush telemetry", "error", err)
+	}
+}

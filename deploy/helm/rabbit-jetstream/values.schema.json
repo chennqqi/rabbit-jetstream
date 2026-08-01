@@ -21,7 +21,7 @@
     },
     "management": {
       "type": "object", "additionalProperties": false,
-      "required": ["replicaCount", "image", "service", "resources"],
+      "required": ["replicaCount", "image", "service", "resources", "telemetry"],
       "properties": {
         "replicaCount": {"type": "integer", "minimum": 1},
         "image": {"$ref": "#/definitions/image"},
@@ -30,7 +30,16 @@
           "required": ["type", "port"],
           "properties": {"type": {"type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"]}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}
         },
-        "resources": {"type": "object"}
+        "resources": {"type": "object"},
+        "telemetry": {
+          "type": "object", "additionalProperties": false,
+          "required": ["tracesEndpoint", "sampleRatio", "allowInsecure"],
+          "properties": {
+            "tracesEndpoint": {"type": "string"},
+            "sampleRatio": {"type": "number", "minimum": 0, "maximum": 1},
+            "allowInsecure": {"type": "boolean"}
+          }
+        }
       }
     },
     "auth": {

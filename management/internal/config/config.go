@@ -27,6 +27,9 @@ type Config struct {
 	OIDCOperatorRole   string
 	OIDCAuditorRole    string
 	OIDCAllowInsecure  bool
+	OTLPTraceEndpoint  string
+	OTELSampleRatio    float64
+	OTELAllowInsecure  bool
 	MetadataBucket     string
 	MetadataReplicas   int
 	InstanceID         string
@@ -61,6 +64,9 @@ func FromEnv() Config {
 		OIDCOperatorRole:   env("RJS_OIDC_OPERATOR_ROLE", "rabbit-jetstream-operator"),
 		OIDCAuditorRole:    env("RJS_OIDC_AUDITOR_ROLE", "rabbit-jetstream-auditor"),
 		OIDCAllowInsecure:  boolean("RJS_OIDC_ALLOW_INSECURE_ISSUER", false),
+		OTLPTraceEndpoint:  os.Getenv("RJS_OTEL_TRACES_ENDPOINT"),
+		OTELSampleRatio:    ratio("RJS_OTEL_SAMPLE_RATIO", 0.1),
+		OTELAllowInsecure:  boolean("RJS_OTEL_ALLOW_INSECURE", false),
 		MetadataBucket:     env("RJS_METADATA_BUCKET", "RJS_META"),
 		MetadataReplicas:   replicas("RJS_METADATA_REPLICAS", 1),
 		InstanceID:         env("RJS_INSTANCE_ID", defaultInstanceID()),
@@ -71,6 +77,14 @@ func FromEnv() Config {
 		ConnectTimeout:     duration("RJS_CONNECT_TIMEOUT", 5*time.Second),
 		ShutdownTimeout:    duration("RJS_SHUTDOWN_TIMEOUT", 10*time.Second),
 	}
+}
+
+func ratio(key string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(os.Getenv(key), 64)
+	if err != nil || value < 0 || value > 1 {
+		return fallback
+	}
+	return value
 }
 
 func tokens(legacy, values string) []string {

@@ -18,6 +18,9 @@
 | `RJS_OIDC_OPERATOR_ROLE` | `rabbit-jetstream-operator` | 映射为 operator 的 IdP 角色 |
 | `RJS_OIDC_AUDITOR_ROLE` | `rabbit-jetstream-auditor` | 映射为 auditor 的 IdP 角色 |
 | `RJS_OIDC_ALLOW_INSECURE_ISSUER` | `false` | 仅本地测试允许 HTTP issuer；生产环境不得开启 |
+| `RJS_OTEL_TRACES_ENDPOINT` | 空 | OTLP/HTTP traces 完整 URL；为空时 tracing 关闭 |
+| `RJS_OTEL_SAMPLE_RATIO` | `0.1` | 父级感知的采样率，范围 0–1 |
+| `RJS_OTEL_ALLOW_INSECURE` | `false` | 仅隔离测试环境允许 HTTP collector |
 | `RJS_METADATA_BUCKET` | `RJS_META` | Queue 声明使用的 JetStream KV bucket |
 | `RJS_METADATA_REPLICAS` | `1` | KV 副本数，仅允许 1、3、5；生产三节点集群应设为 3 |
 | `RJS_INSTANCE_ID` | 主机名与进程号 | 管理实例唯一标识；多副本部署必须唯一 |

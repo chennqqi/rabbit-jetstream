@@ -47,7 +47,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 - [x] 队列、consumer、消息积压、节点和集群只读页面；
 - [x] Prometheus 指标、固定版本部署 profile 和关键告警模板；
-- OpenTelemetry traces/metrics；
+- [x] OpenTelemetry OTLP/HTTP traces、W3C 上下文提取、Queue 控制面属性及退出 flush；
+- OpenTelemetry metrics 导出（当前生产指标由 Prometheus endpoint 提供）；
 - [x] 带脱敏、部分失败记录和 SHA-256 清单的 CLI 诊断包；
 - [x] 基于 JetStream 的写前意图/写后结果审计日志、受保护查询 API 与 CLI；
 - [x] 静态 operator/auditor 最小 RBAC 与重叠 Token 无中断轮换；

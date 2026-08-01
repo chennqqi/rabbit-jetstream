@@ -17,6 +17,10 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	adminui "github.com/chennqqi/rabbit-jetstream/admin-ui"
 	contract "github.com/chennqqi/rabbit-jetstream/api"
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
@@ -125,7 +129,7 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		}
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
-	return h.logging(h.instrument(mux))
+	return otelhttp.NewHandler(h.logging(h.instrument(mux)), "rabbit-jetstream.management.http")
 }
 
 func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +198,8 @@ func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	result, err := h.client.DeleteQueueConditional(ctx, name, force, precondition)
+	span := trace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("rjs.queue.name", name), attribute.Bool("rjs.queue.force", force))
 	if err != nil {
 		status, code := backendErrorDetails(err)
 		if !h.recordAuditOutcome(w, intent, "failed", status, code, "") {
@@ -247,6 +253,8 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	result, err := h.client.ApplyConditional(ctx, plan, precondition)
+	span := trace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("rjs.queue.name", plan.Queue), attribute.String("rjs.queue.revision", plan.Revision))
 	if err != nil {
 		status, code := backendErrorDetails(err)
 		if !h.recordAuditOutcome(w, intent, "failed", status, code, plan.Revision) {
@@ -434,7 +442,9 @@ func auditRequestID(r *http.Request) string {
 	}) == -1 {
 		return value
 	}
-	return randomAuditID()
+	value = randomAuditID()
+	r.Header.Set("X-Request-ID", value)
+	return value
 }
 
 func randomAuditID() string {
@@ -565,7 +575,15 @@ func (h *Handler) logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		next.ServeHTTP(w, r)
-		h.logger.Debug("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(started))
+		attributes := []any{"method", r.Method, "path", r.URL.Path, "duration", time.Since(started)}
+		spanContext := trace.SpanContextFromContext(r.Context())
+		if spanContext.IsValid() {
+			attributes = append(attributes, "trace_id", spanContext.TraceID().String(), "span_id", spanContext.SpanID().String())
+		}
+		if requestID := r.Header.Get("X-Request-ID"); requestID != "" {
+			attributes = append(attributes, "request_id", requestID)
+		}
+		h.logger.Debug("http request", attributes...)
 	})
 }
 

@@ -82,6 +82,9 @@ spec:
             - {name: RJS_OIDC_OPERATOR_ROLE, value: {{ .Values.auth.oidc.operatorRole | quote }}}
             - {name: RJS_OIDC_AUDITOR_ROLE, value: {{ .Values.auth.oidc.auditorRole | quote }}}
             - {name: RJS_OIDC_ALLOW_INSECURE_ISSUER, value: {{ .Values.auth.oidc.allowInsecureIssuer | quote }}}
+            - {name: RJS_OTEL_TRACES_ENDPOINT, value: {{ .Values.management.telemetry.tracesEndpoint | quote }}}
+            - {name: RJS_OTEL_SAMPLE_RATIO, value: {{ .Values.management.telemetry.sampleRatio | quote }}}
+            - {name: RJS_OTEL_ALLOW_INSECURE, value: {{ .Values.management.telemetry.allowInsecure | quote }}}
             - {name: RJS_METADATA_REPLICAS, value: {{ .Values.nats.replicaCount | quote }}}
             - {name: RJS_CONTROLLER_INTERVAL, value: {{ .Values.controller.interval | quote }}}
             - {name: RJS_CONTROLLER_LEASE_TTL, value: {{ .Values.controller.leaseTTL | quote }}}

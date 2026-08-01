@@ -19,6 +19,9 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	t.Setenv("RJS_OIDC_OPERATOR_ROLE", "platform-ops")
 	t.Setenv("RJS_OIDC_AUDITOR_ROLE", "platform-audit")
 	t.Setenv("RJS_OIDC_ALLOW_INSECURE_ISSUER", "true")
+	t.Setenv("RJS_OTEL_TRACES_ENDPOINT", "https://collector.example/v1/traces")
+	t.Setenv("RJS_OTEL_SAMPLE_RATIO", "0.25")
+	t.Setenv("RJS_OTEL_ALLOW_INSECURE", "true")
 	t.Setenv("RJS_METADATA_BUCKET", "TEST_META")
 	t.Setenv("RJS_METADATA_REPLICAS", "3")
 	t.Setenv("RJS_INSTANCE_ID", "management-2")
@@ -39,6 +42,9 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	}
 	if cfg.OIDCIssuer != "https://id.example.com" || cfg.OIDCAudience != "management" || cfg.OIDCRoleClaim != "groups" || cfg.OIDCOperatorRole != "platform-ops" || cfg.OIDCAuditorRole != "platform-audit" || !cfg.OIDCAllowInsecure {
 		t.Fatalf("OIDC config = %#v", cfg)
+	}
+	if cfg.OTLPTraceEndpoint != "https://collector.example/v1/traces" || cfg.OTELSampleRatio != 0.25 || !cfg.OTELAllowInsecure {
+		t.Fatalf("telemetry config = %#v", cfg)
 	}
 	if cfg.MetadataBucket != "TEST_META" || cfg.MetadataReplicas != 3 {
 		t.Fatalf("metadata config = %#v", cfg)
@@ -87,5 +93,14 @@ func TestInvalidDurationUsesSafeDefault(t *testing.T) {
 	t.Setenv("RJS_CONNECT_TIMEOUT", "invalid")
 	if got := FromEnv().ConnectTimeout; got != 5*time.Second {
 		t.Fatalf("connect timeout = %s", got)
+	}
+}
+
+func TestInvalidSampleRatioUsesSafeDefault(t *testing.T) {
+	for _, value := range []string{"invalid", "-1", "2"} {
+		t.Setenv("RJS_OTEL_SAMPLE_RATIO", value)
+		if got := FromEnv().OTELSampleRatio; got != 0.1 {
+			t.Fatalf("value=%q ratio=%v", value, got)
+		}
 	}
 }
