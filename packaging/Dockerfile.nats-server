@@ -1,0 +1,11 @@
+FROM golang:1.26-alpine AS build
+WORKDIR /src/upstream/nats-server
+COPY upstream/nats-server/ ./
+RUN CGO_ENABLED=0 go build -trimpath -o /out/nats-server .
+
+FROM alpine:3.23
+RUN addgroup -S nats && adduser -S -G nats nats
+COPY --from=build /out/nats-server /usr/local/bin/nats-server
+USER nats
+EXPOSE 4222 6222 8222
+ENTRYPOINT ["/usr/local/bin/nats-server"]

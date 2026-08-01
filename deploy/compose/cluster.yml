@@ -1,0 +1,31 @@
+x-nats: &nats
+  image: rabbit-jetstream/nats-server:local
+  build:
+    context: ../..
+    dockerfile: packaging/Dockerfile.nats-server
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+    interval: 5s
+    timeout: 2s
+    retries: 12
+
+services:
+  nats-1:
+    <<: *nats
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports: ["4222:4222", "8222:8222"]
+    volumes: ["../nats/cluster-1.conf:/etc/nats/nats.conf:ro", "nats-1:/data"]
+  nats-2:
+    <<: *nats
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes: ["../nats/cluster-2.conf:/etc/nats/nats.conf:ro", "nats-2:/data"]
+  nats-3:
+    <<: *nats
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes: ["../nats/cluster-3.conf:/etc/nats/nats.conf:ro", "nats-3:/data"]
+
+volumes:
+  nats-1:
+  nats-2:
+  nats-3:
