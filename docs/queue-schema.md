@@ -13,7 +13,8 @@ Parsing is strict: unknown fields, multiple YAML documents, malformed durations,
 ## Current Fields
 
 - `metadata.name`: letters, digits, `_`, and `-`; maps to logical resource identity.
-- `spec.subjects`: one or more NATS subjects; `*` must occupy a whole token and `>` must be final.
+- `spec.subjects`: one or more raw NATS subjects; `*` must occupy a whole token and `>` must be final.
+- `spec.bindings`: exchange bindings used by the native SDK/gateway. Each binding has an `exchange`, a `type` (`direct`, `topic`, or `fanout`), and keys where applicable. It is mutually exclusive with `subjects`.
 - `spec.replicas`: `1`, `3`, or `5`. Production clusters normally use `3`.
 - `spec.storage`: `file` by default, or `memory`.
 - `retention`: optional `maxAge`, `maxBytes`, and `maxMessages`; zero means unlimited.
@@ -26,7 +27,7 @@ Byte sizes accept binary units (`KiB`, `MiB`, `GiB`), decimal units (`KB`, `MB`,
 
 Diff output is deterministic and classifies every change:
 
-- `safe`: labels, added subjects, or expanded retention limits;
+- `safe`: labels, added subjects/bindings, or expanded retention limits;
 - `disruptive`: replicas, delivery behavior, DLQ, or removed subjects;
 - `destructive`: identity, storage type, or reduced retention limits.
 

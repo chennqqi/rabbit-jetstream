@@ -25,7 +25,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 所有权校验、非空保护和显式确认的幂等 Queue delete；
 - [x] 基于 JetStream KV 的 Queue 声明/revision 持久化与重启恢复查询；
 - 幂等创建/查询/删除 stream 与 consumer；
-- direct、topic、fanout 路由约定；
+- [x] direct、topic、fanout Queue 绑定、队列级 subject 协议与真实 JetStream 路由测试；
 - TTL、长度限制、ack/redelivery、DLQ 基础策略；
 - CLI/API 的声明式 apply、diff、delete；
 - [x] 基于 JetStream KV CAS 租约的 leader election 与 leader-only 持续安全 reconcile；

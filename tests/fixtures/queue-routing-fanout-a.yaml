@@ -1,0 +1,8 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata: {name: routing_fanout_a}
+spec:
+  replicas: 1
+  bindings:
+    - exchange: announcements
+      type: fanout

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'controller', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -41,11 +41,11 @@ function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
-		if ($Scenario -in @('apply', 'delete')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -in @('apply', 'delete', 'routing')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
             $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
@@ -115,6 +115,28 @@ try {
 				if ($LASTEXITCODE -eq 0) { throw 'foreign Stream deletion unexpectedly succeeded' }
 				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -TimeoutSec 5
 				if ($Foreign.name -ne 'RJSQ_foreign') { throw 'foreign Stream ownership protection failed' }
+			}
+			if ($Scenario -eq 'routing') {
+				$Network = "${Project}_default"
+				foreach ($Fixture in @('queue-routing-direct.yaml', 'queue-routing-topic.yaml', 'queue-routing-fanout-a.yaml', 'queue-routing-fanout-b.yaml')) {
+					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+				}
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.created direct-match
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.deleted direct-miss
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.orders.created topic-star-match
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.orders.created.eu topic-star-miss
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.audit topic-hash-zero
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.audit.security.login topic-hash-many
+				# Native SDK/gateway resolves fanout to both queue-scoped targets.
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_fanout_a.x.announcements.fanout fanout-message
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_fanout_b.x.announcements.fanout fanout-message
+				$Direct = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_direct' -TimeoutSec 5
+				$Topic = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_topic' -TimeoutSec 5
+				$FanoutA = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_a' -TimeoutSec 5
+				$FanoutB = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_b' -TimeoutSec 5
+				if ($Direct.messages -ne 1) { throw "direct routing stored $($Direct.messages), expected 1" }
+				if ($Topic.messages -ne 3) { throw "topic routing stored $($Topic.messages), expected 3" }
+				if ($FanoutA.messages -ne 1 -or $FanoutB.messages -ne 1) { throw 'fanout did not copy to both Queues' }
 			}
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {

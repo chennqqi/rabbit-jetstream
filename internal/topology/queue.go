@@ -37,11 +37,18 @@ type Metadata struct {
 
 type QueueSpec struct {
 	Subjects   []string          `yaml:"subjects" json:"subjects"`
+	Bindings   []Binding         `yaml:"bindings,omitempty" json:"bindings,omitempty"`
 	Replicas   int               `yaml:"replicas" json:"replicas"`
 	Storage    string            `yaml:"storage" json:"storage"`
 	Retention  RetentionPolicy   `yaml:"retention,omitempty" json:"retention,omitempty"`
 	Delivery   DeliveryPolicy    `yaml:"delivery,omitempty" json:"delivery,omitempty"`
 	DeadLetter *DeadLetterPolicy `yaml:"deadLetter,omitempty" json:"deadLetter,omitempty"`
+}
+
+type Binding struct {
+	Exchange string   `yaml:"exchange" json:"exchange"`
+	Type     string   `yaml:"type" json:"type"`
+	Keys     []string `yaml:"keys,omitempty" json:"keys,omitempty"`
 }
 
 type RetentionPolicy struct {
@@ -119,6 +126,19 @@ func (q *Queue) Default() {
 		q.Spec.Delivery.MaxDeliver = &value
 	}
 	sort.Strings(q.Spec.Subjects)
+	for index := range q.Spec.Bindings {
+		sort.Strings(q.Spec.Bindings[index].Keys)
+	}
+	sort.Slice(q.Spec.Bindings, func(i, j int) bool {
+		left, right := q.Spec.Bindings[i], q.Spec.Bindings[j]
+		if left.Exchange != right.Exchange {
+			return left.Exchange < right.Exchange
+		}
+		if left.Type != right.Type {
+			return left.Type < right.Type
+		}
+		return strings.Join(left.Keys, "\x00") < strings.Join(right.Keys, "\x00")
+	})
 }
 
 func (q Queue) Validate() error {
@@ -132,8 +152,50 @@ func (q Queue) Validate() error {
 	if !queueNamePattern.MatchString(q.Metadata.Name) {
 		problems = append(problems, "metadata.name must contain only letters, digits, '_' or '-'")
 	}
-	if len(q.Spec.Subjects) == 0 {
-		problems = append(problems, "spec.subjects must contain at least one subject")
+	if len(q.Spec.Subjects) == 0 && len(q.Spec.Bindings) == 0 {
+		problems = append(problems, "spec.subjects or spec.bindings must contain at least one entry")
+	}
+	if len(q.Spec.Subjects) > 0 && len(q.Spec.Bindings) > 0 {
+		problems = append(problems, "spec.subjects and spec.bindings are mutually exclusive")
+	}
+	for index, binding := range q.Spec.Bindings {
+		prefix := fmt.Sprintf("spec.bindings[%d]", index)
+		if !queueNamePattern.MatchString(binding.Exchange) {
+			problems = append(problems, prefix+".exchange is invalid")
+		}
+		switch binding.Type {
+		case "direct":
+			if len(binding.Keys) == 0 {
+				problems = append(problems, prefix+".keys must not be empty for direct")
+			}
+			for _, key := range binding.Keys {
+				if err := validateRoutingKey(key, false); err != nil {
+					problems = append(problems, prefix+".keys: "+err.Error())
+				}
+			}
+		case "topic":
+			if len(binding.Keys) == 0 {
+				problems = append(problems, prefix+".keys must not be empty for topic")
+			}
+			for _, key := range binding.Keys {
+				if err := validateRoutingKey(key, true); err != nil {
+					problems = append(problems, prefix+".keys: "+err.Error())
+				}
+			}
+		case "fanout":
+			if len(binding.Keys) != 0 {
+				problems = append(problems, prefix+".keys must be empty for fanout")
+			}
+		default:
+			problems = append(problems, prefix+".type must be direct, topic, or fanout")
+		}
+		bindingKeys := make(map[string]struct{}, len(binding.Keys))
+		for _, key := range binding.Keys {
+			if _, exists := bindingKeys[key]; exists {
+				problems = append(problems, prefix+".keys contains duplicate "+key)
+			}
+			bindingKeys[key] = struct{}{}
+		}
 	}
 	seen := make(map[string]struct{})
 	for _, subject := range q.Spec.Subjects {
@@ -169,6 +231,28 @@ func (q Queue) Validate() error {
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("invalid Queue: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func validateRoutingKey(value string, pattern bool) error {
+	if value == "" {
+		return errors.New("routing key cannot be empty")
+	}
+	tokens := strings.Split(value, ".")
+	for index, token := range tokens {
+		if token == "" || strings.ContainsAny(token, " \t\r\n>") {
+			return fmt.Errorf("routing key %q has an invalid token", value)
+		}
+		if token == "*" && pattern {
+			continue
+		}
+		if token == "#" && pattern && index == len(tokens)-1 {
+			continue
+		}
+		if strings.ContainsAny(token, "*#") {
+			return fmt.Errorf("routing key %q has an invalid wildcard", value)
+		}
 	}
 	return nil
 }

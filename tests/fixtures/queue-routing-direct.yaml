@@ -1,0 +1,9 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata: {name: routing_direct}
+spec:
+  replicas: 1
+  bindings:
+    - exchange: commerce
+      type: direct
+      keys: [orders.created]

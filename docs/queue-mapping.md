@@ -25,7 +25,17 @@ Every plan includes a deterministic 128-bit revision derived from the normalized
 
 JetStream `MaxDeliver` stops delivery attempts but does not automatically move the message to another Stream. A Queue with `deadLetter` therefore plans an `advisory-republish` worker and declares the target Queue as a dependency. Until that server-side worker exists, apply must reject DLQ-enabled plans rather than silently promise RabbitMQ DLX behavior.
 
-This mapping intentionally covers Queue semantics only. Exchange-style direct/topic/fanout declarations and priority subjects require separate versioned contracts before they can enter an apply controller.
+## Exchange Routing
+
+A Queue may declare `bindings` instead of raw `subjects`. Direct keys are literal, topic keys use RabbitMQ-style `*` (one token) and terminal `#` (zero or more tokens), and fanout has no key. The plan converts each target to a queue-scoped subject:
+
+```text
+rjs.q.<queue>.x.<exchange>.<type>[.<routing-key>]
+```
+
+Queue scoping is required because JetStream rejects overlapping subjects across WorkQueue Streams. The native SDK (or future AMQP gateway) resolves declarations and publishes one copy to every matching queue target; fanout therefore produces multiple publishes. JetStream remains the durable delivery layer and its source is not modified. For `audit.#`, the plan subscribes to both `...audit` and `...audit.>` so `#` includes zero tokens.
+
+See `examples/queues/routed.yaml` and run `rjsctl queue plan` to inspect the exact targets. Priority subjects remain a separate SDK contract.
 
 ## Read-only Reconcile
 

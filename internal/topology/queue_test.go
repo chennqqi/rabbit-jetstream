@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -91,5 +92,61 @@ func TestParseByteSize(t *testing.T) {
 		if _, err := parseByteSize(input); err == nil {
 			t.Fatalf("parseByteSize(%q) succeeded", input)
 		}
+	}
+}
+
+func TestParseQueueBindingsDefaultsAndNormalizes(t *testing.T) {
+	input := `apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata: {name: routed}
+spec:
+  replicas: 1
+  bindings:
+    - exchange: events
+      type: topic
+      keys: [orders.#, orders.created]
+    - exchange: broadcasts
+      type: fanout
+`
+	queue, err := ParseQueue(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queue.Spec.Bindings[0].Exchange != "broadcasts" || queue.Spec.Bindings[1].Keys[0] != "orders.#" {
+		t.Fatalf("bindings not normalized: %#v", queue.Spec.Bindings)
+	}
+}
+
+func TestQueueBindingValidationFailures(t *testing.T) {
+	base := `apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata: {name: routed}
+spec:
+  replicas: 1
+  bindings:
+    - exchange: events
+      type: %s
+      keys: [%s]
+`
+	for _, test := range []struct{ name, kind, keys, want string }{
+		{"unknown type", "headers", "key", "type must be"},
+		{"direct wildcard", "direct", "orders.*", "invalid wildcard"},
+		{"topic hash middle", "topic", "orders.#.created", "invalid wildcard"},
+		{"fanout keys", "fanout", "key", "keys must be empty"},
+		{"duplicate keys", "topic", "orders.*, orders.*", "duplicate"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseQueue(strings.NewReader(fmt.Sprintf(base, test.kind, test.keys)))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v want=%q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestQueueRejectsSubjectsAndBindingsTogether(t *testing.T) {
+	input := strings.Replace(validQueueYAML, "  replicas: 3", "  replicas: 3\n  bindings:\n    - {exchange: events, type: fanout}", 1)
+	if _, err := ParseQueue(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("error=%v", err)
 	}
 }

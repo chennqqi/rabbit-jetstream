@@ -1,0 +1,19 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: commerce_events
+spec:
+  bindings:
+    - exchange: commerce
+      type: direct
+      keys: [orders.created]
+    - exchange: commerce
+      type: topic
+      keys: [orders.*, audit.#]
+    - exchange: announcements
+      type: fanout
+  replicas: 3
+  storage: file
+  delivery:
+    ackWait: 30s
+    maxDeliver: 5

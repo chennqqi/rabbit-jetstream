@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 const PlanAPIVersion = "rabbit-jetstream.io/plan/v1alpha1"
@@ -19,6 +20,14 @@ type Plan struct {
 	DeadLetter   *DeadLetterPlan `json:"deadLetter,omitempty"`
 	Dependencies []string        `json:"dependencies"`
 	Warnings     []string        `json:"warnings"`
+	Routing      []RoutingPlan   `json:"routing,omitempty"`
+}
+
+type RoutingPlan struct {
+	Exchange string   `json:"exchange"`
+	Type     string   `json:"type"`
+	Keys     []string `json:"keys"`
+	Subjects []string `json:"subjects"`
 }
 
 type StreamPlan struct {
@@ -66,22 +75,26 @@ func BuildPlan(queue Queue) (Plan, error) {
 	streamName := StreamName(queue.Metadata.Name)
 	consumerName := ConsumerName(queue.Metadata.Name)
 	metadata := resourceMetadata(queue, revision)
+	subjects, routing, err := routingPlan(queue)
+	if err != nil {
+		return Plan{}, err
+	}
 	plan := Plan{
 		APIVersion: PlanAPIVersion, Queue: queue.Metadata.Name, Revision: revision,
 		Stream: StreamPlan{
-			Name: streamName, Subjects: append([]string(nil), queue.Spec.Subjects...),
+			Name: streamName, Subjects: subjects,
 			Storage: queue.Spec.Storage, Replicas: queue.Spec.Replicas,
 			Retention: "workqueue", Discard: "old",
 			MaxAgeNanos: int64(queue.Spec.Retention.MaxAge), MaxBytes: int64(queue.Spec.Retention.MaxBytes),
 			MaxMessages: queue.Spec.Retention.MaxMessages, Metadata: cloneMap(metadata),
 		},
 		Consumer: ConsumerPlan{
-			Name: consumerName, Stream: streamName, Mode: "pull", FilterSubjects: append([]string(nil), queue.Spec.Subjects...),
+			Name: consumerName, Stream: streamName, Mode: "pull", FilterSubjects: append([]string(nil), subjects...),
 			DeliverPolicy: "all",
 			AckPolicy:     "explicit", AckWaitNanos: int64(durationValue(queue.Spec.Delivery.AckWait)),
 			MaxDeliver: intValue(queue.Spec.Delivery.MaxDeliver), ReplayPolicy: "instant", Metadata: cloneMap(metadata),
 		},
-		Dependencies: []string{}, Warnings: []string{},
+		Dependencies: []string{}, Warnings: []string{}, Routing: routing,
 	}
 	if queue.Spec.DeadLetter != nil {
 		plan.Dependencies = append(plan.Dependencies, queue.Spec.DeadLetter.Queue)
@@ -93,6 +106,105 @@ func BuildPlan(queue Queue) (Plan, error) {
 	}
 	sort.Strings(plan.Dependencies)
 	return plan, nil
+}
+
+func routingPlan(queue Queue) ([]string, []RoutingPlan, error) {
+	if len(queue.Spec.Bindings) == 0 {
+		return append([]string(nil), queue.Spec.Subjects...), []RoutingPlan{}, nil
+	}
+	all := make(map[string]struct{})
+	routing := make([]RoutingPlan, 0, len(queue.Spec.Bindings))
+	for _, binding := range queue.Spec.Bindings {
+		subjects, err := BindingSubjects(queue.Metadata.Name, binding)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, subject := range subjects {
+			all[subject] = struct{}{}
+		}
+		routing = append(routing, RoutingPlan{Exchange: binding.Exchange, Type: binding.Type, Keys: append([]string(nil), binding.Keys...), Subjects: subjects})
+	}
+	subjects := make([]string, 0, len(all))
+	for subject := range all {
+		subjects = append(subjects, subject)
+	}
+	sort.Strings(subjects)
+	return subjects, routing, nil
+}
+
+func BindingSubjects(queueName string, binding Binding) ([]string, error) {
+	if !queueNamePattern.MatchString(queueName) {
+		return nil, fmt.Errorf("invalid queue name %q", queueName)
+	}
+	base := "rjs.q." + queueName + ".x." + binding.Exchange + "." + binding.Type
+	var result []string
+	switch binding.Type {
+	case "direct":
+		for _, key := range binding.Keys {
+			result = append(result, base+"."+key)
+		}
+	case "topic":
+		for _, key := range binding.Keys {
+			tokens := strings.Split(key, ".")
+			if tokens[len(tokens)-1] != "#" {
+				result = append(result, base+"."+key)
+				continue
+			}
+			stem := strings.Join(tokens[:len(tokens)-1], ".")
+			if stem == "" {
+				result = append(result, base, base+".>")
+			} else {
+				result = append(result, base+"."+stem, base+"."+stem+".>")
+			}
+		}
+	case "fanout":
+		result = append(result, base)
+	default:
+		return nil, fmt.Errorf("unsupported binding type %q", binding.Type)
+	}
+	set := make(map[string]struct{})
+	unique := result[:0]
+	for _, subject := range result {
+		if _, exists := set[subject]; !exists {
+			set[subject] = struct{}{}
+			unique = append(unique, subject)
+		}
+	}
+	sort.Strings(unique)
+	return unique, nil
+}
+
+// QueuePublishSubject returns the queue-scoped target used after an SDK or
+// protocol gateway has resolved exchange bindings. Queue scoping prevents
+// subjects from overlapping across JetStream work-queue Streams.
+func QueuePublishSubject(queueName, exchange, exchangeType, routingKey string) (string, error) {
+	if !queueNamePattern.MatchString(queueName) {
+		return "", fmt.Errorf("invalid queue name")
+	}
+	if !queueNamePattern.MatchString(exchange) {
+		return "", fmt.Errorf("invalid exchange name")
+	}
+	base := "rjs.q." + queueName + ".x." + exchange + "." + exchangeType
+	switch exchangeType {
+	case "fanout":
+		if routingKey != "" {
+			return "", fmt.Errorf("fanout routing key must be empty")
+		}
+		return base, nil
+	case "direct", "topic":
+		if routingKey == "" {
+			if exchangeType == "topic" {
+				return base, nil
+			}
+			return "", fmt.Errorf("direct routing key cannot be empty")
+		}
+		if err := validateRoutingKey(routingKey, false); err != nil {
+			return "", err
+		}
+		return base + "." + routingKey, nil
+	default:
+		return "", fmt.Errorf("unsupported exchange type %q", exchangeType)
+	}
 }
 
 func StreamName(queueName string) string { return "RJSQ_" + queueName }
