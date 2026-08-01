@@ -41,6 +41,21 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]") {
 		t.Error("CI management scenario matrix is incomplete")
 	}
+	for lineNumber, line := range strings.Split(workflow, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "-" || fields[1] != "uses:" {
+			continue
+		}
+		separator := strings.LastIndexByte(fields[2], '@')
+		if separator < 0 {
+			t.Errorf("CI action on line %d has no immutable revision", lineNumber+1)
+			continue
+		}
+		revision := fields[2][separator+1:]
+		if len(revision) != 40 || strings.Trim(revision, "0123456789abcdef") != "" {
+			t.Errorf("CI action on line %d is not pinned to a full commit SHA: %s", lineNumber+1, fields[2])
+		}
+	}
 	for _, file := range []string{
 		"tests/integration/docker-desktop.ps1",
 		"tests/integration/linux-smoke.sh",
