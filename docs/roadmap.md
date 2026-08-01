@@ -66,7 +66,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 基于稳定消息 ID、SHA-256 和大小的影子数据核对 CLI、阈值门禁与不可覆盖证据报告；
 - [x] RabbitMQ 独立 shadow queue 与 JetStream Limits-retention shadow Stream 实际采集适配器；
 - [x] RabbitMQ mandatory publisher confirm、JetStream PubAck 与可恢复双确认 journal 的批量双写适配器；
-- 自动化切流和回滚编排；
+- [x] 基于连续对账证据、计划摘要、幂等动作与持久 journal 的自动化切流和逆序回滚编排；
 - 常见客户端迁移指南及兼容矩阵；
 - 大规模压测与长期稳定性测试。
 

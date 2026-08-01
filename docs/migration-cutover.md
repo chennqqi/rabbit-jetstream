@@ -61,3 +61,35 @@ Supply connection secrets through environment variables or credentials files, no
 Cut over one queue cohort at a time only after consecutive reconciliation windows pass, lag is within the declared SLO, DLQ/redelivery tests pass, and rollback capacity is available. Stop new RabbitMQ publishes only after JetStream consumers are healthy; then drain confirmed RabbitMQ backlog.
 
 Rollback immediately on reconciliation failure, unbounded lag, confirm failure, or business invariant breach: pause JetStream consumers, restore RabbitMQ publishing/consumers, keep the same message IDs, and reconcile the rollback window. Never replay both brokers into side-effecting consumers simultaneously. Preserve reports, outbox state, broker metrics, deployment revisions, and audit events as release evidence.
+
+### Automated orchestration
+
+Use a reviewed JSON plan to execute one queue cohort. Every command is an argv array executed directly (never through a shell), must be safe to repeat, and needs an inverse action. At least two passing, time-ordered reconciliation reports are required and their SHA-256 digests bind the exact evidence to the plan:
+
+```json
+{
+  "schema": "rabbit-jetstream.io/cutover-plan/v1alpha1",
+  "migration_id": "orders-2026-08-02",
+  "reconciliation_reports": [
+    {"path": "window-1.json", "sha256": "<64 hex characters>"},
+    {"path": "window-2.json", "sha256": "<64 hex characters>"}
+  ],
+  "steps": [{
+    "name": "route-consumers",
+    "action": ["kubectl", "apply", "-f", "consumers-jetstream.yaml"],
+    "rollback": ["kubectl", "apply", "-f", "consumers-rabbitmq.yaml"],
+    "timeout": "2m",
+    "idempotent": true
+  }]
+}
+```
+
+```bash
+rjsctl migrate cutover apply --plan cutover.json --journal cutover.ndjson \
+  --confirm orders-2026-08-02 --max-evidence-age 30m
+rjsctl migrate cutover status --plan cutover.json --journal cutover.ndjson
+rjsctl migrate cutover rollback --plan cutover.json --journal cutover.ndjson \
+  --confirm orders-2026-08-02
+```
+
+The append-only journal is synced before and after each action and protected by a single-writer lock. A restart skips completed actions and repeats an interrupted action, which is why `idempotent=true` is mandatory. Rollback runs completed actions in reverse order and is itself resumable. Do not edit a plan after execution begins: its canonical digest is permanently bound to the journal.

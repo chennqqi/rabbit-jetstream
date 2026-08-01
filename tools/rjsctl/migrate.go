@@ -23,6 +23,9 @@ func runMigrate(args []string, stdout, stderr io.Writer) error {
 	if args[0] == "dual-write" {
 		return runDualWrite(args[1:], stdout, stderr)
 	}
+	if args[0] == "cutover" {
+		return runCutover(args[1:], stdout, stderr)
+	}
 	if args[0] == "reconcile" {
 		return runReconcile(args[1:], stdout, stderr)
 	}
@@ -110,6 +113,9 @@ func writeReconciliationReport(path string, report migration.ReconciliationRepor
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	encodeErr := encoder.Encode(report)
+	if encodeErr == nil {
+		encodeErr = file.Sync()
+	}
 	closeErr := file.Close()
 	if encodeErr != nil {
 		return fmt.Errorf("encode reconciliation report: %w", encodeErr)

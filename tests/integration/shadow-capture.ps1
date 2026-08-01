@@ -35,9 +35,31 @@ try {
     if ($RabbitMessages -ne 0) { throw "dual-write resume republished $RabbitMessages RabbitMQ messages" }
     $JournalEvents = @(Get-Content -LiteralPath (Join-Path $Output 'dualwrite.ndjson')).Count
     if ($JournalEvents -ne 6) { throw "dual-write journal contains $JournalEvents events, expected 6" }
-    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate reconcile --source "$ContainerOutput/rabbit.ndjson" --target "$ContainerOutput/jetstream.ndjson" --output "$ContainerOutput/report.json" --min-source 3
-    $Report = Get-Content -LiteralPath (Join-Path $Output 'report.json') -Raw | ConvertFrom-Json
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate reconcile --source "$ContainerOutput/rabbit.ndjson" --target "$ContainerOutput/jetstream.ndjson" --output "$ContainerOutput/report-1.json" --min-source 3
+    Start-Sleep -Milliseconds 10
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate reconcile --source "$ContainerOutput/rabbit.ndjson" --target "$ContainerOutput/jetstream.ndjson" --output "$ContainerOutput/report-2.json" --min-source 3
+    $Report = Get-Content -LiteralPath (Join-Path $Output 'report-2.json') -Raw | ConvertFrom-Json
     if (-not $Report.passed -or $Report.matched -ne 3) { throw 'shadow reconciliation report is incorrect' }
+    Set-Content -LiteralPath (Join-Path $Output 'rabbit.route') -Value 'rabbitmq' -NoNewline
+    Set-Content -LiteralPath (Join-Path $Output 'jetstream.route') -Value 'jetstream' -NoNewline
+    $Plan = [ordered]@{
+        schema = 'rabbit-jetstream.io/cutover-plan/v1alpha1'
+        migration_id = 'shadow-e2e'
+        reconciliation_reports = @(
+            [ordered]@{ path = 'report-1.json'; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Output 'report-1.json')).Hash.ToLowerInvariant() },
+            [ordered]@{ path = 'report-2.json'; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Output 'report-2.json')).Hash.ToLowerInvariant() }
+        )
+        steps = @(
+            [ordered]@{ name = 'route-publishers'; action = @('/bin/cp', "$ContainerOutput/jetstream.route", "$ContainerOutput/active.route"); rollback = @('/bin/cp', "$ContainerOutput/rabbit.route", "$ContainerOutput/active.route"); timeout = '10s'; idempotent = $true },
+            [ordered]@{ name = 'route-consumers'; action = @('/bin/cp', "$ContainerOutput/jetstream.route", "$ContainerOutput/consumer.route"); rollback = @('/bin/cp', "$ContainerOutput/rabbit.route", "$ContainerOutput/consumer.route"); timeout = '10s'; idempotent = $true }
+        )
+    }
+    $Plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $Output 'cutover.json') -Encoding utf8
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate cutover apply --plan "$ContainerOutput/cutover.json" --journal "$ContainerOutput/cutover.ndjson" --confirm shadow-e2e
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate cutover apply --plan "$ContainerOutput/cutover.json" --journal "$ContainerOutput/cutover.ndjson" --confirm shadow-e2e
+    if ((Get-Content -LiteralPath (Join-Path $Output 'active.route') -Raw) -ne 'jetstream' -or (Get-Content -LiteralPath (Join-Path $Output 'consumer.route') -Raw) -ne 'jetstream') { throw 'cutover actions did not select JetStream' }
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate cutover rollback --plan "$ContainerOutput/cutover.json" --journal "$ContainerOutput/cutover.ndjson" --confirm shadow-e2e
+    if ((Get-Content -LiteralPath (Join-Path $Output 'active.route') -Raw) -ne 'rabbitmq' -or (Get-Content -LiteralPath (Join-Path $Output 'consumer.route') -Raw) -ne 'rabbitmq') { throw 'rollback actions did not restore RabbitMQ' }
 } finally {
     & docker rm -f $RabbitCapture $NATSCapture $Rabbit $NATS 2>$null | Out-Null
     & docker network rm $Network 2>$null | Out-Null
