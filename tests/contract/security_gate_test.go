@@ -97,6 +97,12 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(notes, "pin published images by digest") || strings.Contains(notes, "immutable image tags") {
 		t.Error("Helm production guidance must require digest-pinned images")
 	}
+	secretTemplate := read("deploy/helm/rabbit-jetstream/templates/secret.yaml")
+	for _, requirement := range []string{`hasKey $current.data "nats-password"`, `hasKey $current.data "nats-password-bcrypt"`, `$passwordHash = (index $current.data "nats-password-bcrypt" | b64dec)`, `hasKey $current.data "admin-token"`} {
+		if !strings.Contains(secretTemplate, requirement) {
+			t.Errorf("Helm Secret upgrade lost idempotency guard %q", requirement)
+		}
+	}
 	release := read(".github/workflows/release.yml")
 	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {
