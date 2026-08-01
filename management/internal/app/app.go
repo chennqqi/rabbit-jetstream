@@ -9,15 +9,17 @@ import (
 
 	"github.com/chennqqi/rabbit-jetstream/management/internal/api"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
 
 type App struct {
-	cfg    config.Config
-	logger *slog.Logger
-	client *jetstream.Client
-	server *http.Server
+	cfg        config.Config
+	logger     *slog.Logger
+	client     *jetstream.Client
+	server     *http.Server
+	controller *controller.Controller
 }
 
 func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
@@ -25,15 +27,17 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	control := controller.New(client, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), cfg.AdminToken),
+		Handler:           api.NewWithController(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, cfg.AdminToken),
 		ReadHeaderTimeout: cfg.ConnectTimeout,
 	}
-	return &App{cfg: cfg, logger: logger, client: client, server: server}, nil
+	return &App{cfg: cfg, logger: logger, client: client, server: server, controller: control}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
+	go a.controller.Run(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		a.logger.Info("management service started", "name", a.cfg.Name, "http", a.cfg.HTTPAddr, "nats", a.client.ServerURL())

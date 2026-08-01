@@ -34,6 +34,9 @@ services:
       RJS_NATS_MONITOR_URLS: http://nats-1:8222,http://nats-2:8222,http://nats-3:8222
       RJS_ADMIN_TOKEN: ${RJS_ADMIN_TOKEN:-}
       RJS_METADATA_REPLICAS: 3
+      RJS_CONTROLLER_INTERVAL: ${RJS_CONTROLLER_INTERVAL:-5s}
+      RJS_CONTROLLER_LEASE_TTL: ${RJS_CONTROLLER_LEASE_TTL:-15s}
+      RJS_INSTANCE_ID: ${RJS_INSTANCE_ID:-management-1}
     ports: ["8223:8223"]
     depends_on:
       nats-1:

@@ -58,7 +58,9 @@
 - `observability`：Prometheus 指标、JetStream advisories、审计日志；
 - `amqp-gateway`（未来）：独立可选组件，不侵入 JetStream。
 
-当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。Admin UI 与持续运行的 controller 将按 Roadmap 增量加入。
+当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。Admin UI 与更完整的策略控制将按 Roadmap 增量加入。
+
+Controller 使用同一 KV bucket 中的 CAS 租约选出唯一 leader。Leader 周期读取声明并仅执行安全的 create/update/noop；需要 recreation、保留策略缩减或未实现能力的计划保持 blocked，不自动执行破坏性操作。每个声明前续租，优雅退出时条件释放租约；实例异常退出时由 TTL 保证接管上界。
 
 ## 6. 高可用与安全
 

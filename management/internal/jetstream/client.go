@@ -24,6 +24,76 @@ type Client struct {
 	metadataReplicas int
 }
 
+type controllerLease struct {
+	Holder    string    `json:"holder"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (c *Client) AcquireControllerLease(ctx context.Context, holder string, ttl time.Duration) (bool, error) {
+	kv, err := c.metadataStore(ctx, true)
+	if err != nil {
+		return false, fmt.Errorf("open metadata bucket for controller lease: %w", err)
+	}
+	now := time.Now().UTC()
+	value, _ := json.Marshal(controllerLease{Holder: holder, ExpiresAt: now.Add(ttl)})
+	entry, err := kv.Get(ctx, "controller.leader")
+	if errors.Is(err, jsapi.ErrKeyNotFound) {
+		_, err = kv.Create(ctx, "controller.leader", value)
+		if errors.Is(err, jsapi.ErrKeyExists) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	if err != nil {
+		return false, fmt.Errorf("read controller lease: %w", err)
+	}
+	var lease controllerLease
+	if err := json.Unmarshal(entry.Value(), &lease); err != nil {
+		return false, fmt.Errorf("decode controller lease: %w", err)
+	}
+	if lease.Holder != holder && lease.ExpiresAt.After(now) {
+		return false, nil
+	}
+	if _, err := kv.Update(ctx, "controller.leader", value, entry.Revision()); err != nil {
+		if errors.Is(err, jsapi.ErrKeyExists) {
+			return false, nil
+		}
+		return false, fmt.Errorf("renew controller lease: %w", err)
+	}
+	return true, nil
+}
+
+func (c *Client) ReleaseControllerLease(ctx context.Context, holder string) error {
+	kv, err := c.metadataStore(ctx, false)
+	if errors.Is(err, jsapi.ErrBucketNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("open metadata bucket for controller lease: %w", err)
+	}
+	entry, err := kv.Get(ctx, "controller.leader")
+	if errors.Is(err, jsapi.ErrKeyNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read controller lease: %w", err)
+	}
+	var lease controllerLease
+	if err := json.Unmarshal(entry.Value(), &lease); err != nil {
+		return fmt.Errorf("decode controller lease: %w", err)
+	}
+	if lease.Holder != holder {
+		return nil
+	}
+	if err := kv.Delete(ctx, "controller.leader", jsapi.LastRevision(entry.Revision())); err != nil {
+		if errors.Is(err, jsapi.ErrKeyExists) {
+			return nil
+		}
+		return fmt.Errorf("release controller lease: %w", err)
+	}
+	return nil
+}
+
 func Connect(cfg config.Config) (*Client, error) {
 	opts := []nats.Option{
 		nats.Name(cfg.Name),

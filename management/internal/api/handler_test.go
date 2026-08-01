@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
@@ -28,8 +29,10 @@ type fakeBackend struct {
 }
 
 type fakeMonitor struct{ snapshot monitoring.Snapshot }
+type fakeController struct{ status controller.Status }
 
 func (f fakeMonitor) Nodes(context.Context) monitoring.Snapshot { return f.snapshot }
+func (f fakeController) Status() controller.Status              { return f.status }
 
 func (f *fakeBackend) Ready(context.Context) error { return f.err }
 func (f *fakeBackend) AccountInfo(context.Context) (*jetstream.Account, error) {
@@ -78,6 +81,15 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestControllerStatusEndpoint(t *testing.T) {
+	h := NewWithController(&fakeBackend{}, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, fakeController{status: controller.Status{InstanceID: "one", Leader: true}}, "")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/controller", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"instanceId":"one"`) || !strings.Contains(rec.Body.String(), `"leader":true`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

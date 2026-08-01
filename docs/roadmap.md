@@ -28,7 +28,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - direct、topic、fanout 路由约定；
 - TTL、长度限制、ack/redelivery、DLQ 基础策略；
 - CLI/API 的声明式 apply、diff、delete；
-- 基于 JetStream KV 的 leader election 与多管理实例并发写收敛。
+- [x] 基于 JetStream KV CAS 租约的 leader election 与 leader-only 持续安全 reconcile；
+- 多管理实例 API 并发写入的 revision 前置条件与冲突响应。
 
 验收：进程重启及管理实例切换不丢声明；重复 apply 无副作用；端到端测试覆盖发布、消费、重投和 DLQ。
 

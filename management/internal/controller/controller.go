@@ -1,0 +1,131 @@
+package controller
+
+import (
+	"context"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
+)
+
+type Backend interface {
+	AcquireControllerLease(context.Context, string, time.Duration) (bool, error)
+	ReleaseControllerLease(context.Context, string) error
+	ListDeclarations(context.Context) ([]topology.Declaration, error)
+	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
+}
+
+type Status struct {
+	InstanceID   string    `json:"instanceId"`
+	Enabled      bool      `json:"enabled"`
+	Leader       bool      `json:"leader"`
+	LastRun      time.Time `json:"lastRun,omitempty"`
+	LastSuccess  time.Time `json:"lastSuccess,omitempty"`
+	Declarations int       `json:"declarations"`
+	Reconciled   int       `json:"reconciled"`
+	Blocked      int       `json:"blocked"`
+	LastError    string    `json:"lastError,omitempty"`
+}
+
+type Controller struct {
+	backend            Backend
+	logger             *slog.Logger
+	instanceID         string
+	interval, leaseTTL time.Duration
+	enabled            bool
+	mu                 sync.RWMutex
+	status             Status
+}
+
+func New(backend Backend, logger *slog.Logger, instanceID string, enabled bool, interval, leaseTTL time.Duration) *Controller {
+	return &Controller{backend: backend, logger: logger, instanceID: instanceID, enabled: enabled, interval: interval, leaseTTL: leaseTTL, status: Status{InstanceID: instanceID, Enabled: enabled}}
+}
+
+func (c *Controller) Run(ctx context.Context) {
+	if !c.enabled {
+		return
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := c.backend.ReleaseControllerLease(releaseCtx, c.instanceID); err != nil {
+			c.logger.Warn("controller lease release failed", "error", err)
+		}
+	}()
+	c.runOnce(ctx)
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.runOnce(ctx)
+		}
+	}
+}
+
+func (c *Controller) Status() Status { c.mu.RLock(); defer c.mu.RUnlock(); return c.status }
+
+func (c *Controller) runOnce(parent context.Context) {
+	now := time.Now().UTC()
+	leaseCtx, cancel := context.WithTimeout(parent, c.interval)
+	leader, err := c.backend.AcquireControllerLease(leaseCtx, c.instanceID, c.leaseTTL)
+	cancel()
+	if err != nil {
+		c.update(now, false, 0, 0, 0, err.Error())
+		c.logger.Warn("controller lease failed", "error", err)
+		return
+	}
+	if !leader {
+		c.update(now, false, 0, 0, 0, "")
+		return
+	}
+	listCtx, cancel := context.WithTimeout(parent, c.interval)
+	declarations, err := c.backend.ListDeclarations(listCtx)
+	cancel()
+	if err != nil {
+		c.update(now, true, 0, 0, 0, err.Error())
+		c.logger.Warn("controller declarations failed", "error", err)
+		return
+	}
+	reconciled, blocked := 0, 0
+	for _, declaration := range declarations {
+		renewCtx, renewCancel := context.WithTimeout(parent, c.interval)
+		stillLeader, renewErr := c.backend.AcquireControllerLease(renewCtx, c.instanceID, c.leaseTTL)
+		renewCancel()
+		if renewErr != nil || !stillLeader {
+			message := "controller lease lost"
+			if renewErr != nil {
+				message = renewErr.Error()
+			}
+			c.update(now, false, len(declarations), reconciled, blocked, message)
+			return
+		}
+		applyCtx, applyCancel := context.WithTimeout(parent, c.interval)
+		result, applyErr := c.backend.Apply(applyCtx, declaration.Plan)
+		applyCancel()
+		if applyErr != nil {
+			c.update(now, true, len(declarations), reconciled, blocked, applyErr.Error())
+			c.logger.Warn("controller reconcile failed", "queue", declaration.Queue, "error", applyErr)
+			return
+		}
+		if result.Blocked {
+			blocked++
+		} else {
+			reconciled++
+		}
+	}
+	c.update(now, true, len(declarations), reconciled, blocked, "")
+}
+
+func (c *Controller) update(now time.Time, leader bool, declarations, reconciled, blocked int, lastError string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.status.Leader, c.status.LastRun = leader, now
+	c.status.Declarations, c.status.Reconciled, c.status.Blocked, c.status.LastError = declarations, reconciled, blocked, lastError
+	if lastError == "" && leader {
+		c.status.LastSuccess = now
+	}
+}

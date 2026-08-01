@@ -12,6 +12,10 @@
 | `RJS_ADMIN_TOKEN` | 空 | 启用 apply/delete 写 API 的 Bearer Token；为空时写 API 关闭 |
 | `RJS_METADATA_BUCKET` | `RJS_META` | Queue 声明使用的 JetStream KV bucket |
 | `RJS_METADATA_REPLICAS` | `1` | KV 副本数，仅允许 1、3、5；生产三节点集群应设为 3 |
+| `RJS_INSTANCE_ID` | 主机名与进程号 | 管理实例唯一标识；多副本部署必须唯一 |
+| `RJS_CONTROLLER_ENABLED` | `true` | 是否参与选主并执行持续 reconcile |
+| `RJS_CONTROLLER_INTERVAL` | `5s` | controller 检查周期及单次后端操作超时 |
+| `RJS_CONTROLLER_LEASE_TTL` | `15s` | leader 租约；小于两倍检查周期时自动提升为三倍 |
 | `RJS_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` |
 | `RJS_CONNECT_TIMEOUT` | `5s` | 初次连接超时 |
 | `RJS_SHUTDOWN_TIMEOUT` | `10s` | HTTP 优雅退出超时 |

@@ -1,0 +1,12 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: cluster
+spec:
+  subjects:
+    - cluster.>
+  replicas: 3
+  storage: file
+  delivery:
+    ackWait: 30s
+    maxDeliver: 5

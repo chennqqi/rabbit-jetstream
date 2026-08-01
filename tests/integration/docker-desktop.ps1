@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -20,6 +20,23 @@ function Wait-Healthy([string]$ContainerName) {
         Start-Sleep -Seconds 1
     }
     throw "$ContainerName did not become healthy"
+}
+
+function Get-NetworkJson([string]$Network, [string]$Uri) {
+    $Value = & docker run --rm --network $Network alpine:3.23 wget -q -O - $Uri | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw "failed to query $Uri on $Network" }
+    return $Value
+}
+
+function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
+    foreach ($Attempt in 1..30) {
+        try {
+            $Status = Get-NetworkJson $Network $Uri
+            if ($Status.leader) { return $Status }
+        } catch {}
+        Start-Sleep -Seconds 1
+    }
+    throw "controller at $Uri did not become leader"
 }
 
 Push-Location $RepositoryRoot
@@ -99,6 +116,52 @@ try {
         } finally {
             Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
 			$env:RJS_ADMIN_TOKEN = $PreviousAdminToken
+        }
+        return
+    }
+
+    if ($Scenario -eq 'controller') {
+        $Project = 'rjs-desktop-controller'
+        $Compose = 'deploy/compose/cluster.yml'
+        $Network = "${Project}_default"
+        $Second = "${Project}-management-2"
+        $PreviousAdminToken = $env:RJS_ADMIN_TOKEN
+        $PreviousInterval = $env:RJS_CONTROLLER_INTERVAL
+        $PreviousLeaseTTL = $env:RJS_CONTROLLER_LEASE_TTL
+        $env:RJS_ADMIN_TOKEN = 'desktop-test-token'
+        $env:RJS_CONTROLLER_INTERVAL = '1s'
+        $env:RJS_CONTROLLER_LEASE_TTL = '4s'
+        try {
+            Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
+            Invoke-Docker run -d --name $Second --network $Network -e 'RJS_NATS_URL=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222' -e 'RJS_NATS_MONITOR_URLS=http://nats-1:8222,http://nats-2:8222,http://nats-3:8222' -e RJS_METADATA_REPLICAS=3 -e RJS_INSTANCE_ID=management-2 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s rabbit-jetstream/management:local
+            $Apply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $Apply.status -ne 'ready') { throw 'cluster Queue apply failed' }
+            Start-Sleep -Seconds 3
+            $FirstStatus = Get-NetworkJson $Network 'http://management:8223/api/v1/controller'
+            $SecondStatus = Get-NetworkJson $Network "http://${Second}:8223/api/v1/controller"
+            if ([int]$FirstStatus.leader + [int]$SecondStatus.leader -ne 1) { throw 'expected exactly one controller leader' }
+            if ($FirstStatus.leader) {
+                Invoke-Docker compose -p $Project -f $Compose stop management
+                $SurvivorController = "http://${Second}:8223/api/v1/controller"
+            } else {
+                Invoke-Docker stop $Second
+                $SurvivorController = 'http://management:8223/api/v1/controller'
+            }
+            $Leader = Wait-NetworkControllerLeader $Network $SurvivorController
+            Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 consumer rm RJSQ_cluster RJSQC_cluster --force
+            $Recovered = $false
+            foreach ($Attempt in 1..20) {
+                $Consumer = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 consumer info RJSQ_cluster RJSQC_cluster --json 2>$null | ConvertFrom-Json
+                if ($LASTEXITCODE -eq 0 -and $Consumer.name -eq 'RJSQC_cluster') { $Recovered = $true; break }
+                Start-Sleep -Seconds 1
+            }
+            if (-not $Recovered) { throw 'controller did not recreate the deleted Consumer' }
+        } finally {
+            & docker rm -f $Second 2>$null | Out-Null
+            Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
+            $env:RJS_ADMIN_TOKEN = $PreviousAdminToken
+            $env:RJS_CONTROLLER_INTERVAL = $PreviousInterval
+            $env:RJS_CONTROLLER_LEASE_TTL = $PreviousLeaseTTL
         }
         return
     }

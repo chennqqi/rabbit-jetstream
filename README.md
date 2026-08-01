@@ -21,6 +21,7 @@ go run ./tools/rjsctl status
 - `GET /healthz`：进程存活；
 - `GET /readyz`：JetStream 可用；
 - `GET /api/v1/info`：服务及 JetStream 账户摘要。
+- `GET /api/v1/controller`：controller 选主和最近 reconcile 状态。
 
 ## 常用命令
 
