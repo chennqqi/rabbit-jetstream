@@ -1,11 +1,12 @@
 FROM golang:1.25.12-alpine AS build
 ARG NATSCLI_VERSION=v0.4.0
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY internal ./internal
 COPY tools ./tools
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/rjsctl ./tools/rjsctl \
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/rjsctl ./tools/rjsctl \
     && mkdir /src/natscli-build \
     && cd /src/natscli-build \
     && go mod init rabbit-jetstream.local/natscli-build \
