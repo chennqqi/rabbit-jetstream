@@ -77,6 +77,17 @@ try {
             if ($Ready.status -ne 'ready') { throw 'management API is not ready' }
             if ($Scenario -eq 'api') {
                 $Network = "${Project}_default"
+				$Admin = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/admin/' -TimeoutSec 5
+				foreach ($Header in @{
+					'Cross-Origin-Resource-Policy' = 'same-origin'
+					'Permissions-Policy' = 'camera=(), microphone=(), geolocation=()'
+					'Referrer-Policy' = 'no-referrer'
+					'X-Content-Type-Options' = 'nosniff'
+					'X-Frame-Options' = 'DENY'
+				}.GetEnumerator()) {
+					$Actual = [string]($Admin.Headers[$Header.Key] | Select-Object -First 1)
+					if ($Actual -ne $Header.Value) { throw "Admin UI $($Header.Key) is '$Actual', expected '$($Header.Value)'" }
+				}
 				$OpenAPIResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/openapi.yaml' -TimeoutSec 5
 				$OpenAPI = if ($OpenAPIResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($OpenAPIResponse.Content) } else { [string]$OpenAPIResponse.Content }
 				if (-not $OpenAPI.StartsWith('openapi: 3.1.0') -or -not $OpenAPI.Contains('/api/v1/queues/{queue}:')) { throw 'embedded OpenAPI contract is unavailable or incomplete' }

@@ -24,6 +24,17 @@ func TestHandlerServesConsoleAndAssets(t *testing.T) {
 		if recorder.Header().Get("Content-Security-Policy") == "" {
 			t.Fatalf("%s: missing CSP", test.path)
 		}
+		for header, expected := range map[string]string{
+			"Cross-Origin-Resource-Policy": "same-origin",
+			"Permissions-Policy":           "camera=(), microphone=(), geolocation=()",
+			"Referrer-Policy":              "no-referrer",
+			"X-Content-Type-Options":       "nosniff",
+			"X-Frame-Options":              "DENY",
+		} {
+			if actual := recorder.Header().Get(header); actual != expected {
+				t.Fatalf("%s: %s=%q, want %q", test.path, header, actual, expected)
+			}
+		}
 	}
 }
 
@@ -37,12 +48,18 @@ func TestHandlerRejectsTraversal(t *testing.T) {
 
 func TestManagementUIPreservesMutationSafetyContract(t *testing.T) {
 	script, err := assets.ReadFile("dist/management.js")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	value := string(script)
-	for _, required := range []string{"Authorization", "If-None-Match", "If-Match", "X-RJS-Confirm-Queue", "operator-token"} {
-		if !strings.Contains(value, required) { t.Errorf("management UI missing %q", required) }
+	for _, required := range []string{"Authorization", "If-None-Match", "If-Match", "X-RJS-Confirm-Queue", "operator-token", "managedQueueName&&name!==managedQueueName", "cannot be renamed"} {
+		if !strings.Contains(value, required) {
+			t.Errorf("management UI missing %q", required)
+		}
 	}
 	for _, forbidden := range []string{"localStorage", "sessionStorage", "document.cookie"} {
-		if strings.Contains(value, forbidden) { t.Errorf("management UI persists bearer credential through %q", forbidden) }
+		if strings.Contains(value, forbidden) {
+			t.Errorf("management UI persists bearer credential through %q", forbidden)
+		}
 	}
 }
