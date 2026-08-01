@@ -3,17 +3,15 @@ package jetstream
 import (
 	"context"
 	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chennqqi/rabbit-jetstream/internal/natsclient"
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 	"github.com/nats-io/nats.go"
@@ -116,18 +114,11 @@ func Connect(cfg config.Config) (*Client, error) {
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(time.Second),
 	}
-	if cfg.NATSCreds != "" {
-		opts = append(opts, nats.UserCredentials(cfg.NATSCreds))
-	} else if cfg.NATSUser != "" {
-		opts = append(opts, nats.UserInfo(cfg.NATSUser, cfg.NATSPassword))
-	}
-	tlsConfig, err := clientTLSConfig(cfg)
+	connectionOptions, err := natsclient.Options(natsclient.Config{User: cfg.NATSUser, Password: cfg.NATSPassword, Credentials: cfg.NATSCreds, TLSCA: cfg.NATSTLSCA, TLSCert: cfg.NATSTLSCert, TLSKey: cfg.NATSTLSKey, TLSServerName: cfg.NATSTLSServerName, TLSInsecure: cfg.NATSTLSInsecure})
 	if err != nil {
 		return nil, err
 	}
-	if tlsConfig != nil {
-		opts = append(opts, nats.Secure(tlsConfig))
-	}
+	opts = append(opts, connectionOptions...)
 	conn, err := nats.Connect(strings.Join(strings.Split(cfg.NATSURL, ","), ","), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("connect to NATS: %w", err)
@@ -138,39 +129,6 @@ func Connect(cfg config.Config) (*Client, error) {
 		return nil, fmt.Errorf("create JetStream client: %w", err)
 	}
 	return &Client{conn: conn, js: js, metadataBucket: cfg.MetadataBucket, metadataReplicas: cfg.MetadataReplicas}, nil
-}
-
-func clientTLSConfig(cfg config.Config) (*tls.Config, error) {
-	enabled := cfg.NATSTLSCA != "" || cfg.NATSTLSCert != "" || cfg.NATSTLSKey != "" || cfg.NATSTLSServerName != "" || cfg.NATSTLSInsecure
-	if !enabled {
-		return nil, nil
-	}
-	if (cfg.NATSTLSCert == "") != (cfg.NATSTLSKey == "") {
-		return nil, errors.New("configure both RJS_NATS_TLS_CERT and RJS_NATS_TLS_KEY")
-	}
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.NATSTLSServerName, InsecureSkipVerify: cfg.NATSTLSInsecure} // #nosec G402 -- explicit break-glass setting.
-	if cfg.NATSTLSCA != "" {
-		roots, err := x509.SystemCertPool()
-		if err != nil || roots == nil {
-			roots = x509.NewCertPool()
-		}
-		pem, err := os.ReadFile(cfg.NATSTLSCA)
-		if err != nil {
-			return nil, fmt.Errorf("read NATS TLS CA: %w", err)
-		}
-		if !roots.AppendCertsFromPEM(pem) {
-			return nil, errors.New("NATS TLS CA contains no valid certificates")
-		}
-		tlsConfig.RootCAs = roots
-	}
-	if cfg.NATSTLSCert != "" {
-		certificate, err := tls.LoadX509KeyPair(cfg.NATSTLSCert, cfg.NATSTLSKey)
-		if err != nil {
-			return nil, fmt.Errorf("load NATS TLS client certificate: %w", err)
-		}
-		tlsConfig.Certificates = []tls.Certificate{certificate}
-	}
-	return tlsConfig, nil
 }
 
 func (c *Client) Ready(ctx context.Context) error {

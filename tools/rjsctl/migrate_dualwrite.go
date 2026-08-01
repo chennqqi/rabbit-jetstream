@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/migration"
+	"github.com/chennqqi/rabbit-jetstream/internal/natsclient"
 	"github.com/nats-io/nats.go"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -211,13 +212,11 @@ func runDualWrite(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	returns := channel.NotifyReturn(make(chan amqp.Return, 1))
-	opts := []nats.Option{nats.Timeout(*timeout)}
-	if u := os.Getenv("RJS_NATS_USER"); u != "" {
-		opts = append(opts, nats.UserInfo(u, os.Getenv("RJS_NATS_PASSWORD")))
+	opts, err := natsclient.Options(natsclient.FromEnv())
+	if err != nil {
+		return err
 	}
-	if c := os.Getenv("RJS_NATS_CREDS"); c != "" {
-		opts = append(opts, nats.UserCredentials(c))
-	}
+	opts = append(opts, nats.Timeout(*timeout))
 	nc, err := nats.Connect(*natsURL, opts...)
 	if err != nil {
 		return sanitizedConnectionError("NATS", *natsURL, err, os.Getenv("RJS_NATS_PASSWORD"))

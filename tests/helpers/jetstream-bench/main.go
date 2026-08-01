@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+
+	"github.com/chennqqi/rabbit-jetstream/internal/natsclient"
 )
 
 type report struct {
@@ -106,7 +108,12 @@ func run() error {
 	if *output == "" || *messages < 0 || (*messages == 0 && *duration <= 0) || *payloadBytes < 16 || *publishers < 1 || *batch < 1 || (*replicas != 1 && *replicas != 3 && *replicas != 5) || *timeout <= 0 {
 		return errors.New("invalid benchmark arguments")
 	}
-	nc, err := nats.Connect(*server, nats.Timeout(10*time.Second), nats.MaxReconnects(-1))
+	connectionOptions, err := natsclient.Options(natsclient.FromEnv())
+	if err != nil {
+		return err
+	}
+	connectionOptions = append(connectionOptions, nats.Timeout(10*time.Second), nats.MaxReconnects(-1))
+	nc, err := nats.Connect(*server, connectionOptions...)
 	if err != nil {
 		return err
 	}

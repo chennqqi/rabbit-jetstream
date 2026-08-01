@@ -18,7 +18,7 @@ go run ./tools/rjsctl status
 
 默认管理端点为 `http://127.0.0.1:8223`：
 
-- `/admin/`：内嵌只读 Admin UI；
+- `/admin/`：内嵌 Admin UI，状态查询默认只读，Queue 变更需要 operator 凭据；
 - `GET /metrics`：Prometheus 运行指标；
 - `GET /healthz`：进程存活；
 - `GET /readyz`：JetStream 可用；

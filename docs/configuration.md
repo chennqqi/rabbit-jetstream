@@ -38,4 +38,4 @@
 | `RJS_CONNECT_TIMEOUT` | `5s` | 初次连接超时 |
 | `RJS_SHUTDOWN_TIMEOUT` | `10s` | HTTP 优雅退出超时 |
 
-命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。TLS 客户端最低使用 TLS 1.2；证书或私钥缺失、CA 无效时服务拒绝启动。
+命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。TLS 客户端最低使用 TLS 1.2；证书或私钥缺失、CA 无效时服务拒绝启动。上述 `RJS_NATS_*` 认证与 TLS 变量也适用于 `rjsctl` 的 JetStream 迁移命令、影子数据工具和性能测试工具。

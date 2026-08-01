@@ -9,6 +9,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	amqp "github.com/rabbitmq/amqp091-go"
+
+	"github.com/chennqqi/rabbit-jetstream/internal/natsclient"
 )
 
 func main() {
@@ -43,7 +45,11 @@ func run(mode, rabbitURL, natsURL string, count int) error {
 	if err := channel.QueueBind("shadow.capture", "events", "shadow.events", false, nil); err != nil {
 		return err
 	}
-	nc, err := nats.Connect(natsURL)
+	connectionOptions, err := natsclient.Options(natsclient.FromEnv())
+	if err != nil {
+		return err
+	}
+	nc, err := nats.Connect(natsURL, connectionOptions...)
 	if err != nil {
 		return err
 	}

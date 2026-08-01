@@ -18,6 +18,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/migration"
+	"github.com/chennqqi/rabbit-jetstream/internal/natsclient"
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 )
 
@@ -129,13 +130,11 @@ func captureJetStream(args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() != 0 || *stream == "" || *filter == "" || *output == "" || *count < 1 || *timeout <= 0 {
 		return errors.New("usage: rjsctl migrate capture jetstream --stream STREAM --filter SUBJECT --output FILE --count N [flags]")
 	}
-	opts := []nats.Option{nats.Timeout(5 * time.Second)}
-	if u := os.Getenv("RJS_NATS_USER"); u != "" {
-		opts = append(opts, nats.UserInfo(u, os.Getenv("RJS_NATS_PASSWORD")))
+	opts, err := natsclient.Options(natsclient.FromEnv())
+	if err != nil {
+		return err
 	}
-	if creds := os.Getenv("RJS_NATS_CREDS"); creds != "" {
-		opts = append(opts, nats.UserCredentials(creds))
-	}
+	opts = append(opts, nats.Timeout(5*time.Second))
 	nc, err := nats.Connect(*url, opts...)
 	if err != nil {
 		return sanitizedConnectionError("NATS", *url, err, os.Getenv("RJS_NATS_PASSWORD"))
