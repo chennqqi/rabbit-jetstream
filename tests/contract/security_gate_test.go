@@ -112,8 +112,14 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		t.Error("Helm chart no longer validates and renders immutable image digests")
 	}
 	notes := read("deploy/helm/rabbit-jetstream/templates/NOTES.txt")
-	if !strings.Contains(notes, "pin published images by digest") || strings.Contains(notes, "immutable image tags") {
+	if !strings.Contains(notes, "production.enabled=true") || strings.Contains(notes, "immutable image tags") {
 		t.Error("Helm production guidance must require digest-pinned images")
+	}
+	productionValidation := read("deploy/helm/rabbit-jetstream/templates/production-validation.yaml")
+	for _, requirement := range []string{"nats.replicaCount >= 3", "management.replicaCount >= 2", "nats.storage.storageClass", "nats.tls.enabled=true", "distinct NATS server and client TLS Secrets", "nats.image.digest", "management.image.digest", "operator.image.digest", "networkPolicy.enabled=true", "podDisruptionBudget.enabled=true", "management.service.type=ClusterIP", "ingress.tls"} {
+		if !strings.Contains(productionValidation, requirement) {
+			t.Errorf("Helm production profile lost invariant %q", requirement)
+		}
 	}
 	secretTemplate := read("deploy/helm/rabbit-jetstream/templates/secret.yaml")
 	for _, requirement := range []string{`hasKey $current.data "nats-password"`, `hasKey $current.data "nats-password-bcrypt"`, `$passwordHash = (index $current.data "nats-password-bcrypt" | b64dec)`, `hasKey $current.data "admin-token"`} {

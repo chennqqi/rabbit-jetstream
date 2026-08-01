@@ -1,6 +1,11 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# Enable fail-closed validation of production invariants. The default remains
+# suitable for local rendering only; production installs must opt in.
+production:
+  enabled: false
+
 nats:
   replicaCount: 3
   image:

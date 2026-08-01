@@ -1,0 +1,40 @@
+{{- if .Values.production.enabled }}
+{{- if lt (int .Values.nats.replicaCount) 3 }}
+{{- fail "production.enabled requires nats.replicaCount >= 3" }}
+{{- end }}
+{{- if lt (int .Values.management.replicaCount) 2 }}
+{{- fail "production.enabled requires management.replicaCount >= 2" }}
+{{- end }}
+{{- if not .Values.nats.storage.storageClass }}
+{{- fail "production.enabled requires nats.storage.storageClass" }}
+{{- end }}
+{{- if not .Values.nats.tls.enabled }}
+{{- fail "production.enabled requires nats.tls.enabled=true" }}
+{{- end }}
+{{- if eq .Values.nats.tls.serverSecret .Values.nats.tls.clientSecret }}
+{{- fail "production.enabled requires distinct NATS server and client TLS Secrets" }}
+{{- end }}
+{{- range $name, $digest := dict "nats.image.digest" .Values.nats.image.digest "management.image.digest" .Values.management.image.digest "operator.image.digest" .Values.operator.image.digest }}
+{{- if not $digest }}
+{{- fail (printf "production.enabled requires %s" $name) }}
+{{- end }}
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "production.enabled requires networkPolicy.enabled=true" }}
+{{- end }}
+{{- if not .Values.podDisruptionBudget.enabled }}
+{{- fail "production.enabled requires podDisruptionBudget.enabled=true" }}
+{{- end }}
+{{- if ne .Values.management.service.type "ClusterIP" }}
+{{- fail "production.enabled requires management.service.type=ClusterIP" }}
+{{- end }}
+{{- if .Values.auth.oidc.allowInsecureIssuer }}
+{{- fail "production.enabled forbids auth.oidc.allowInsecureIssuer" }}
+{{- end }}
+{{- if .Values.management.telemetry.allowInsecure }}
+{{- fail "production.enabled forbids management.telemetry.allowInsecure" }}
+{{- end }}
+{{- if and .Values.ingress.enabled (eq (len .Values.ingress.tls) 0) }}
+{{- fail "production.enabled requires ingress.tls when ingress is enabled" }}
+{{- end }}
+{{- end }}

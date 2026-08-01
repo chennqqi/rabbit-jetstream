@@ -141,6 +141,30 @@ try {
     & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set-string operator.image.digest=sha256:bad 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an invalid operator image digest' }
 
+	$ProductionValues = @('template', 'production', $Chart, '--namespace', 'messaging', '--set', 'production.enabled=true', '--set', 'nats.storage.storageClass=fast-retain', '--set', 'nats.tls.enabled=true', '--set', 'nats.tls.serverSecret=production-nats-server-tls', '--set', 'nats.tls.clientSecret=production-nats-client-tls', '--set-string', "nats.image.digest=$Digest", '--set-string', "management.image.digest=$Digest", '--set-string', "operator.image.digest=$Digest")
+	$ProductionRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues) -join "`n"
+	if ($LASTEXITCODE -ne 0 -or -not $ProductionRendered.Contains("rabbit-jetstream/nats-server@$Digest")) { throw 'valid production Helm profile failed' }
+	$ProductionIngress = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues --set ingress.enabled=true --set networkPolicy.ingress.enabled=true --set-string networkPolicy.ingress.namespaceSelector.name=ingress-system --set-string networkPolicy.ingress.podSelector.app=ingress-controller --set-string 'ingress.tls[0].secretName=rjs-management-ingress-tls' --set-string 'ingress.tls[0].hosts[0]=rabbit-jetstream.local') -join "`n"
+	if ($LASTEXITCODE -ne 0 -or -not $ProductionIngress.Contains('secretName: rjs-management-ingress-tls')) { throw 'valid production Ingress TLS profile failed' }
+	function Assert-ProductionRejected([string]$Name, [string[]]$Overrides) {
+		& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues @Overrides 2>$null | Out-Null
+		if ($LASTEXITCODE -eq 0) { throw "production Helm profile accepted unsafe $Name" }
+	}
+	Assert-ProductionRejected 'single NATS replica' @('--set', 'nats.replicaCount=1')
+	Assert-ProductionRejected 'single management replica' @('--set', 'management.replicaCount=1')
+	Assert-ProductionRejected 'unnamed StorageClass' @('--set', 'nats.storage.storageClass=')
+	Assert-ProductionRejected 'disabled mTLS' @('--set', 'nats.tls.enabled=false')
+	Assert-ProductionRejected 'shared TLS private key' @('--set', 'nats.tls.clientSecret=production-nats-server-tls')
+	Assert-ProductionRejected 'mutable NATS image' @('--set-string', 'nats.image.digest=')
+	Assert-ProductionRejected 'mutable management image' @('--set-string', 'management.image.digest=')
+	Assert-ProductionRejected 'mutable operator image' @('--set-string', 'operator.image.digest=')
+	Assert-ProductionRejected 'disabled NetworkPolicy' @('--set', 'networkPolicy.enabled=false')
+	Assert-ProductionRejected 'disabled PodDisruptionBudget' @('--set', 'podDisruptionBudget.enabled=false')
+	Assert-ProductionRejected 'public management Service' @('--set', 'management.service.type=LoadBalancer')
+	Assert-ProductionRejected 'insecure OIDC issuer' @('--set', 'auth.oidc.allowInsecureIssuer=true')
+	Assert-ProductionRejected 'insecure telemetry transport' @('--set', 'management.telemetry.allowInsecure=true')
+	Assert-ProductionRejected 'Ingress without TLS' @('--set', 'ingress.enabled=true', '--set', 'networkPolicy.ingress.enabled=true', '--set-string', 'networkPolicy.ingress.namespaceSelector.name=ingress-system', '--set-string', 'networkPolicy.ingress.podSelector.app=ingress-controller')
+
     $TLSRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'mTLS Helm render failed' }
     foreach ($Required in @('tls://production-rabbit-jetstream-nats:4222', 'RJS_NATS_TLS_CA', 'RJS_NATS_TLS_CERT', 'RJS_NATS_TLS_KEY', 'verify: true', 'secretName: production-nats-server-tls', 'secretName: production-nats-client-tls')) {

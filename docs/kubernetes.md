@@ -13,7 +13,13 @@ helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream \
   --set-string nats.image.digest=sha256:<64-hex-digest> \
   --set management.image.repository=registry.example/rabbit-jetstream/management \
   --set-string management.image.digest=sha256:<64-hex-digest> \
-  --set nats.storage.storageClass=fast-retain
+  --set operator.image.repository=registry.example/rabbit-jetstream/operator \
+  --set-string operator.image.digest=sha256:<64-hex-digest> \
+  --set nats.storage.storageClass=fast-retain \
+  --set nats.tls.enabled=true \
+  --set nats.tls.serverSecret=rjs-nats-server-tls \
+  --set nats.tls.clientSecret=rjs-management-nats-tls \
+  --set production.enabled=true
 helm test rabbit-jetstream --namespace messaging
 ```
 
@@ -22,6 +28,8 @@ Defaults create a persistent 3-node cluster, two management replicas, per-pod PV
 For GitOps or disaster recovery, create a Secret with `nats-username`, `nats-password`, `nats-password-bcrypt`, and `admin-token`, then set `auth.existingSecret`. Optional comma-separated `admin-tokens` and `audit-tokens` keys enable overlapping operator rotation and read-only auditors. The bcrypt value must hash `nats-password`; the NATS pods never receive the plaintext password. Back up this Secret separately; JetStream snapshots do not contain Kubernetes Secrets. See [Management Credential Rotation](credential-rotation.md) before changing live credentials.
 
 Production clusters should enable mutual TLS for NATS client and route traffic. Create a server Secret and a distinct management-client Secret, each containing `ca.crt`, `tls.crt`, and `tls.key`. The server certificate SANs must cover the client Service and every StatefulSet/headless-Service DNS name. Install with `--set nats.tls.enabled=true --set nats.tls.serverSecret=rjs-nats-server-tls --set nats.tls.clientSecret=rjs-management-nats-tls`. Override `nats.tls.serverName` only when the certificate uses a different stable DNS name. The chart mounts each Secret only into its intended workload and never generates private keys.
+
+`production.enabled=true` is the fail-closed deployment profile. Helm then requires three or five NATS replicas, at least two management replicas, a named StorageClass, distinct server/client mTLS Secrets, digest-pinned NATS/management/operator images, NetworkPolicies, PodDisruptionBudgets, a private `ClusterIP` management Service, and secure OIDC/telemetry transport. An enabled Ingress must also declare TLS. Keep this switch enabled in GitOps values so an unsafe override fails during rendering rather than reaching the cluster.
 
 The `operator.image` value records the digest-pinned, on-demand `rjsctl` image shipped with the same release. The chart deliberately does not create a permanent operator Pod; run that image only for an approved administration, backup, restore, diagnostic, or migration operation.
 
