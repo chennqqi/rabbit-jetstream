@@ -152,4 +152,17 @@ func TestVerifyOfficialChecksTaggedCommitAndTree(t *testing.T) {
 	if err := verifyOfficial(lock); err == nil || !strings.Contains(err.Error(), "official tag resolves") {
 		t.Fatalf("expected tagged commit mismatch, got %v", err)
 	}
+	lock.Tag = "v9.9.9"
+	if err := verifyOfficial(lock); err == nil || !strings.Contains(err.Error(), "fetch official tag") {
+		t.Fatalf("expected missing tag failure, got %v", err)
+	}
+}
+
+func TestGitReportsFailedCommand(t *testing.T) {
+	repository := t.TempDir()
+	if _, err := git(repository, "rev-parse", "--verify", "missing-ref"); err == nil {
+		t.Fatal("expected git command to fail")
+	} else if message := err.Error(); !strings.Contains(message, "git rev-parse --verify missing-ref") || !strings.Contains(message, "missing-ref") {
+		t.Fatalf("git failure lacks actionable context: %v", err)
+	}
 }
