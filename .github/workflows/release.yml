@@ -1,0 +1,176 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_release:
+        description: Draft release tag containing performance-soak.json evidence assets
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  attestations: write
+  contents: write
+  id-token: write
+  packages: write
+
+jobs:
+  release-gates:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Go quality and coverage
+        run: |
+          test -z "$(find admin-ui api internal management tests tools -name '*.go' -print0 | xargs -0 gofmt -l)"
+          go vet ./...
+          go test -race ./...
+          make coverage-check
+          make build
+      - name: Security and deployment gates
+        shell: pwsh
+        run: |
+          ./tests/security/scan.ps1
+          ./tests/deployment/helm.ps1
+      - name: Linux standalone and cluster failure gates
+        run: |
+          tests/integration/linux-smoke.sh
+          tests/fault/single-node-recovery.sh
+      - name: Management black-box matrix
+        shell: pwsh
+        run: |
+          foreach ($scenario in @('api','reconcile','apply','delete','audit','auth','routing','dlq','metrics','diagnostics','controller')) {
+            ./tests/integration/docker-desktop.ps1 -Scenario $scenario
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Recovery, upgrade, and migration gates
+        shell: pwsh
+        run: |
+          ./tests/integration/rolling-upgrade.ps1 -BuildLocal
+          ./tests/integration/backup-restore.ps1
+          ./tests/integration/migration.ps1
+          ./tests/integration/shadow-capture.ps1
+
+  publish:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: release-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download and verify native-Linux soak evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_RELEASE: ${{ inputs.evidence_release }}
+        run: |
+          mkdir -p evidence
+          gh release download "$EVIDENCE_RELEASE" --repo "$GITHUB_REPOSITORY" --pattern 'performance-soak.json*' --dir evidence
+          go run ./tools/perfevidence -evidence evidence/performance-soak.json.evidence.json -require-soak
+          test "$(jq -r .source_revision evidence/performance-soak.json.evidence.json)" = "$GITHUB_SHA"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image names
+        id: names
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "nats=ghcr.io/$owner/rabbit-jetstream-nats"
+            echo "management=ghcr.io/$owner/rabbit-jetstream-management"
+            echo "operator=ghcr.io/$owner/rabbit-jetstream-operator"
+          } >> "$GITHUB_OUTPUT"
+      - name: Publish NATS image
+        id: nats
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: packaging/Dockerfile.nats-server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.names.outputs.nats }}:${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+      - name: Publish management image
+        id: management
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: packaging/Dockerfile.management
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.names.outputs.management }}:${{ github.ref_name }}
+          build-args: VERSION=${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+      - name: Publish operator image
+        id: operator
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: packaging/Dockerfile.operator
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.names.outputs.operator }}:${{ github.ref_name }}
+          build-args: VERSION=${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+      - name: Attest NATS image
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-name: ${{ steps.names.outputs.nats }}
+          subject-digest: ${{ steps.nats.outputs.digest }}
+          push-to-registry: true
+      - name: Attest management image
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-name: ${{ steps.names.outputs.management }}
+          subject-digest: ${{ steps.management.outputs.digest }}
+          push-to-registry: true
+      - name: Attest operator image
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-name: ${{ steps.names.outputs.operator }}
+          subject-digest: ${{ steps.operator.outputs.digest }}
+          push-to-registry: true
+      - name: Package Helm release metadata
+        env:
+          NATS_IMAGE: ${{ steps.names.outputs.nats }}
+          NATS_DIGEST: ${{ steps.nats.outputs.digest }}
+          MANAGEMENT_IMAGE: ${{ steps.names.outputs.management }}
+          MANAGEMENT_DIGEST: ${{ steps.management.outputs.digest }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          docker run --rm -v "$PWD:/src" -w /src alpine/helm:3.18.4 package deploy/helm/rabbit-jetstream --version "$version" --app-version "$GITHUB_REF_NAME" --destination dist
+          printf 'nats:\n  image:\n    repository: %s\n    digest: %s\nmanagement:\n  image:\n    repository: %s\n    digest: %s\n' "$NATS_IMAGE" "$NATS_DIGEST" "$MANAGEMENT_IMAGE" "$MANAGEMENT_DIGEST" > dist/release-images.yaml
+          cp evidence/performance-soak.json.evidence.json dist/
+          (cd dist && sha256sum ./* > SHA256SUMS)
+      - name: Attest release files
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rabbit-jetstream-${{ github.ref_name }}
+          path: dist/
+          retention-days: 90
+      - name: Ensure draft release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$GITHUB_REF_NAME"
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber

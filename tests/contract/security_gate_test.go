@@ -41,19 +41,21 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]") {
 		t.Error("CI management scenario matrix is incomplete")
 	}
-	for lineNumber, line := range strings.Split(workflow, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[0] != "-" || fields[1] != "uses:" {
-			continue
-		}
-		separator := strings.LastIndexByte(fields[2], '@')
-		if separator < 0 {
-			t.Errorf("CI action on line %d has no immutable revision", lineNumber+1)
-			continue
-		}
-		revision := fields[2][separator+1:]
-		if len(revision) != 40 || strings.Trim(revision, "0123456789abcdef") != "" {
-			t.Errorf("CI action on line %d is not pinned to a full commit SHA: %s", lineNumber+1, fields[2])
+	for _, workflowFile := range []string{".github/workflows/ci.yml", ".github/workflows/release.yml"} {
+		for lineNumber, line := range strings.Split(read(workflowFile), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 3 || fields[0] != "-" || fields[1] != "uses:" {
+				continue
+			}
+			separator := strings.LastIndexByte(fields[2], '@')
+			if separator < 0 {
+				t.Errorf("%s action on line %d has no immutable revision", workflowFile, lineNumber+1)
+				continue
+			}
+			revision := fields[2][separator+1:]
+			if len(revision) != 40 || strings.Trim(revision, "0123456789abcdef") != "" {
+				t.Errorf("%s action on line %d is not pinned to a full commit SHA: %s", workflowFile, lineNumber+1, fields[2])
+			}
 		}
 	}
 	for _, file := range []string{
@@ -79,5 +81,11 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	helpers := read("deploy/helm/rabbit-jetstream/templates/_helpers.tpl")
 	if !strings.Contains(schema, `"digest": {"type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$"}`) || !strings.Contains(helpers, `printf "%s@%s"`) {
 		t.Error("Helm chart no longer validates and renders immutable image digests")
+	}
+	release := read(".github/workflows/release.yml")
+	for _, requirement := range []string{"needs: release-gates", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
+		if !strings.Contains(release, requirement) {
+			t.Errorf("release workflow lost requirement %q", requirement)
+		}
 	}
 }
