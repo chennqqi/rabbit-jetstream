@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="$repo_root/deploy/compose/cluster.yml"
 project="rjs-linux-fault-${GITHUB_RUN_ID:-local}"
 network="${project}_default"
-nats_box="natsio/nats-box:latest"
+nats_box="natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c"
 
 cleanup() {
   docker compose -p "$project" -f "$compose_file" down -v --remove-orphans

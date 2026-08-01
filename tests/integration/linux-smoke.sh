@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+go_tool_image='golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58'
+nats_box_image='natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c'
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="$repo_root/deploy/compose/standalone.yml"
 project="rjs-linux-smoke-${GITHUB_RUN_ID:-local}"
@@ -18,9 +21,9 @@ curl --fail --silent --show-error http://127.0.0.1:8223/readyz
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/info
 
 network="${project}_default"
-docker run --rm --network "$network" natsio/nats-box:latest \
+docker run --rm --network "$network" "$nats_box_image" \
   nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
-docker run --rm --network "$network" natsio/nats-box:latest \
+docker run --rm --network "$network" "$nats_box_image" \
   nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/cluster | grep -q '"streams":1'
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams | grep -q '"name":"RJS_API"'
@@ -28,7 +31,7 @@ curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API |
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers | grep -q '"name":"WORKER"'
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/nodes | grep -q '"available":1'
 
-docker run --rm --network "$network" -v "$repo_root:/src" -w /src golang:1.25-bookworm \
+docker run --rm --network "$network" -v "$repo_root:/src" -w /src "$go_tool_image" \
   go run ./tools/rjsctl diagnostics collect --url http://management:8223 \
   --output "/src/$(basename "$bundle")"
 unzip -t "$bundle"

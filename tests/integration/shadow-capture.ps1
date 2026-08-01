@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+$GoToolImage = 'golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Suffix = "$PID-$([Guid]::NewGuid().ToString('N').Substring(0,8))"
 $Network = "rjs-shadow-$Suffix"
@@ -23,7 +24,7 @@ try {
     if ($i -eq 60) { throw 'RabbitMQ did not become ready' }
     for ($i=0; $i -lt 60; $i++) { & docker run --rm --network $Network natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c nats server check connection -s nats://nats:4222 2>$null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 1 }
     if ($i -eq 60) { throw 'NATS did not become ready' }
-    Invoke-Docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tests/helpers/shadow-publisher --mode setup
+    Invoke-Docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tests/helpers/shadow-publisher --mode setup
     $ContainerOutput = "/src/$([IO.Path]::GetFileName($Output))"
     Invoke-Docker run -d --name $RabbitCapture --network $Network -e RJS_RABBITMQ_URL=amqp://rjs:test@rabbit:5672/ -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate capture rabbitmq --queue shadow.capture --output "$ContainerOutput/rabbit.ndjson" --count 3 --timeout 30s
     Invoke-Docker run -d --name $NATSCapture --network $Network -e RJS_NATS_URL=nats://nats:4222 -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:shadow-test migrate capture jetstream --stream SHADOW --filter shadow.events --output "$ContainerOutput/jetstream.ndjson" --count 3 --timeout 30s

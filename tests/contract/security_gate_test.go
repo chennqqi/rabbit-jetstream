@@ -41,4 +41,17 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]") {
 		t.Error("CI management scenario matrix is incomplete")
 	}
+	for _, file := range []string{
+		"tests/integration/docker-desktop.ps1",
+		"tests/integration/linux-smoke.sh",
+		"tests/integration/rolling-upgrade.ps1",
+		"tests/integration/shadow-capture.ps1",
+		"tests/fault/single-node-recovery.sh",
+		"tests/performance/jetstream.ps1",
+	} {
+		content := read(file)
+		if strings.Contains(content, "natsio/nats-box:latest") || strings.Contains(content, "golang:1.25-bookworm") {
+			t.Errorf("%s uses a floating test-helper image", file)
+		}
+	}
 }

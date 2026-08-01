@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$NATSBoxImage = 'natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Project = "rjs-rolling-$PID"
 $Compose = 'deploy/compose/cluster.yml'
@@ -31,7 +32,7 @@ function Wait-Healthy([string]$Container) {
 function Wait-ReplicasCurrent([string]$Server) {
     foreach ($Attempt in 1..45) {
         try {
-            $Info = & docker run --rm --network $Network natsio/nats-box:latest nats --server $Server stream info RJS_ROLLING --json 2>$null | ConvertFrom-Json
+            $Info = & docker run --rm --network $Network $NATSBoxImage nats --server $Server stream info RJS_ROLLING --json 2>$null | ConvertFrom-Json
             if ($LASTEXITCODE -eq 0 -and @($Info.cluster.replicas | Where-Object current).Count -eq 2) { return $Info }
         } catch {}
         Start-Sleep -Seconds 1
@@ -40,7 +41,7 @@ function Wait-ReplicasCurrent([string]$Server) {
 }
 
 function Publish-Probe([string]$Server, [string]$Payload) {
-    Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server $Server publish rjs.rolling $Payload
+    Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server $Server publish rjs.rolling $Payload
 }
 
 function Roll-Nodes([string]$Image, [int[]]$Order, [string]$Phase) {
@@ -65,8 +66,8 @@ try {
     $UpArgs = @('compose', '-p', $Project, '-f', $Compose, 'up', '-d', '--wait')
     if ($BuildLocal) { $UpArgs += '--build' }
     Invoke-Docker @UpArgs
-    Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 stream add RJS_ROLLING --subjects rjs.rolling --storage file --replicas 3 --defaults
-    Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 consumer add RJS_ROLLING ROLLING --filter rjs.rolling --ack explicit --pull --defaults
+    Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 stream add RJS_ROLLING --subjects rjs.rolling --storage file --replicas 3 --defaults
+    Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 consumer add RJS_ROLLING ROLLING --filter rjs.rolling --ack explicit --pull --defaults
     Publish-Probe 'nats://nats-1:4222' 'baseline'
 
     Roll-Nodes $TargetNATSImage @(1, 2, 3) 'upgrade'
@@ -83,7 +84,7 @@ try {
 
     $Final = Wait-ReplicasCurrent 'nats://nats-1:4222'
     if ($Final.state.messages -ne 7) { throw "rolling drill retained $($Final.state.messages) messages, expected 7" }
-    $Consumer = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 consumer info RJS_ROLLING ROLLING --json | ConvertFrom-Json
+    $Consumer = & docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 consumer info RJS_ROLLING ROLLING --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $Consumer.num_pending -ne 7) { throw 'Consumer metadata or pending count was not preserved' }
     $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
     if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'cluster did not fully recover after rollback' }

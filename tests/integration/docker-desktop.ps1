@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$GoToolImage = 'golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58'
+$NATSBoxImage = 'natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c'
 
 function Invoke-Docker {
     & docker @args
@@ -78,8 +80,8 @@ try {
 				$OpenAPIResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/openapi.yaml' -TimeoutSec 5
 				$OpenAPI = if ($OpenAPIResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($OpenAPIResponse.Content) } else { [string]$OpenAPIResponse.Content }
 				if (-not $OpenAPI.StartsWith('openapi: 3.1.0') -or -not $OpenAPI.Contains('/api/v1/queues/{queue}:')) { throw 'embedded OpenAPI contract is unavailable or incomplete' }
-                Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
-                Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
+                Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
+                Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
                 $Cluster = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/cluster' -TimeoutSec 5
                 $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
                 $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API' -TimeoutSec 5
@@ -94,7 +96,7 @@ try {
             }
             if ($Scenario -eq 'reconcile') {
                 $Network = "${Project}_default"
-                $Result = & docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+                $Result = & docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
                 if ($LASTEXITCODE -ne 0) { throw 'Linux rjsctl reconcile failed' }
                 if ($Result.status -ne 'ready' -or $Result.blocked) { throw 'reconcile did not produce a ready plan' }
                 if (@($Result.operations | Where-Object action -eq 'create').Count -ne 2) { throw 'reconcile did not plan two creates' }
@@ -103,12 +105,12 @@ try {
             }
 			if ($Scenario -eq 'apply') {
 				$Network = "${Project}_default"
-				$First = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+				$First = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $First.status -ne 'ready') { throw 'first apply failed' }
-				$Second = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+				$Second = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Second.status -ne 'noop') { throw 'second apply was not idempotent' }
 				$OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
-				$Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
+				$Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready' -or @($Updated.operations | Where-Object action -eq 'update').Count -ne 2) { throw 'safe update apply failed' }
 				$StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='basic'}; spec=@{subjects=@('basic.>'); replicas=1; storage='file'}} | ConvertTo-Json -Depth 8
 				$StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
@@ -125,33 +127,33 @@ try {
 			}
 			if ($Scenario -eq 'delete') {
 				$Network = "${Project}_default"
-				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish basic.test retained-message
-				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic 2>$null
+				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish basic.test retained-message
+				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic 2>$null
 				if ($LASTEXITCODE -eq 0) { throw 'non-empty Queue deletion unexpectedly succeeded without force' }
 				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
 				if ($Stream.messages -ne 1) { throw 'blocked delete changed the Stream' }
-				$Deleted = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic --force basic | ConvertFrom-Json
+				$Deleted = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic --force basic | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Deleted.status -ne 'deleted' -or $Deleted.messages -ne 1) { throw 'forced delete failed' }
-				$Again = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic | ConvertFrom-Json
+				$Again = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Again.status -ne 'noop') { throw 'repeated delete was not idempotent' }
 				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 5
 				if ($Declarations.total -ne 0) { throw 'Queue declaration was not deleted' }
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 stream add RJSQ_foreign --subjects foreign.serve --storage file --replicas 1 --defaults
-				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue delete --url http://management:8223 --confirm foreign --force foreign 2>$null
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream add RJSQ_foreign --subjects foreign.serve --storage file --replicas 1 --defaults
+				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm foreign --force foreign 2>$null
 				if ($LASTEXITCODE -eq 0) { throw 'foreign Stream deletion unexpectedly succeeded' }
 				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -TimeoutSec 5
 				if ($Foreign.name -ne 'RJSQ_foreign') { throw 'foreign Stream ownership protection failed' }
 			}
 			if ($Scenario -eq 'audit') {
 				$Network = "${Project}_default"
-				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
-				$Audit = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl audit list --url http://management:8223 --limit 10 | ConvertFrom-Json
+				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				$Audit = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl audit list --url http://management:8223 --limit 10 | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Audit.total -ne 2 -or $Audit.items[0].phase -ne 'outcome' -or $Audit.items[1].phase -ne 'intent') { throw 'audit intent/outcome events are incorrect' }
 				if ($Audit.items[0].intentId -ne $Audit.items[1].id -or $Audit.items[0].requestId -ne $Audit.items[1].requestId) { throw 'audit event correlation is incorrect' }
 				$SerializedAudit = $Audit | ConvertTo-Json -Depth 8
 				if ($SerializedAudit.Contains('desktop-test-token')) { throw 'audit events exposed the admin token' }
-				$StreamInfo = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 stream info RJS_AUDIT_EVENTS --json | ConvertFrom-Json
+				$StreamInfo = & docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream info RJS_AUDIT_EVENTS --json | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or -not $StreamInfo.config.deny_delete -or -not $StreamInfo.config.deny_purge -or $StreamInfo.state.messages -ne 2) { throw 'audit Stream protection or state is incorrect' }
 				Invoke-Docker compose -p $Project -f $Compose restart management
 				Wait-Healthy "${Project}-management-1"
@@ -160,7 +162,7 @@ try {
 			}
 			if ($Scenario -eq 'auth') {
 				$Network = "${Project}_default"
-				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=next-operator -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=next-operator -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
 				foreach ($Token in @('legacy-operator', 'next-operator', 'audit-reader')) {
 					$Response = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -SkipHttpErrorCheck
 					if ($Response.StatusCode -ne 200) { throw "$Token could not read audit events" }
@@ -178,17 +180,17 @@ try {
 			if ($Scenario -eq 'routing') {
 				$Network = "${Project}_default"
 				foreach ($Fixture in @('queue-routing-direct.yaml', 'queue-routing-topic.yaml', 'queue-routing-fanout-a.yaml', 'queue-routing-fanout-b.yaml')) {
-					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
 				}
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.created direct-match
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.deleted direct-miss
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.orders.created topic-star-match
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.orders.created.eu topic-star-miss
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.audit topic-hash-zero
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.audit.security.login topic-hash-many
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.created direct-match
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.deleted direct-miss
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.orders.created topic-star-match
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.orders.created.eu topic-star-miss
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.audit topic-hash-zero
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_topic.x.commerce.topic.audit.security.login topic-hash-many
 				# Native SDK/gateway resolves fanout to both queue-scoped targets.
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_fanout_a.x.announcements.fanout fanout-message
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.routing_fanout_b.x.announcements.fanout fanout-message
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_fanout_a.x.announcements.fanout fanout-message
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_fanout_b.x.announcements.fanout fanout-message
 				$Direct = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_direct' -TimeoutSec 5
 				$Topic = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_topic' -TimeoutSec 5
 				$FanoutA = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_a' -TimeoutSec 5
@@ -200,17 +202,17 @@ try {
 			if ($Scenario -eq 'dlq') {
 				$Network = "${Project}_default"
 				foreach ($Fixture in @('queue-dlq-target.yaml', 'queue-dlq-source.yaml')) {
-					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
 				}
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.retry_orders.ingress poison-message
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.retry_orders.ingress poison-message
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
 				Start-Sleep -Seconds 2
-				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
 				Start-Sleep -Seconds 2
 				# A pull after the final allowed delivery makes JetStream evaluate the
 				# exhausted message and publish the MaxDeliver advisory. A timeout is
 				# expected because the message must not be delivered a third time.
-				& docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 2s
+				& docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 2s
 				if ($LASTEXITCODE -notin @(0, 1)) { throw "DLQ exhaustion probe failed with exit code $LASTEXITCODE" }
 				$Moved = $false
 				for ($Attempt = 0; $Attempt -lt 15; $Attempt++) {
@@ -243,7 +245,7 @@ try {
 			}
 			if ($Scenario -eq 'diagnostics') {
 				$ContainerOutput = "/src/$([IO.Path]::GetFileName($DiagnosticBundle))"
-				Invoke-Docker run --rm --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
+				Invoke-Docker run --rm --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
 				$Archive = [IO.Compression.ZipFile]::OpenRead($DiagnosticBundle)
 				try {
 					$Names = @($Archive.Entries | ForEach-Object FullName)
@@ -288,10 +290,10 @@ try {
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
             Invoke-Docker run -d --name $Second --network $Network -p 28223:8223 -e 'RJS_NATS_URL=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222' -e 'RJS_NATS_MONITOR_URLS=http://nats-1:8222,http://nats-2:8222,http://nats-3:8222' -e RJS_ADMIN_TOKEN=desktop-test-token -e RJS_METADATA_REPLICAS=3 -e RJS_INSTANCE_ID=management-2 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s rabbit-jetstream/management:local
-            $Apply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
+            $Apply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Apply.status -ne 'ready') { throw 'cluster Queue apply failed' }
             $OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/cluster' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
-            $Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster-updated.yaml | ConvertFrom-Json
+            $Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster-updated.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready') { throw 'cluster Queue update failed' }
             $StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='cluster'}; spec=@{subjects=@('cluster.>'); replicas=3; storage='file'}} | ConvertTo-Json -Depth 8
             $StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
@@ -310,10 +312,10 @@ try {
                 $SurvivorController = 'http://management:8223/api/v1/controller'
             }
             $Leader = Wait-NetworkControllerLeader $Network $SurvivorController
-            Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 consumer rm RJSQ_cluster RJSQC_cluster --force
+            Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 consumer rm RJSQ_cluster RJSQC_cluster --force
             $Recovered = $false
             foreach ($Attempt in 1..20) {
-                $Consumer = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 consumer info RJSQ_cluster RJSQC_cluster --json 2>$null | ConvertFrom-Json
+                $Consumer = & docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 consumer info RJSQ_cluster RJSQC_cluster --json 2>$null | ConvertFrom-Json
                 if ($LASTEXITCODE -eq 0 -and $Consumer.name -eq 'RJSQC_cluster') { $Recovered = $true; break }
                 Start-Sleep -Seconds 1
             }
@@ -335,18 +337,18 @@ try {
         Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
         $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 5
         if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'initial node monitoring is incorrect' }
-        Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 stream add RJS_E2E --subjects rjs.e2e --storage file --replicas 3 --defaults
-        Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 publish rjs.e2e before-failure
+        Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 stream add RJS_E2E --subjects rjs.e2e --storage file --replicas 3 --defaults
+        Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 publish rjs.e2e before-failure
         Invoke-Docker compose -p $Project -f $Compose stop nats-1
         Start-Sleep -Seconds 5
-        Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-2:4222 publish rjs.e2e during-failure
+        Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-2:4222 publish rjs.e2e during-failure
         $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
         if ($Ready.status -ne 'ready') { throw 'management API failed during node outage' }
         $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
         if ($Nodes.status -ne 'degraded' -or $Nodes.available -ne 2 -or $Nodes.unavailable -ne 1) { throw 'node outage was not reported correctly' }
         Invoke-Docker compose -p $Project -f $Compose start nats-1
         Wait-Healthy "${Project}-nats-1-1"
-        $Info = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats-1:4222 stream info RJS_E2E --json | ConvertFrom-Json
+        $Info = & docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 stream info RJS_E2E --json | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) { throw 'stream inspection failed' }
         if ($Info.state.messages -ne 2) { throw "expected 2 messages, got $($Info.state.messages)" }
         $CurrentReplicas = @($Info.cluster.replicas | Where-Object current).Count

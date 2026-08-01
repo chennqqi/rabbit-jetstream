@@ -51,6 +51,8 @@ Helm changes run `tests/deployment/helm.ps1`: chart lint, values-schema rejectio
 
 CI also executes every management black-box scenario independently: API/OpenAPI, read-only reconcile, idempotent apply, protected delete, durable audit, RBAC rotation, direct/topic/fanout routing, DLQ transfer, metrics/alerts, diagnostic bundles, and multi-instance controller failover. Adding a scenario to `docker-desktop.ps1` requires adding it to the workflow matrix unless another mandatory job proves the same behavior.
 
+Test helper containers are referenced by immutable registry digests. Update the digest deliberately when upgrading Go or `nats` CLI behavior; floating tags such as `latest` are rejected by contract tests.
+
 Run the same checks through Docker Desktop's Linux engine:
 
 ```bash
