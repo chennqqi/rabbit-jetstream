@@ -5,6 +5,11 @@ services:
       context: ../..
       dockerfile: packaging/Dockerfile.nats-server
     command: ["-c", "/etc/nats/nats.conf"]
+    restart: unless-stopped
+    stop_grace_period: 60s
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     ports:
       - "4222:4222"
       - "8222:8222"
@@ -21,6 +26,11 @@ services:
     build:
       context: ../..
       dockerfile: packaging/Dockerfile.management
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     environment:
       RJS_NATS_URL: nats://nats:4222
       RJS_NATS_MONITOR_URLS: http://nats:8222
@@ -49,6 +59,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.12.0-distroless
     profiles: [observability]
+    restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus

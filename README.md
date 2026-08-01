@@ -11,10 +11,11 @@
 要求：Go 1.24+；本地运行 NATS 时须启用 JetStream。
 
 ```bash
-docker compose -f deploy/compose/standalone.yml up -d
-go run ./management/cmd/rjs-management
+docker compose -f deploy/compose/standalone.yml up -d --build --wait
 go run ./tools/rjsctl status
 ```
+
+该 Compose 同时启动 NATS 与 management；不要再单独启动第二个 management 进程。Compose 配置用于本地开发和架构演示，生产部署使用带 mTLS、持久卷和 digest 固定镜像的 Helm 方案。
 
 默认管理端点为 `http://127.0.0.1:8223`：
 

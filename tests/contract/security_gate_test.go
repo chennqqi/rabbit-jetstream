@@ -74,6 +74,14 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 			t.Errorf("%s uses a floating test-helper image", file)
 		}
 	}
+	for _, file := range []string{"deploy/compose/standalone.yml", "deploy/compose/cluster.yml"} {
+		compose := read(file)
+		for _, requirement := range []string{"restart: unless-stopped", "read_only: true", `security_opt: ["no-new-privileges:true"]`, `cap_drop: ["ALL"]`} {
+			if !strings.Contains(compose, requirement) {
+				t.Errorf("%s lost container hardening %q", file, requirement)
+			}
+		}
+	}
 	for _, file := range []string{"tests/coverage/check.sh", "tests/coverage/check.ps1"} {
 		content := read(file)
 		if !strings.Contains(content, "internal/topology") || !strings.Contains(content, "management/internal/controller") || !strings.Contains(content, "90.0") {
