@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-要求：Go 1.24+；本地运行 NATS 时须启用 JetStream。
+要求：Go 1.25（仓库固定 `go1.25.12` toolchain）和 Docker Desktop；本地运行 NATS 时须启用 JetStream。
 
 ```bash
 docker compose -f deploy/compose/standalone.yml up -d --build --wait
