@@ -1,8 +1,11 @@
 param(
-    [double]$Minimum = $(if ($env:RJS_COVERAGE_MIN) { [double]$env:RJS_COVERAGE_MIN } else { 80.0 })
+    [double]$Minimum = $(if ($env:RJS_COVERAGE_MIN) { [double]$env:RJS_COVERAGE_MIN } else { 80.0 }),
+    [double]$CriticalMinimum = $(if ($env:RJS_CRITICAL_COVERAGE_MIN) { [double]$env:RJS_CRITICAL_COVERAGE_MIN } else { 90.0 })
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Minimum -lt 80.0) { throw 'Minimum cannot lower the committed 80.0% baseline' }
+if ($CriticalMinimum -lt 90.0) { throw 'CriticalMinimum cannot lower the committed 90.0% baseline' }
 $profile = Join-Path ([System.IO.Path]::GetTempPath()) ("rjs-coverage-{0}.out" -f [guid]::NewGuid())
 try {
     $packages = @(go list ./... | Where-Object { $_ -notmatch '/tests/helpers/' })
@@ -16,6 +19,17 @@ try {
     $actual = [double]::Parse($match.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
     Write-Host ("total coverage: {0:N1}% (required: {1:N1}%)" -f $actual, $Minimum)
     if ($actual -lt $Minimum) { throw "coverage $actual% is below $Minimum%" }
+    foreach ($package in @('./internal/topology', './management/internal/controller')) {
+        go test "-coverprofile=$profile" $package
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $total = go tool cover "-func=$profile" | Select-String '^total:'
+        if ($LASTEXITCODE -ne 0 -or -not $total) { throw "unable to read critical coverage for $package" }
+        $match = [regex]::Match($total.Line, '([0-9]+(?:\.[0-9]+)?)%')
+        if (-not $match.Success) { throw "unable to parse critical coverage for ${package}: $($total.Line)" }
+        $actual = [double]::Parse($match.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+        Write-Host ("critical package {0} coverage: {1:N1}% (required: {2:N1}%)" -f $package, $actual, $CriticalMinimum)
+        if ($actual -lt $CriticalMinimum) { throw "critical package $package coverage $actual% is below $CriticalMinimum%" }
+    }
 }
 finally {
     Remove-Item -LiteralPath $profile -Force -ErrorAction SilentlyContinue

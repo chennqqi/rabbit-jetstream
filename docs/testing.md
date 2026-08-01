@@ -12,7 +12,7 @@ Replacing RabbitMQ makes correctness and recoverability release requirements, no
 
 ## Merge and Release Gates
 
-- New or changed Go code needs meaningful tests and must not reduce coverage. The initial target is 80% line coverage; safety-critical reconciliation and message-semantics packages require 90% branch-oriented coverage.
+- New or changed Go code needs meaningful tests and must not reduce coverage. The repository requires 80% statement coverage; `internal/topology` and `management/internal/controller` independently require 90%, with explicit boundary and failure-path tests for branch behavior.
 - Pull requests run formatting, vet, race-enabled unit tests, integration tests, vulnerability scanning, and deterministic compatibility tests.
 - A release candidate must pass three-node failure recovery, backup/restore, rolling upgrade/rollback, a 24-hour soak, and performance-regression gates.
 - Flaky tests are production defects. Quarantine requires an owner, linked issue, and expiry date.
@@ -37,7 +37,7 @@ From PowerShell, without WSL:
 .\tests\coverage\check.ps1
 ```
 
-Set `RJS_COVERAGE_MIN` only to raise the threshold in stricter release pipelines; lowering the committed baseline is not an acceptable merge workaround.
+Set `RJS_COVERAGE_MIN` or `RJS_CRITICAL_COVERAGE_MIN` only to raise thresholds in stricter release pipelines; lowering committed baselines is not an acceptable merge workaround.
 
 Test evidence and benchmark reports are retained with each release. Claims of RabbitMQ replacement or performance advantage require published, repeatable workloads.
 

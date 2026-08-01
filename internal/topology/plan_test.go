@@ -118,3 +118,40 @@ func TestQueuePublishSubjectProtocol(t *testing.T) {
 		t.Fatal("wildcard publish key accepted")
 	}
 }
+
+func TestBindingSubjectsCoversRootTopicAndRejectsInvalidInputs(t *testing.T) {
+	subjects, err := BindingSubjects("target", Binding{Exchange: "events", Type: "topic", Keys: []string{"#"}})
+	if err != nil || !reflect.DeepEqual(subjects, []string{"rjs.q.target.x.events.topic", "rjs.q.target.x.events.topic.>"}) {
+		t.Fatalf("root topic subjects=%v err=%v", subjects, err)
+	}
+	subjects, err = BindingSubjects("target", Binding{Exchange: "commands", Type: "direct", Keys: []string{"orders.create", "orders.create"}})
+	if err != nil || !reflect.DeepEqual(subjects, []string{"rjs.q.target.x.commands.direct.orders.create"}) {
+		t.Fatalf("deduplicated direct subjects=%v err=%v", subjects, err)
+	}
+	for _, test := range []struct {
+		queue   string
+		binding Binding
+	}{
+		{"bad.queue", Binding{Exchange: "events", Type: "fanout"}},
+		{"target", Binding{Exchange: "events", Type: "headers"}},
+	} {
+		if _, err := BindingSubjects(test.queue, test.binding); err == nil {
+			t.Fatalf("BindingSubjects(%q,%+v) accepted invalid input", test.queue, test.binding)
+		}
+	}
+}
+
+func TestQueuePublishSubjectRejectsInvalidProtocolValues(t *testing.T) {
+	for _, test := range []struct{ queue, exchange, kind, key string }{
+		{"bad.queue", "events", "fanout", ""},
+		{"target", "bad.exchange", "fanout", ""},
+		{"target", "events", "fanout", "unexpected"},
+		{"target", "events", "direct", ""},
+		{"target", "events", "headers", "key"},
+		{"target", "events", "topic", "bad..key"},
+	} {
+		if _, err := QueuePublishSubject(test.queue, test.exchange, test.kind, test.key); err == nil {
+			t.Fatalf("QueuePublishSubject(%q,%q,%q,%q) accepted invalid input", test.queue, test.exchange, test.kind, test.key)
+		}
+	}
+}

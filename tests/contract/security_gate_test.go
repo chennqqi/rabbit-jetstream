@@ -69,4 +69,10 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 			t.Errorf("%s uses a floating test-helper image", file)
 		}
 	}
+	for _, file := range []string{"tests/coverage/check.sh", "tests/coverage/check.ps1"} {
+		content := read(file)
+		if !strings.Contains(content, "internal/topology") || !strings.Contains(content, "management/internal/controller") || !strings.Contains(content, "90.0") {
+			t.Errorf("%s does not enforce the critical-package coverage gate", file)
+		}
+	}
 }

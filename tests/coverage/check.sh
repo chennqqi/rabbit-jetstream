@@ -2,8 +2,15 @@
 set -euo pipefail
 
 minimum="${RJS_COVERAGE_MIN:-80.0}"
+critical_minimum="${RJS_CRITICAL_COVERAGE_MIN:-90.0}"
 profile="$(mktemp)"
-trap 'rm -f "$profile"' EXIT
+critical_profile="$(mktemp)"
+trap 'rm -f "$profile" "$critical_profile"' EXIT
+
+awk -v minimum="$minimum" -v critical="$critical_minimum" 'BEGIN {
+  if (minimum + 0 < 80.0) { print "RJS_COVERAGE_MIN cannot lower the committed 80.0% baseline" > "/dev/stderr"; exit 1 }
+  if (critical + 0 < 90.0) { print "RJS_CRITICAL_COVERAGE_MIN cannot lower the committed 90.0% baseline" > "/dev/stderr"; exit 1 }
+}'
 
 mapfile -t packages < <(go list ./... | grep -v '/tests/helpers/')
 go test -coverprofile="$profile" "${packages[@]}"
@@ -12,3 +19,12 @@ awk -v actual="$coverage" -v minimum="$minimum" 'BEGIN {
   printf "total coverage: %.1f%% (required: %.1f%%)\n", actual, minimum
   if (actual + 0 < minimum + 0) exit 1
 }'
+
+for package in ./internal/topology ./management/internal/controller; do
+  go test -coverprofile="$critical_profile" "$package"
+  coverage="$(go tool cover -func="$critical_profile" | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
+  awk -v package="$package" -v actual="$coverage" -v minimum="$critical_minimum" 'BEGIN {
+    printf "critical package %s coverage: %.1f%% (required: %.1f%%)\n", package, actual, minimum
+    if (actual + 0 < minimum + 0) exit 1
+  }'
+done
