@@ -14,6 +14,7 @@ type Backend interface {
 	ReleaseControllerLease(context.Context, string) error
 	ListDeclarations(context.Context) ([]topology.Declaration, error)
 	ApplyDeclaration(context.Context, topology.Declaration) (topology.ReconcileResult, error)
+	ProcessDeadLetters(context.Context, []topology.Declaration, int) (topology.DeadLetterProcessResult, error)
 }
 
 type Status struct {
@@ -25,6 +26,9 @@ type Status struct {
 	Declarations int       `json:"declarations"`
 	Reconciled   int       `json:"reconciled"`
 	Blocked      int       `json:"blocked"`
+	DLQProcessed int       `json:"dlqProcessed"`
+	DLQMoved     int       `json:"dlqMoved"`
+	DLQFailed    int       `json:"dlqFailed"`
 	LastError    string    `json:"lastError,omitempty"`
 }
 
@@ -117,6 +121,19 @@ func (c *Controller) runOnce(parent context.Context) {
 			reconciled++
 		}
 	}
+	dlqCtx, dlqCancel := context.WithTimeout(parent, c.interval)
+	dlqResult, dlqErr := c.backend.ProcessDeadLetters(dlqCtx, declarations, 100)
+	dlqCancel()
+	if dlqErr != nil {
+		c.update(now, true, len(declarations), reconciled, blocked, dlqErr.Error())
+		c.logger.Warn("dead-letter processing failed", "error", dlqErr)
+		return
+	}
+	c.mu.Lock()
+	c.status.DLQProcessed += dlqResult.Processed
+	c.status.DLQMoved += dlqResult.Moved
+	c.status.DLQFailed += dlqResult.Failed
+	c.mu.Unlock()
 	c.update(now, true, len(declarations), reconciled, blocked, "")
 }
 

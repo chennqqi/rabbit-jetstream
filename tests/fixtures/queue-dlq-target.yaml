@@ -1,0 +1,11 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: failed_orders
+spec:
+  subjects: [failed.orders]
+  replicas: 1
+  storage: file
+  delivery:
+    ackWait: 30s
+    maxDeliver: 5

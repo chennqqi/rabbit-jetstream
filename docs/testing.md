@@ -39,6 +39,7 @@ On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
 .\tests\integration\docker-desktop.ps1 apply
 .\tests\integration\docker-desktop.ps1 delete
 .\tests\integration\docker-desktop.ps1 routing
+.\tests\integration\docker-desktop.ps1 dlq
 .\tests\integration\docker-desktop.ps1 controller
 .\tests\integration\docker-desktop.ps1 fault
 ```

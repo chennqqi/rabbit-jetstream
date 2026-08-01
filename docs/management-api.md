@@ -18,7 +18,7 @@ The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitorin
 | `GET /api/v1/queues/{queue}` | Queue declaration; returns its KV revision as `ETag` |
 | `PUT /api/v1/queues/{queue}` | Authenticated, reconciled Queue apply |
 | `DELETE /api/v1/queues/{queue}` | Authenticated Queue deletion with explicit confirmation |
-| `GET /api/v1/controller` | Local controller instance, leadership, reconcile counts, and last error |
+| `GET /api/v1/controller` | Local controller instance, leadership, reconcile counts, cumulative DLQ processed/moved/failed counts, and last error |
 
 Example:
 

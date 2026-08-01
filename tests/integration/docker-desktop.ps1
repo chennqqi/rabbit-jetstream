@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'controller', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -41,11 +41,11 @@ function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
-		if ($Scenario -in @('apply', 'delete', 'routing')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -in @('apply', 'delete', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
             $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
@@ -137,6 +137,26 @@ try {
 				if ($Direct.messages -ne 1) { throw "direct routing stored $($Direct.messages), expected 1" }
 				if ($Topic.messages -ne 3) { throw "topic routing stored $($Topic.messages), expected 3" }
 				if ($FanoutA.messages -ne 1 -or $FanoutB.messages -ne 1) { throw 'fanout did not copy to both Queues' }
+			}
+			if ($Scenario -eq 'dlq') {
+				$Network = "${Project}_default"
+				foreach ($Fixture in @('queue-dlq-target.yaml', 'queue-dlq-source.yaml')) {
+					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+				}
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 publish rjs.q.retry_orders.ingress poison-message
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
+				Start-Sleep -Seconds 2
+				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
+				Start-Sleep -Seconds 2
+				$Moved = $false
+				for ($Attempt = 0; $Attempt -lt 15; $Attempt++) {
+					$Source = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_orders' -TimeoutSec 5
+					$Target = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_orders' -TimeoutSec 5
+					$Controller = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/controller' -TimeoutSec 5
+					if ($Source.messages -eq 0 -and $Target.messages -eq 1 -and $Controller.dlqMoved -ge 1) { $Moved = $true; break }
+					Start-Sleep -Seconds 1
+				}
+				if (-not $Moved) { throw "DLQ transfer failed: source=$($Source.messages) target=$($Target.messages) moved=$($Controller.dlqMoved) error=$($Controller.lastError)" }
 			}
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {

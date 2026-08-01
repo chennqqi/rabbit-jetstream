@@ -63,6 +63,13 @@ type DeadLetterPlan struct {
 	Mechanism string `json:"mechanism"`
 }
 
+type DeadLetterProcessResult struct {
+	Processed int `json:"processed"`
+	Moved     int `json:"moved"`
+	Ignored   int `json:"ignored"`
+	Failed    int `json:"failed"`
+}
+
 func BuildPlan(queue Queue) (Plan, error) {
 	queue.Default()
 	if err := queue.Validate(); err != nil {
@@ -109,10 +116,13 @@ func BuildPlan(queue Queue) (Plan, error) {
 }
 
 func routingPlan(queue Queue) ([]string, []RoutingPlan, error) {
+	ingress := QueueIngressSubject(queue.Metadata.Name)
 	if len(queue.Spec.Bindings) == 0 {
-		return append([]string(nil), queue.Spec.Subjects...), []RoutingPlan{}, nil
+		subjects := append([]string{ingress}, queue.Spec.Subjects...)
+		sort.Strings(subjects)
+		return subjects, []RoutingPlan{}, nil
 	}
-	all := make(map[string]struct{})
+	all := map[string]struct{}{ingress: {}}
 	routing := make([]RoutingPlan, 0, len(queue.Spec.Bindings))
 	for _, binding := range queue.Spec.Bindings {
 		subjects, err := BindingSubjects(queue.Metadata.Name, binding)
@@ -206,6 +216,10 @@ func QueuePublishSubject(queueName, exchange, exchangeType, routingKey string) (
 		return "", fmt.Errorf("unsupported exchange type %q", exchangeType)
 	}
 }
+
+// QueueIngressSubject is the stable direct-publish target for a logical Queue.
+// It is also used by the server-side DLQ mover.
+func QueueIngressSubject(queueName string) string { return "rjs.q." + queueName + ".ingress" }
 
 func StreamName(queueName string) string { return "RJSQ_" + queueName }
 

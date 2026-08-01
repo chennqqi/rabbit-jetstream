@@ -19,7 +19,7 @@ Parsing is strict: unknown fields, multiple YAML documents, malformed durations,
 - `spec.storage`: `file` by default, or `memory`.
 - `retention`: optional `maxAge`, `maxBytes`, and `maxMessages`; zero means unlimited.
 - `delivery`: defaults to `ackWait: 30s` and `maxDeliver: 5`.
-- `deadLetter.queue`: optional logical DLQ and cannot reference the queue itself.
+- `deadLetter.queue`: optional logical DLQ, cannot reference the queue itself, and must already be applied before the source Queue.
 
 Byte sizes accept binary units (`KiB`, `MiB`, `GiB`), decimal units (`KB`, `MB`, `GB`), bytes, or a raw integer. Fractional and negative values are rejected.
 

@@ -17,6 +17,12 @@ type fakeBackend struct {
 	declarations                                    []topology.Declaration
 	leaseCalls, listCalls, applyCalls, releaseCalls int
 	blocked                                         bool
+	dlqResult                                       topology.DeadLetterProcessResult
+	dlqErr                                          error
+}
+
+func (f *fakeBackend) ProcessDeadLetters(context.Context, []topology.Declaration, int) (topology.DeadLetterProcessResult, error) {
+	return f.dlqResult, f.dlqErr
 }
 
 func (f *fakeBackend) AcquireControllerLease(context.Context, string, time.Duration) (bool, error) {
@@ -51,11 +57,11 @@ func TestFollowerDoesNotReadDeclarations(t *testing.T) {
 }
 
 func TestLeaderReconcilesEveryDeclarationAndRenewsLease(t *testing.T) {
-	backend := &fakeBackend{leader: true, declarations: []topology.Declaration{{Queue: "a"}, {Queue: "b"}}}
+	backend := &fakeBackend{leader: true, declarations: []topology.Declaration{{Queue: "a"}, {Queue: "b"}}, dlqResult: topology.DeadLetterProcessResult{Processed: 2, Moved: 1}}
 	control := testController(backend)
 	control.runOnce(context.Background())
 	status := control.Status()
-	if !status.Leader || status.Reconciled != 2 || status.Declarations != 2 || backend.applyCalls != 2 || backend.leaseCalls != 3 {
+	if !status.Leader || status.Reconciled != 2 || status.Declarations != 2 || status.DLQProcessed != 2 || status.DLQMoved != 1 || backend.applyCalls != 2 || backend.leaseCalls != 3 {
 		t.Fatalf("status=%#v backend=%#v", status, backend)
 	}
 }
@@ -70,6 +76,15 @@ func TestLeaderReportsBlockedAndApplyFailure(t *testing.T) {
 	backend.blocked, backend.applyErr = false, errors.New("unavailable")
 	control.runOnce(context.Background())
 	if status := control.Status(); status.LastError != "unavailable" {
+		t.Fatalf("status=%#v", status)
+	}
+}
+
+func TestLeaderReportsDeadLetterFailure(t *testing.T) {
+	backend := &fakeBackend{leader: true, dlqErr: errors.New("dlq unavailable")}
+	control := testController(backend)
+	control.runOnce(context.Background())
+	if status := control.Status(); status.LastError != "dlq unavailable" || !status.Leader {
 		t.Fatalf("status=%#v", status)
 	}
 }

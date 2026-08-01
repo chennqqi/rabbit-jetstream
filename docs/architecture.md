@@ -36,7 +36,7 @@
 | Queue | Stream + durable consumer | 队列声明由控制面幂等创建 |
 | Binding | subject/filter subject | 元数据登记用于管理展示与校验 |
 | Ack/重投 | JetStream explicit ack / AckWait / MaxDeliver | SDK 暴露 RabbitMQ 风格抽象 |
-| DLX/DLQ | MaxDeliver advisories + 独立 DLQ stream | 需要定义原子性和重复投递语义 |
+| DLX/DLQ | durable MaxDeliver advisory stream + leader-only mover | 目标确认后删除源消息，提供至少一次转移与消息 ID 去重 |
 | TTL/长度 | MaxAge / MaxMsgs / MaxBytes | 映射到 stream limit policy |
 | Publisher confirm | JetStream publish ack | SDK 统一错误与超时模型 |
 | Priority queue | 每优先级一个 subject/filter + SDK 调度 | 见下节 |

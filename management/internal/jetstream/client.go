@@ -238,6 +238,18 @@ func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topolog
 	if result.Blocked {
 		return result, nil
 	}
+	if plan.DeadLetter != nil {
+		target, dependencyErr := c.Declaration(ctx, plan.DeadLetter.Queue)
+		if dependencyErr != nil {
+			return result, fmt.Errorf("DLQ dependency %s is not applied: %w", plan.DeadLetter.Queue, dependencyErr)
+		}
+		if target.Plan.DeadLetter != nil && target.Plan.DeadLetter.Queue == plan.Queue {
+			return result, fmt.Errorf("DLQ dependency cycle between %s and %s", plan.Queue, plan.DeadLetter.Queue)
+		}
+		if err := c.ensureDeadLetterInfrastructure(ctx); err != nil {
+			return result, err
+		}
+	}
 	if result.Status == "noop" {
 		return result, c.persistDeclaration(ctx, plan)
 	}

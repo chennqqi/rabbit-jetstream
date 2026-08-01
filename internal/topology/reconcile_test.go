@@ -51,11 +51,11 @@ func TestReconcileBlocksRetentionReduction(t *testing.T) {
 	}
 }
 
-func TestReconcileRejectsDLQUntilWorkerExists(t *testing.T) {
+func TestReconcileEnsuresDLQWorker(t *testing.T) {
 	plan := testPlan(t, true)
 	result := Reconcile(plan, ObservedTopology{})
 	last := result.Operations[len(result.Operations)-1]
-	if result.Status != "blocked" || last.Action != "reject" || last.Resource != "dead-letter-worker" {
+	if result.Status != "ready" || last.Action != "ensure" || last.Resource != "dead-letter-worker" {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }

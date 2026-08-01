@@ -64,9 +64,8 @@ func Reconcile(desired Plan, observed ObservedTopology) ReconcileResult {
 	result.Operations = append(result.Operations, consumerOperation)
 	if desired.DeadLetter != nil {
 		result.Operations = append(result.Operations, Operation{
-			Resource: "dead-letter-worker", Name: desired.DeadLetter.Worker, Action: "reject",
-			Impact: "unsupported", Blocked: true, Changes: []Change{},
-			Reason: "DLQ advisory republisher is not implemented",
+			Resource: "dead-letter-worker", Name: desired.DeadLetter.Worker, Action: "ensure",
+			Impact: "safe", Changes: []Change{},
 		})
 	}
 	for _, operation := range result.Operations {

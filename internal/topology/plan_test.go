@@ -73,10 +73,33 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"rjs.q.routed.x.broadcasts.fanout", "rjs.q.routed.x.commands.direct.orders.create", "rjs.q.routed.x.events.topic.audit", "rjs.q.routed.x.events.topic.audit.>", "rjs.q.routed.x.events.topic.orders.*"}
+	want := []string{"rjs.q.routed.ingress", "rjs.q.routed.x.broadcasts.fanout", "rjs.q.routed.x.commands.direct.orders.create", "rjs.q.routed.x.events.topic.audit", "rjs.q.routed.x.events.topic.audit.>", "rjs.q.routed.x.events.topic.orders.*"}
 	if !reflect.DeepEqual(plan.Stream.Subjects, want) || !reflect.DeepEqual(plan.Consumer.FilterSubjects, want) || len(plan.Routing) != 3 {
 		t.Fatalf("routing plan=%#v", plan)
 	}
+}
+
+func TestPlanAlwaysIncludesQueueIngress(t *testing.T) {
+	queue, err := ParseQueue(strings.NewReader(validQueueYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildPlan(*queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(plan.Stream.Subjects, QueueIngressSubject("orders")) {
+		t.Fatalf("subjects %v do not include queue ingress", plan.Stream.Subjects)
+	}
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestQueuePublishSubjectProtocol(t *testing.T) {

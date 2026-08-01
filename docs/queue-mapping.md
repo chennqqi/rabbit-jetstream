@@ -10,7 +10,7 @@
 | Storage and replicas | Stream storage and replica count |
 | Retention limits | Stream `MaxAge`, `MaxBytes`, and `MaxMsgs` |
 | Delivery | Explicit Ack, AckWait, MaxDeliver, instant replay |
-| DLQ | Dependency Stream plus server-side advisory republisher |
+| DLQ | Durable MaxDeliver advisory Stream plus leader-only server-side mover |
 
 The Stream uses WorkQueue retention. All SDK instances consuming the same logical Queue share the durable Consumer, which provides competing-consumer behavior. Resource names preserve Queue name case to avoid collisions.
 
@@ -23,7 +23,9 @@ Every plan includes a deterministic 128-bit revision derived from the normalized
 
 ## Important DLQ Boundary
 
-JetStream `MaxDeliver` stops delivery attempts but does not automatically move the message to another Stream. A Queue with `deadLetter` therefore plans an `advisory-republish` worker and declares the target Queue as a dependency. Until that server-side worker exists, apply must reject DLQ-enabled plans rather than silently promise RabbitMQ DLX behavior.
+JetStream `MaxDeliver` stops delivery attempts but does not automatically move the message to another Stream. A Queue with `deadLetter` declares an already-applied target Queue. The management controller captures MaxDeliver advisories in the durable `RJS_DLQ_EVENTS` Stream and its elected leader moves a bounded batch on every reconciliation pass.
+
+The mover publishes to `rjs.q.<target>.ingress` with a deterministic `Nats-Msg-Id`, original payload and headers, plus `Rjs-Dead-Letter-*` provenance headers. Only after JetStream confirms the target publish does it delete the source and double-ack the advisory. This provides at-least-once transfer: a crash may create a deduplicated retry, but the ordering prevents silent loss. Apply fails if the target Queue declaration is absent.
 
 ## Exchange Routing
 
