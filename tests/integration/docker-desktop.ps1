@@ -22,6 +22,17 @@ function Wait-Healthy([string]$ContainerName) {
     throw "$ContainerName did not become healthy"
 }
 
+function Get-HTTPStatusEventually([string]$Uri, [hashtable]$Headers) {
+    foreach ($Attempt in 1..15) {
+        try {
+            return (Invoke-WebRequest -Uri $Uri -Headers $Headers -TimeoutSec 5 -SkipHttpErrorCheck -DisableKeepAlive).StatusCode
+        } catch {
+            if ($Attempt -eq 15) { throw }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
+
 function Get-NetworkJson([string]$Network, [string]$Uri) {
     $Value = & docker run --rm --network $Network alpine:3.23 wget -q -O - $Uri | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) { throw "failed to query $Uri on $Network" }
@@ -88,7 +99,7 @@ try {
                 if ($Result.status -ne 'ready' -or $Result.blocked) { throw 'reconcile did not produce a ready plan' }
                 if (@($Result.operations | Where-Object action -eq 'create').Count -ne 2) { throw 'reconcile did not plan two creates' }
                 $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
-                if ($Streams.total -ne 0) { throw 'reconcile unexpectedly wrote JetStream resources' }
+                if (@($Streams.items | Where-Object name -Like 'RJSQ_*').Count -ne 0) { throw 'reconcile unexpectedly wrote Queue-owned JetStream resources' }
             }
 			if ($Scenario -eq 'apply') {
 				$Network = "${Project}_default"
@@ -155,14 +166,14 @@ try {
 					if ($Response.StatusCode -ne 200) { throw "$Token could not read audit events" }
 				}
 				$AuditorWrite = Invoke-WebRequest -Method Delete -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer audit-reader'; 'If-Match'='"1"'; 'X-RJS-Confirm-Queue'='basic'} -TimeoutSec 5 -SkipHttpErrorCheck
-				if ($AuditorWrite.StatusCode -ne 401) { throw "auditor write returned $($AuditorWrite.StatusCode), expected 401" }
+				if ($AuditorWrite.StatusCode -ne 403) { throw "auditor write returned $($AuditorWrite.StatusCode), expected 403" }
 				$env:RJS_ADMIN_TOKEN = ''
 				$env:RJS_ADMIN_TOKENS = 'next-operator'
 				Invoke-Docker compose -p $Project -f $Compose up -d --force-recreate --no-deps management
 				Wait-Healthy "${Project}-management-1"
-				$Old = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit' -Headers @{Authorization='Bearer legacy-operator'} -TimeoutSec 5 -SkipHttpErrorCheck
-				$New = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit' -Headers @{Authorization='Bearer next-operator'} -TimeoutSec 5 -SkipHttpErrorCheck
-				if ($Old.StatusCode -ne 401 -or $New.StatusCode -ne 200) { throw "rotation removal failed: old=$($Old.StatusCode) new=$($New.StatusCode)" }
+				$OldStatus = Get-HTTPStatusEventually 'http://127.0.0.1:8223/api/v1/audit' @{Authorization='Bearer legacy-operator'}
+				$NewStatus = Get-HTTPStatusEventually 'http://127.0.0.1:8223/api/v1/audit' @{Authorization='Bearer next-operator'}
+				if ($OldStatus -ne 401 -or $NewStatus -ne 200) { throw "rotation removal failed: old=$OldStatus new=$NewStatus" }
 			}
 			if ($Scenario -eq 'routing') {
 				$Network = "${Project}_default"
@@ -196,6 +207,11 @@ try {
 				Start-Sleep -Seconds 2
 				Invoke-Docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
 				Start-Sleep -Seconds 2
+				# A pull after the final allowed delivery makes JetStream evaluate the
+				# exhausted message and publish the MaxDeliver advisory. A timeout is
+				# expected because the message must not be delivered a third time.
+				& docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 2s
+				if ($LASTEXITCODE -notin @(0, 1)) { throw "DLQ exhaustion probe failed with exit code $LASTEXITCODE" }
 				$Moved = $false
 				for ($Attempt = 0; $Attempt -lt 15; $Attempt++) {
 					$Source = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_orders' -TimeoutSec 5

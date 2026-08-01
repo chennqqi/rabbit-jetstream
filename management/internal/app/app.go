@@ -12,6 +12,7 @@ import (
 	managementauth "github.com/chennqqi/rabbit-jetstream/management/internal/auth"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/identity"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/observability"
@@ -39,16 +40,18 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 		return nil, err
 	}
 	control := controller.New(client, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
-	var oidcVerifier *managementauth.OIDCVerifier
+	var oidcVerifier identity.Verifier
 	if cfg.OIDCIssuer != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectTimeout)
 		defer cancel()
-		oidcVerifier, err = managementauth.NewOIDC(ctx, managementauth.OIDCConfig{Issuer: cfg.OIDCIssuer, Audience: cfg.OIDCAudience, RoleClaim: cfg.OIDCRoleClaim, OperatorRole: cfg.OIDCOperatorRole, AuditorRole: cfg.OIDCAuditorRole, AllowInsecureIssuer: cfg.OIDCAllowInsecure})
+		var verifier *managementauth.OIDCVerifier
+		verifier, err = managementauth.NewOIDC(ctx, managementauth.OIDCConfig{Issuer: cfg.OIDCIssuer, Audience: cfg.OIDCAudience, RoleClaim: cfg.OIDCRoleClaim, OperatorRole: cfg.OIDCOperatorRole, AuditorRole: cfg.OIDCAuditorRole, AllowInsecureIssuer: cfg.OIDCAllowInsecure})
 		if err != nil {
 			client.Close()
 			_ = shutdownTelemetry(context.Background())
 			return nil, err
 		}
+		oidcVerifier = verifier
 	}
 	operatorTokens := cfg.AdminTokens
 	if len(operatorTokens) == 0 && cfg.AdminToken != "" {

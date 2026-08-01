@@ -83,16 +83,17 @@ jobs:
       - name: Verify three-replica write during one-node outage
         run: tests/fault/single-node-recovery.sh
 
-  management-security:
+  management-integration:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]
     steps:
       - uses: actions/checkout@v4
-      - name: Verify durable audit trail
+      - name: Verify management ${{ matrix.scenario }} behavior
         shell: pwsh
-        run: ./tests/integration/docker-desktop.ps1 -Scenario audit
-      - name: Verify RBAC and token rotation
-        shell: pwsh
-        run: ./tests/integration/docker-desktop.ps1 -Scenario auth
+        run: ./tests/integration/docker-desktop.ps1 -Scenario ${{ matrix.scenario }}
 
   rolling-upgrade:
     runs-on: ubuntu-latest

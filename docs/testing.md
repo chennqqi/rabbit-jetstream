@@ -49,6 +49,8 @@ Linux containers are the primary production target. Every pull request builds Li
 
 Helm changes run `tests/deployment/helm.ps1`: chart lint, values-schema rejection, Kubernetes API schema validation, rendered NATS configuration parsing, authenticated standalone readiness, a real mutual-TLS handshake/readiness check, and a real three-node JetStream quorum/controller-leader check through Docker Desktop or a Linux CI runner.
 
+CI also executes every management black-box scenario independently: API/OpenAPI, read-only reconcile, idempotent apply, protected delete, durable audit, RBAC rotation, direct/topic/fanout routing, DLQ transfer, metrics/alerts, diagnostic bundles, and multi-instance controller failover. Adding a scenario to `docker-desktop.ps1` requires adding it to the workflow matrix unless another mandatory job proves the same behavior.
+
 Run the same checks through Docker Desktop's Linux engine:
 
 ```bash

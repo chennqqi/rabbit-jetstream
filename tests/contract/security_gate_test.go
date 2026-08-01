@@ -37,4 +37,8 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(read(".github/workflows/ci.yml"), "./tests/security/scan.ps1") {
 		t.Error("CI no longer runs the repository security gate")
 	}
+	workflow := read(".github/workflows/ci.yml")
+	if !strings.Contains(workflow, "scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]") {
+		t.Error("CI management scenario matrix is incomplete")
+	}
 }
