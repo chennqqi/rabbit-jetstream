@@ -21,4 +21,4 @@ Validate every generated declaration before apply:
 for file in converted/*.yaml; do rjsctl queue validate "$file"; done
 ```
 
-Definitions contain no queued messages. Data migration, dual-write, shadow consumption, reconciliation, cutover, and rollback remain separate procedures. Never delete the RabbitMQ source topology until message counts, business-level checksums, redelivery behavior, and rollback acceptance criteria pass.
+Definitions contain no queued messages. Follow [Message Migration, Shadow Verification, and Cutover](migration-cutover.md) for the observation contract, strict reconciliation gate, dual-publish outbox requirements, cutover, and rollback. Never delete the RabbitMQ source topology until message counts, business-level checksums, redelivery behavior, and rollback acceptance criteria pass.

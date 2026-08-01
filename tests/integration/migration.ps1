@@ -19,6 +19,16 @@ try {
     foreach ($Name in @('orders', 'orders_dlq', 'audit')) {
         Invoke-Docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src rabbit-jetstream/operator:migration-test queue validate "$ContainerOutput/$Name.yaml"
     }
+    $PassReport = "$ContainerOutput/reconciliation-pass.json"
+    Invoke-Docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:migration-test migrate reconcile --source tests/fixtures/migration-shadow-source.ndjson --target tests/fixtures/migration-shadow-target.ndjson --output $PassReport
+    $Pass = Get-Content -LiteralPath (Join-Path $Output 'reconciliation-pass.json') -Raw | ConvertFrom-Json
+    if (-not $Pass.passed -or $Pass.matched -ne 3 -or $Pass.missing -ne 0) { throw 'passing reconciliation report is incorrect' }
+
+    $FailReport = "$ContainerOutput/reconciliation-fail.json"
+    & docker run --rm -v "${RepositoryRoot}:/src" -w /src rabbit-jetstream/operator:migration-test migrate reconcile --source tests/fixtures/migration-shadow-source.ndjson --target tests/fixtures/migration-shadow-drift.ndjson --output $FailReport 2>$null
+    if ($LASTEXITCODE -eq 0) { throw 'drifted message evidence unexpectedly passed' }
+    $Fail = Get-Content -LiteralPath (Join-Path $Output 'reconciliation-fail.json') -Raw | ConvertFrom-Json
+    if ($Fail.passed -or $Fail.missing -ne 1 -or $Fail.unexpected -ne 1 -or $Fail.content_mismatch -ne 1 -or $Fail.target_duplicates -ne 1) { throw 'failed reconciliation report is incorrect' }
 } finally {
     Remove-Item -LiteralPath $Output -Recurse -Force -ErrorAction SilentlyContinue
     Pop-Location
