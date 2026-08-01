@@ -114,6 +114,45 @@ try {
     $ExistingSecret = & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set auth.existingSecret=production-auth
     if ($LASTEXITCODE -ne 0 -or ($ExistingSecret -join "`n") -match '(?m)^kind: Secret$') { throw 'existing Secret mode rendered a generated Secret' }
 
+    $TLSRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw 'mTLS Helm render failed' }
+    foreach ($Required in @('tls://production-rabbit-jetstream-nats:4222', 'RJS_NATS_TLS_CA', 'RJS_NATS_TLS_CERT', 'RJS_NATS_TLS_KEY', 'verify: true', 'secretName: production-nats-server-tls', 'secretName: production-nats-client-tls')) {
+        if (-not $TLSRendered.Contains($Required)) { throw "mTLS Helm output is missing $Required" }
+    }
+	$TLSDirectory = Join-Path $Temporary 'tls'
+	& go run ./tests/helpers/tls-fixture --output $TLSDirectory
+	if ($LASTEXITCODE -ne 0) { throw 'test TLS certificate generation failed' }
+	$TLSSingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template production $Chart --namespace messaging --set nats.replicaCount=1 --set nats.tls.enabled=true --set nats.tls.serverSecret=production-nats-server-tls --set nats.tls.clientSecret=production-nats-client-tls) -join "`n"
+	$TLSConfigMatch = [regex]::Match($TLSSingleRendered, '(?m)^  nats\.conf: \|\r?\n(?<config>(?:    [^\r\n]*(?:\r?\n|$))+)(?=---|\z)')
+	if (-not $TLSConfigMatch.Success) { throw 'mTLS NATS configuration was not found' }
+	$TLSConfig = [regex]::Replace($TLSConfigMatch.Groups['config'].Value, '(?m)^    ', '')
+	Set-Content -LiteralPath (Join-Path $Temporary 'nats-tls.conf') -Value $TLSConfig -Encoding utf8NoBOM
+	$TLSID = ([guid]::NewGuid().ToString('N')).Substring(0, 12)
+	$TLSNetwork = "rjs-helm-tls-$TLSID"
+	$TLSNATS = "rjs-helm-tls-nats-$TLSID"
+	$TLSManagement = "rjs-helm-tls-management-$TLSID"
+	Invoke-Docker network create $TLSNetwork
+	try {
+		Invoke-Docker run -d --name $TLSNATS --network $TLSNetwork --network-alias production-rabbit-jetstream-nats -e POD_NAME=production-rabbit-jetstream-nats-0 -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD_HASH=$NATSPasswordHash" -v "${Temporary}:/work:ro" -v "${TLSDirectory}:/etc/nats-tls:ro" rabbit-jetstream/nats-server:helm-test -c /work/nats-tls.conf
+		Invoke-Docker run -d --name $TLSManagement --network $TLSNetwork --network-alias tls-management -e RJS_NATS_URL=tls://production-rabbit-jetstream-nats:4222 -e RJS_NATS_MONITOR_URLS=http://production-rabbit-jetstream-nats:8222 -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD=$NATSPassword" -e RJS_NATS_TLS_CA=/etc/nats-tls/ca.crt -e RJS_NATS_TLS_CERT=/etc/nats-tls/tls.crt -e RJS_NATS_TLS_KEY=/etc/nats-tls/tls.key -e RJS_NATS_TLS_SERVER_NAME=production-rabbit-jetstream-nats -e RJS_ADMIN_TOKEN=test-admin-token -e RJS_METADATA_REPLICAS=1 -v "${TLSDirectory}:/etc/nats-tls:ro" rabbit-jetstream/management:helm-test
+		$TLSReady = $false
+		foreach ($Attempt in 1..30) {
+			& docker run --rm --network $TLSNetwork busybox:1.37.0 wget -q -O - http://tls-management:8223/readyz 2>$null | Out-Null
+			if ($LASTEXITCODE -eq 0) { $TLSReady = $true; break }
+			Start-Sleep -Seconds 1
+		}
+		if (-not $TLSReady) {
+			& docker logs $TLSNATS
+			& docker logs $TLSManagement
+			throw 'rendered mTLS profile did not produce a ready management service'
+		}
+	} finally {
+		& docker rm -f -v $TLSManagement $TLSNATS 2>$null | Out-Null
+		& docker network rm $TLSNetwork 2>$null | Out-Null
+	}
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set nats.tls.enabled=true 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { throw 'mTLS Helm render accepted a missing certificate Secret' }
+
     & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src alpine/helm:3.18.4 template invalid $Chart --set nats.replicaCount=2 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an even NATS replica count' }
 } finally {

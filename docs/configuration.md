@@ -8,6 +8,11 @@
 | `RJS_NATS_USER` | 空 | 用户名 |
 | `RJS_NATS_PASSWORD` | 空 | 密码 |
 | `RJS_NATS_CREDS` | 空 | NATS credentials 文件；设置后优先于用户名密码 |
+| `RJS_NATS_TLS_CA` | 空 | PEM CA 文件；设置任一 TLS 选项即强制 TLS，生产必须配置 |
+| `RJS_NATS_TLS_CERT` | 空 | PEM 客户端证书；必须与 `RJS_NATS_TLS_KEY` 同时设置 |
+| `RJS_NATS_TLS_KEY` | 空 | 客户端私钥文件 |
+| `RJS_NATS_TLS_SERVER_NAME` | 空 | 覆盖服务端证书名称校验目标 |
+| `RJS_NATS_TLS_INSECURE_SKIP_VERIFY` | `false` | 跳过证书校验，仅限临时故障诊断，不得用于生产 |
 | `RJS_NATS_MONITOR_URLS` | `http://127.0.0.1:8222` | NATS monitoring 基础地址，多个节点以逗号分隔 |
 | `RJS_ADMIN_TOKEN` | 空 | 启用 apply/delete 写 API 的 Bearer Token；为空时写 API 关闭 |
 | `RJS_ADMIN_TOKENS` | 空 | 逗号分隔的 operator Token；全部可 apply/delete 及读取审计，用于重叠轮换 |
@@ -33,4 +38,4 @@
 | `RJS_CONNECT_TIMEOUT` | `5s` | 初次连接超时 |
 | `RJS_SHUTDOWN_TIMEOUT` | `10s` | HTTP 优雅退出超时 |
 
-命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。
+命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。TLS 客户端最低使用 TLS 1.2；证书或私钥缺失、CA 无效时服务拒绝启动。

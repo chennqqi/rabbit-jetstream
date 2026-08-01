@@ -7,7 +7,7 @@
     "fullnameOverride": {"type": "string"},
     "nats": {
       "type": "object", "additionalProperties": false,
-      "required": ["replicaCount", "image", "storage", "resources"],
+      "required": ["replicaCount", "image", "storage", "resources", "tls"],
       "properties": {
         "replicaCount": {"type": "integer", "enum": [1, 3, 5]},
         "image": {"$ref": "#/definitions/image"},
@@ -16,7 +16,20 @@
           "required": ["size", "storageClass"],
           "properties": {"size": {"type": "string", "minLength": 1}, "storageClass": {"type": "string"}}
         },
-        "resources": {"type": "object"}
+        "resources": {"type": "object"},
+        "tls": {
+          "type": "object", "additionalProperties": false,
+          "required": ["enabled", "serverSecret", "clientSecret", "caKey", "certKey", "keyKey", "serverName"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "serverSecret": {"type": "string"},
+            "clientSecret": {"type": "string"},
+            "caKey": {"type": "string", "minLength": 1},
+            "certKey": {"type": "string", "minLength": 1},
+            "keyKey": {"type": "string", "minLength": 1},
+            "serverName": {"type": "string"}
+          }
+        }
       }
     },
     "management": {

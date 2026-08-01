@@ -17,6 +17,11 @@ type Config struct {
 	NATSUser           string
 	NATSPassword       string
 	NATSCreds          string
+	NATSTLSCA          string
+	NATSTLSCert        string
+	NATSTLSKey         string
+	NATSTLSServerName  string
+	NATSTLSInsecure    bool
 	NATSMonitorURLs    string
 	AdminToken         string
 	AdminTokens        []string
@@ -56,6 +61,11 @@ func FromEnv() Config {
 		NATSUser:           os.Getenv("RJS_NATS_USER"),
 		NATSPassword:       os.Getenv("RJS_NATS_PASSWORD"),
 		NATSCreds:          os.Getenv("RJS_NATS_CREDS"),
+		NATSTLSCA:          os.Getenv("RJS_NATS_TLS_CA"),
+		NATSTLSCert:        os.Getenv("RJS_NATS_TLS_CERT"),
+		NATSTLSKey:         os.Getenv("RJS_NATS_TLS_KEY"),
+		NATSTLSServerName:  os.Getenv("RJS_NATS_TLS_SERVER_NAME"),
+		NATSTLSInsecure:    boolean("RJS_NATS_TLS_INSECURE_SKIP_VERIFY", false),
 		NATSMonitorURLs:    env("RJS_NATS_MONITOR_URLS", "http://127.0.0.1:8222"),
 		AdminToken:         os.Getenv("RJS_ADMIN_TOKEN"),
 		AdminTokens:        tokens(os.Getenv("RJS_ADMIN_TOKEN"), os.Getenv("RJS_ADMIN_TOKENS")),

@@ -55,13 +55,19 @@ spec:
           image: "{{ .Values.management.image.repository }}:{{ .Values.management.image.tag }}"
           imagePullPolicy: {{ .Values.management.image.pullPolicy }}
           env:
-            - {name: RJS_NATS_URL, value: "nats://{{ include "rabbit-jetstream.fullname" . }}-nats:4222"}
+            - {name: RJS_NATS_URL, value: "{{ if .Values.nats.tls.enabled }}tls{{ else }}nats{{ end }}://{{ include "rabbit-jetstream.fullname" . }}-nats:4222"}
             - name: RJS_NATS_MONITOR_URLS
               value: {{ include "rabbit-jetstream.monitorURLs" . | quote }}
             - name: RJS_NATS_USER
               valueFrom: {secretKeyRef: {name: {{ include "rabbit-jetstream.authSecret" . }}, key: nats-username}}
             - name: RJS_NATS_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ include "rabbit-jetstream.authSecret" . }}, key: nats-password}}
+            {{- if .Values.nats.tls.enabled }}
+            - {name: RJS_NATS_TLS_CA, value: /etc/nats-tls/ca.crt}
+            - {name: RJS_NATS_TLS_CERT, value: /etc/nats-tls/tls.crt}
+            - {name: RJS_NATS_TLS_KEY, value: /etc/nats-tls/tls.key}
+            - {name: RJS_NATS_TLS_SERVER_NAME, value: {{ default (printf "%s-nats" (include "rabbit-jetstream.fullname" .)) .Values.nats.tls.serverName | quote }}}
+            {{- end }}
             - name: RJS_ADMIN_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "rabbit-jetstream.authSecret" . }}, key: admin-token}}
             - name: RJS_ADMIN_TOKENS
@@ -112,6 +118,20 @@ spec:
             allowPrivilegeEscalation: false
             capabilities: {drop: ["ALL"]}
             readOnlyRootFilesystem: true
+          {{- if .Values.nats.tls.enabled }}
+          volumeMounts:
+            - {name: nats-tls, mountPath: /etc/nats-tls, readOnly: true}
+          {{- end }}
+      {{- if .Values.nats.tls.enabled }}
+      volumes:
+        - name: nats-tls
+          secret:
+            secretName: {{ include "rabbit-jetstream.tlsClientSecret" . }}
+            items:
+              - {key: {{ .Values.nats.tls.caKey | quote }}, path: ca.crt}
+              - {key: {{ .Values.nats.tls.certKey | quote }}, path: tls.crt}
+              - {key: {{ .Values.nats.tls.keyKey | quote }}, path: tls.key}
+      {{- end }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

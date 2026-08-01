@@ -12,6 +12,15 @@ data:
     authorization {
       users: [{user: $RJS_NATS_USER, password: $RJS_NATS_PASSWORD_HASH}]
     }
+    {{- if .Values.nats.tls.enabled }}
+    tls {
+      cert_file: /etc/nats-tls/tls.crt
+      key_file: /etc/nats-tls/tls.key
+      ca_file: /etc/nats-tls/ca.crt
+      verify: true
+      timeout: 5
+    }
+    {{- end }}
     jetstream { store_dir: /data/jetstream }
     {{- if gt (int .Values.nats.replicaCount) 1 }}
     cluster {
@@ -22,5 +31,14 @@ data:
         nats-route://{{ include "rabbit-jetstream.fullname" $ }}-nats-{{ $index }}.{{ include "rabbit-jetstream.fullname" $ }}-nats-headless:6222{{ if lt (add1 $index) (int $.Values.nats.replicaCount) }},{{ end }}
       {{- end }}
       ]
+      {{- if .Values.nats.tls.enabled }}
+      tls {
+        cert_file: /etc/nats-tls/tls.crt
+        key_file: /etc/nats-tls/tls.key
+        ca_file: /etc/nats-tls/ca.crt
+        verify: true
+        timeout: 5
+      }
+      {{- end }}
     }
     {{- end }}

@@ -17,6 +17,14 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- default (printf "%s-auth" (include "rabbit-jetstream.fullname" .)) .Values.auth.existingSecret }}
 {{- end }}
 
+{{- define "rabbit-jetstream.tlsServerSecret" -}}
+{{- required "nats.tls.serverSecret is required when nats.tls.enabled=true" .Values.nats.tls.serverSecret -}}
+{{- end }}
+
+{{- define "rabbit-jetstream.tlsClientSecret" -}}
+{{- required "nats.tls.clientSecret is required when nats.tls.enabled=true" .Values.nats.tls.clientSecret -}}
+{{- end }}
+
 {{- define "rabbit-jetstream.monitorURLs" -}}
 {{- range $index := until (int .Values.nats.replicaCount) -}}
 {{- if $index }},{{ end -}}http://{{ include "rabbit-jetstream.fullname" $ }}-nats-{{ $index }}.{{ include "rabbit-jetstream.fullname" $ }}-nats-headless:8222

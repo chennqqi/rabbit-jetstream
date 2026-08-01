@@ -21,12 +21,14 @@ Defaults create a persistent 3-node cluster, two management replicas, per-pod PV
 
 For GitOps or disaster recovery, create a Secret with `nats-username`, `nats-password`, `nats-password-bcrypt`, and `admin-token`, then set `auth.existingSecret`. Optional comma-separated `admin-tokens` and `audit-tokens` keys enable overlapping operator rotation and read-only auditors. The bcrypt value must hash `nats-password`; the NATS pods never receive the plaintext password. Back up this Secret separately; JetStream snapshots do not contain Kubernetes Secrets. See [Management Credential Rotation](credential-rotation.md) before changing live credentials.
 
+Production clusters should enable mutual TLS for NATS client and route traffic. Create a server Secret and a distinct management-client Secret, each containing `ca.crt`, `tls.crt`, and `tls.key`. The server certificate SANs must cover the client Service and every StatefulSet/headless-Service DNS name. Install with `--set nats.tls.enabled=true --set nats.tls.serverSecret=rjs-nats-server-tls --set nats.tls.clientSecret=rjs-management-nats-tls`. Override `nats.tls.serverName` only when the certificate uses a different stable DNS name. The chart mounts each Secret only into its intended workload and never generates private keys.
+
 ## Production Checklist
 
 - Use immutable image tags/digests and a `Retain` StorageClass; the `local` image defaults are for development only.
 - Keep `nats.replicaCount` at 3 or 5 and ensure nodes span failure domains. A one-node chart is allowed only for development/recovery.
 - Keep management and NATS client services private. If Ingress is enabled, add authentication at the ingress and TLS; read-only management endpoints are otherwise unauthenticated.
-- NATS username/password and NetworkPolicy provide a baseline, not transport encryption. Use a service mesh or a future chart TLS profile before crossing untrusted networks.
+- Enable `nats.tls` before crossing untrusted networks. The profile requires verified client certificates on both client and cluster-route ports; distribute dedicated client certificates to external publishers and consumers.
 - Enable `serviceMonitor` only when the Prometheus Operator CRD is installed.
 - Run the backup/restore drill and record RPO/RTO before production cutover.
 

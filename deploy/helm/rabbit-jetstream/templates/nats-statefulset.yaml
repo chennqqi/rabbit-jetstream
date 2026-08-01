@@ -68,9 +68,21 @@ spec:
           volumeMounts:
             - {name: config, mountPath: /etc/nats, readOnly: true}
             - {name: data, mountPath: /data}
+            {{- if .Values.nats.tls.enabled }}
+            - {name: nats-tls, mountPath: /etc/nats-tls, readOnly: true}
+            {{- end }}
       volumes:
         - name: config
           configMap: {name: {{ include "rabbit-jetstream.fullname" . }}-nats}
+        {{- if .Values.nats.tls.enabled }}
+        - name: nats-tls
+          secret:
+            secretName: {{ include "rabbit-jetstream.tlsServerSecret" . }}
+            items:
+              - {key: {{ .Values.nats.tls.caKey | quote }}, path: ca.crt}
+              - {key: {{ .Values.nats.tls.certKey | quote }}, path: tls.crt}
+              - {key: {{ .Values.nats.tls.keyKey | quote }}, path: tls.key}
+        {{- end }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

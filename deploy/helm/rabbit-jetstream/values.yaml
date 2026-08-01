@@ -13,6 +13,16 @@ nats:
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {memory: 2Gi}
+  tls:
+    enabled: false
+    # Both Secrets are required when enabled. Never reuse the server private key
+    # for management or application clients.
+    serverSecret: ""
+    clientSecret: ""
+    caKey: ca.crt
+    certKey: tls.crt
+    keyKey: tls.key
+    serverName: ""
 
 management:
   replicaCount: 2
