@@ -19,6 +19,7 @@ go run ./tools/rjsctl status
 默认管理端点为 `http://127.0.0.1:8223`：
 
 - `/admin/`：内嵌只读 Admin UI；
+- `GET /metrics`：Prometheus 运行指标；
 - `GET /healthz`：进程存活；
 - `GET /readyz`：JetStream 可用；
 - `GET /api/v1/info`：服务及 JetStream 账户摘要。
@@ -30,6 +31,7 @@ go run ./tools/rjsctl status
 go test ./...
 make build
 docker compose -f deploy/compose/cluster.yml up -d
+docker compose -f deploy/compose/standalone.yml --profile observability up -d
 make test-linux-smoke
 make test-linux-fault
 go run ./tools/rjsctl queue validate examples/queues/orders.yaml
@@ -40,7 +42,7 @@ RJS_ADMIN_TOKEN=secret go run ./tools/rjsctl queue delete --url http://127.0.0.1
 go run ./tools/rjsctl queue list --url http://127.0.0.1:8223
 ```
 
-配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
+配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[可观测性](docs/observability.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
 
 ## 仓库结构
 

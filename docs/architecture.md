@@ -55,7 +55,7 @@
 - `operator-cli`：部署检查、状态、声明、导入导出和诊断包；
 - `webui`：复用管理 API，不直接持有 NATS 管理凭据；
 - `controller`：把声明式队列策略收敛为 JetStream streams/consumers；
-- `observability`：Prometheus 指标、JetStream advisories、审计日志；
+- `observability`：内嵌 Prometheus 指标、JetStream advisories、告警规则；审计日志与 OpenTelemetry 按 Roadmap 增量加入；
 - `amqp-gateway`（未来）：独立可选组件，不侵入 JetStream。
 
 当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。只读 Admin UI 内嵌在管理二进制并通过 `/admin/` 提供集群、Queue、Stream、Consumer、controller 和 DLQ 状态；写操作、OIDC/RBAC 与更完整策略控制继续按 Roadmap 增量加入。

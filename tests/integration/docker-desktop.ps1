@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'controller', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -41,13 +41,17 @@ function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
 		if ($Scenario -in @('apply', 'delete', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
-            Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
+			if ($Scenario -eq 'metrics') {
+				Invoke-Docker compose -p $Project -f $Compose --profile observability up -d --build --wait
+			} else {
+				Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
+			}
             $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
             if ($Ready.status -ne 'ready') { throw 'management API is not ready' }
             if ($Scenario -eq 'api') {
@@ -158,9 +162,32 @@ try {
 				}
 				if (-not $Moved) { throw "DLQ transfer failed: source=$($Source.messages) target=$($Target.messages) moved=$($Controller.dlqMoved) error=$($Controller.lastError)" }
 			}
+			if ($Scenario -eq 'metrics') {
+				$Metrics = (Invoke-WebRequest -Uri 'http://127.0.0.1:8223/metrics' -TimeoutSec 5).Content
+				foreach ($Name in @('rjs_build_info', 'rjs_jetstream_up 1', 'rjs_controller_leader', 'rjs_http_requests_total')) {
+					if (-not $Metrics.Contains($Name)) { throw "metrics output is missing $Name" }
+				}
+				$PrometheusReady = $false
+				for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
+					try {
+						$Targets = Invoke-RestMethod -Uri 'http://127.0.0.1:9090/api/v1/targets' -TimeoutSec 5
+						$Target = $Targets.data.activeTargets | Where-Object { $_.labels.job -eq 'rabbit-jetstream-management' } | Select-Object -First 1
+						if ($Target.health -eq 'up') { $PrometheusReady = $true; break }
+					} catch {}
+					Start-Sleep -Seconds 1
+				}
+				if (-not $PrometheusReady) { throw 'Prometheus did not scrape management metrics successfully' }
+				$Rules = Invoke-RestMethod -Uri 'http://127.0.0.1:9090/api/v1/rules?type=alert' -TimeoutSec 5
+				$RuleCount = @($Rules.data.groups.rules).Count
+				if ($RuleCount -lt 6) { throw "Prometheus loaded only $RuleCount alert rules" }
+			}
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {
-            Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
+			if ($Scenario -eq 'metrics') {
+				Invoke-Docker compose -p $Project -f $Compose --profile observability down -v --remove-orphans
+			} else {
+				Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
+			}
 			$env:RJS_ADMIN_TOKEN = $PreviousAdminToken
         }
         return

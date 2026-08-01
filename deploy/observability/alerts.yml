@@ -1,0 +1,51 @@
+groups:
+  - name: rabbit-jetstream-availability
+    rules:
+      - alert: RabbitJetStreamJetStreamUnavailable
+        expr: rjs_jetstream_up == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Rabbit JetStream cannot reach JetStream
+          description: The management service has failed to collect JetStream account state for more than one minute.
+
+      - alert: RabbitJetStreamControllerStalled
+        expr: (rjs_controller_leader == 1) and on(instance) (time() - rjs_controller_last_success_timestamp_seconds > 60)
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Rabbit JetStream controller leader is stalled
+          description: The elected controller has not completed a successful reconciliation pass recently.
+
+      - alert: RabbitJetStreamNATSNodeUnavailable
+        expr: rjs_nats_nodes{status="unavailable"} > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: One or more NATS nodes are unavailable
+          description: The management monitoring collector cannot reach at least one configured NATS node.
+
+  - name: rabbit-jetstream-message-safety
+    rules:
+      - alert: RabbitJetStreamDeadLetterFailures
+        expr: increase(rjs_dlq_failed_total[5m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: Dead-letter transfers are failing
+          description: At least one leader-side DLQ transfer failed in the last five minutes.
+
+      - alert: RabbitJetStreamQueueBacklogHigh
+        expr: rjs_queue_messages > 100000
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: Queue backlog is above the default safety threshold
+          description: Queue {{ $labels.queue }} has held more than 100,000 messages for 15 minutes. Tune this rule to workload capacity.
+
+      - alert: RabbitJetStreamManagementHighErrorRate
+        expr: sum(rate(rjs_http_requests_total{code=~"5.."}[5m])) / clamp_min(sum(rate(rjs_http_requests_total[5m])), 1) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Management API 5xx rate is high
+          description: More than 5% of management HTTP requests have failed for ten minutes.

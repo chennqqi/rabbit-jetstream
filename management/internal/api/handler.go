@@ -50,6 +50,7 @@ type Handler struct {
 	started    time.Time
 	adminToken string
 	controller ControllerMonitor
+	metrics    *Metrics
 }
 
 func New(client Backend, logger *slog.Logger, name, version string, monitor Monitor, adminTokens ...string) http.Handler {
@@ -65,7 +66,7 @@ func NewWithController(client Backend, logger *slog.Logger, name, version string
 }
 
 func newHandler(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, adminToken string) http.Handler {
-	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), adminToken: adminToken, controller: control}
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), adminToken: adminToken, controller: control, metrics: NewMetrics()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
@@ -80,6 +81,7 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 	mux.HandleFunc("GET /api/v1/queues", h.queues)
 	mux.HandleFunc("GET /api/v1/queues/{queue}", h.queue)
 	mux.HandleFunc("GET /api/v1/controller", h.controllerStatus)
+	mux.HandleFunc("GET /metrics", h.prometheus)
 	mux.Handle("GET /admin/", adminui.Handler())
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
@@ -91,7 +93,7 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		}
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
-	return h.logging(mux)
+	return h.logging(h.instrument(mux))
 }
 
 func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
