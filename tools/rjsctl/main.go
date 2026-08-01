@@ -179,13 +179,23 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		endpoint := strings.TrimRight(*baseURL, "/") + "/api/v1/queues/" + url.PathEscape(queue.Metadata.Name)
+		client := &http.Client{Timeout: 15 * time.Second}
+		ifMatch, ifNoneMatch, err := queueRevisionHeaders(client, endpoint)
+		if err != nil {
+			return err
+		}
 		request, err := http.NewRequest(http.MethodPut, endpoint, bytes.NewReader(body))
 		if err != nil {
 			return err
 		}
 		request.Header.Set("Authorization", "Bearer "+*token)
 		request.Header.Set("Content-Type", "application/json")
-		response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+		if ifMatch != "" {
+			request.Header.Set("If-Match", ifMatch)
+		} else {
+			request.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		response, err := client.Do(request)
 		if err != nil {
 			return err
 		}
@@ -224,6 +234,11 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 			return errors.New("--confirm must exactly match the Queue name")
 		}
 		endpoint := strings.TrimRight(*baseURL, "/") + "/api/v1/queues/" + url.PathEscape(name)
+		client := &http.Client{Timeout: 15 * time.Second}
+		ifMatch, ifNoneMatch, err := queueRevisionHeaders(client, endpoint)
+		if err != nil {
+			return err
+		}
 		if *force {
 			endpoint += "?force=true"
 		}
@@ -233,7 +248,12 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 		}
 		request.Header.Set("Authorization", "Bearer "+*token)
 		request.Header.Set("X-RJS-Confirm-Queue", name)
-		response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+		if ifMatch != "" {
+			request.Header.Set("If-Match", ifMatch)
+		} else {
+			request.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		response, err := client.Do(request)
 		if err != nil {
 			return err
 		}
@@ -250,6 +270,26 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 		return encoder.Encode(result)
 	default:
 		return fmt.Errorf("unknown queue command %q", args[0])
+	}
+}
+
+func queueRevisionHeaders(client *http.Client, endpoint string) (string, string, error) {
+	lookup, err := client.Get(endpoint)
+	if err != nil {
+		return "", "", fmt.Errorf("read Queue revision: %w", err)
+	}
+	defer lookup.Body.Close()
+	switch lookup.StatusCode {
+	case http.StatusOK:
+		etag := lookup.Header.Get("ETag")
+		if etag == "" {
+			return "", "", errors.New("management API did not return Queue ETag")
+		}
+		return etag, "", nil
+	case http.StatusNotFound:
+		return "", "*", nil
+	default:
+		return "", "", fmt.Errorf("read Queue revision: management API returned %s", lookup.Status)
 	}
 }
 

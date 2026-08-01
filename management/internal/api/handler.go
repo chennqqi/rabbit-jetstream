@@ -5,10 +5,12 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
@@ -25,8 +27,11 @@ type Backend interface {
 	Stream(context.Context, string) (*jetstream.Stream, error)
 	ListConsumers(context.Context, string) ([]jetstream.Consumer, error)
 	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
+	ApplyConditional(context.Context, topology.Plan, jetstream.ApplyPrecondition) (topology.ReconcileResult, error)
 	DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error)
+	DeleteQueueConditional(context.Context, string, bool, jetstream.ApplyPrecondition) (topology.DeleteResult, error)
 	ListDeclarations(context.Context) ([]topology.Declaration, error)
+	Declaration(context.Context, string) (*topology.Declaration, error)
 }
 
 type Monitor interface {
@@ -72,8 +77,21 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 	mux.HandleFunc("PUT /api/v1/queues/{queue}", h.applyQueue)
 	mux.HandleFunc("DELETE /api/v1/queues/{queue}", h.deleteQueue)
 	mux.HandleFunc("GET /api/v1/queues", h.queues)
+	mux.HandleFunc("GET /api/v1/queues/{queue}", h.queue)
 	mux.HandleFunc("GET /api/v1/controller", h.controllerStatus)
 	return h.logging(mux)
+}
+
+func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	declaration, err := h.client.Declaration(ctx, r.PathValue("queue"))
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf("\"%d\"", declaration.KVRevision))
+	writeJSON(w, http.StatusOK, declaration)
 }
 
 func (h *Handler) controllerStatus(w http.ResponseWriter, _ *http.Request) {
@@ -118,9 +136,14 @@ func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_force", "force must be true or false")
 		return
 	}
+	precondition, err := applyPrecondition(r)
+	if err != nil {
+		writeAPIError(w, http.StatusPreconditionRequired, "precondition_required", err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	result, err := h.client.DeleteQueue(ctx, name, force)
+	result, err := h.client.DeleteQueueConditional(ctx, name, force, precondition)
 	if err != nil {
 		writeBackendError(w, err)
 		return
@@ -151,18 +174,41 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_queue", err.Error())
 		return
 	}
+	precondition, err := applyPrecondition(r)
+	if err != nil {
+		writeAPIError(w, http.StatusPreconditionRequired, "precondition_required", err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	result, err := h.client.Apply(ctx, plan)
+	result, err := h.client.ApplyConditional(ctx, plan, precondition)
 	if err != nil {
 		writeBackendError(w, err)
 		return
+	}
+	if declaration, declarationErr := h.client.Declaration(ctx, plan.Queue); declarationErr == nil {
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", declaration.KVRevision))
 	}
 	status := http.StatusOK
 	if result.Blocked {
 		status = http.StatusConflict
 	}
 	writeJSON(w, status, result)
+}
+
+func applyPrecondition(r *http.Request) (jetstream.ApplyPrecondition, error) {
+	match, none := r.Header.Get("If-Match"), r.Header.Get("If-None-Match")
+	if none == "*" && match == "" {
+		return jetstream.ApplyPrecondition{CreateOnly: true}, nil
+	}
+	if match != "" && none == "" {
+		value := strings.Trim(match, "\"")
+		revision, err := strconv.ParseUint(value, 10, 64)
+		if err == nil && revision > 0 {
+			return jetstream.ApplyPrecondition{ExpectedRevision: &revision}, nil
+		}
+	}
+	return jetstream.ApplyPrecondition{}, errors.New("use If-None-Match: * to create or If-Match with the current KV revision to update")
 }
 
 func (h *Handler) authorizeWrite(w http.ResponseWriter, r *http.Request) bool {
@@ -319,6 +365,10 @@ func page[T any](items []T, offset, limit int) map[string]any {
 }
 
 func writeBackendError(w http.ResponseWriter, err error) {
+	if errors.Is(err, jetstream.ErrConflict) {
+		writeAPIError(w, http.StatusConflict, "conflict", err.Error())
+		return
+	}
 	if errors.Is(err, jetstream.ErrNotFound) {
 		writeAPIError(w, http.StatusNotFound, "not_found", err.Error())
 		return

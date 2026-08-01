@@ -90,11 +90,18 @@ func TestQueueApplyUsesAuthenticatedPut(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/queues/orders" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer secret" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("If-None-Match") != "*" {
+			t.Fatalf("If-None-Match = %q", r.Header.Get("If-None-Match"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"queue":"orders","revision":"abc","status":"ready","blocked":false,"operations":[]}`))
@@ -120,13 +127,42 @@ func TestQueueApplyRequiresToken(t *testing.T) {
 	}
 }
 
+func TestQueueApplyUsesExistingETagForUpdate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queue.yaml")
+	if err := os.WriteFile(path, []byte(queueFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("ETag", `"23"`)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		if r.Header.Get("If-Match") != `"23"` {
+			t.Fatalf("If-Match=%q", r.Header.Get("If-Match"))
+		}
+		_, _ = w.Write([]byte(`{"queue":"orders","revision":"abc","status":"noop","blocked":false,"operations":[]}`))
+	}))
+	defer server.Close()
+	if err := run([]string{"queue", "apply", "--url", server.URL, "--token", "secret", path}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestQueueDeleteUsesAuthenticatedConfirmedRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/queues/orders" || r.URL.Query().Get("force") != "true" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
 		}
 		if r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("X-RJS-Confirm-Queue") != "orders" {
 			t.Fatal("missing delete authorization or confirmation")
+		}
+		if r.Header.Get("If-None-Match") != "*" {
+			t.Fatal("missing delete precondition")
 		}
 		_, _ = w.Write([]byte(`{"queue":"orders","stream":"RJSQ_orders","status":"deleted","blocked":false,"forced":true,"messages":1}`))
 	}))

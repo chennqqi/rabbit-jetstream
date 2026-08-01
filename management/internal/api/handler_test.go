@@ -59,12 +59,27 @@ func (f *fakeBackend) ListConsumers(context.Context, string) ([]jetstream.Consum
 func (f *fakeBackend) Apply(context.Context, topology.Plan) (topology.ReconcileResult, error) {
 	return f.applyResult, f.err
 }
+func (f *fakeBackend) ApplyConditional(context.Context, topology.Plan, jetstream.ApplyPrecondition) (topology.ReconcileResult, error) {
+	return f.applyResult, f.err
+}
 func (f *fakeBackend) DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error) {
+	f.deleteCalls++
+	return f.deleteResult, f.err
+}
+func (f *fakeBackend) DeleteQueueConditional(context.Context, string, bool, jetstream.ApplyPrecondition) (topology.DeleteResult, error) {
 	f.deleteCalls++
 	return f.deleteResult, f.err
 }
 func (f *fakeBackend) ListDeclarations(context.Context) ([]topology.Declaration, error) {
 	return f.declarations, f.err
+}
+func (f *fakeBackend) Declaration(_ context.Context, name string) (*topology.Declaration, error) {
+	for index := range f.declarations {
+		if f.declarations[index].Queue == name {
+			return &f.declarations[index], f.err
+		}
+	}
+	return nil, jetstream.ErrNotFound
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -172,6 +187,9 @@ func TestApplyQueueRequiresAuthenticationAndMatchingName(t *testing.T) {
 			if test.token != "" {
 				req.Header.Set("Authorization", "Bearer "+test.token)
 			}
+			if test.name == "accepted" {
+				req.Header.Set("If-None-Match", "*")
+			}
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			if rec.Code != test.status {
@@ -189,6 +207,42 @@ func TestApplyQueueIsDisabledWithoutToken(t *testing.T) {
 	}
 }
 
+func TestApplyQueueRequiresConditionalHeader(t *testing.T) {
+	handler := New(&fakeBackend{}, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	body := `{"apiVersion":"rabbit-jetstream.io/v1alpha1","kind":"Queue","metadata":{"name":"orders"},"spec":{"subjects":["orders.>"],"replicas":1}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusPreconditionRequired {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestApplyPreconditionParsing(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPut, "/", nil)
+	request.Header.Set("If-None-Match", "*")
+	condition, err := applyPrecondition(request)
+	if err != nil || !condition.CreateOnly {
+		t.Fatalf("condition=%#v err=%v", condition, err)
+	}
+	request = httptest.NewRequest(http.MethodPut, "/", nil)
+	request.Header.Set("If-Match", `"42"`)
+	condition, err = applyPrecondition(request)
+	if err != nil || condition.ExpectedRevision == nil || *condition.ExpectedRevision != 42 {
+		t.Fatalf("condition=%#v err=%v", condition, err)
+	}
+}
+
+func TestQueueDetailReturnsKVRevisionETag(t *testing.T) {
+	backend := &fakeBackend{declarations: []topology.Declaration{{Queue: "orders", KVRevision: 17}}}
+	rec := httptest.NewRecorder()
+	newTestHandler(backend).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/queues/orders", nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"17"` {
+		t.Fatalf("status=%d etag=%q", rec.Code, rec.Header().Get("ETag"))
+	}
+}
+
 func TestDeleteQueueRequiresExactConfirmation(t *testing.T) {
 	backend := &fakeBackend{deleteResult: topology.DeleteResult{Queue: "orders", Stream: "RJSQ_orders", Status: "deleted"}}
 	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
@@ -202,6 +256,7 @@ func TestDeleteQueueRequiresExactConfirmation(t *testing.T) {
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders?force=true", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("X-RJS-Confirm-Queue", "orders")
+	req.Header.Set("If-None-Match", "*")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || backend.deleteCalls != 1 {
@@ -215,6 +270,7 @@ func TestDeleteQueueReturnsConflictWhenBlocked(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("X-RJS-Confirm-Queue", "orders")
+	req.Header.Set("If-None-Match", "*")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict {

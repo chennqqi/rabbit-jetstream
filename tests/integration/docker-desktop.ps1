@@ -80,8 +80,12 @@ try {
 				if ($LASTEXITCODE -ne 0 -or $First.status -ne 'ready') { throw 'first apply failed' }
 				$Second = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Second.status -ne 'noop') { throw 'second apply was not idempotent' }
+				$OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
 				$Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready' -or @($Updated.operations | Where-Object action -eq 'update').Count -ne 2) { throw 'safe update apply failed' }
+				$StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='basic'}; spec=@{subjects=@('basic.>'); replicas=1; storage='file'}} | ConvertTo-Json -Depth 8
+				$StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
+				if ($StaleResponse.StatusCode -ne 409) { throw "stale Queue revision returned $($StaleResponse.StatusCode), expected 409" }
 				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
 				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 5
 				if ($Stream.replicas -ne 1 -or $Stream.max_bytes -ne 16777216 -or $Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic' -or $Consumers.items[0].max_deliver -ne 7) { throw 'applied resources are incorrect' }
@@ -133,9 +137,17 @@ try {
         $env:RJS_CONTROLLER_LEASE_TTL = '4s'
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
-            Invoke-Docker run -d --name $Second --network $Network -e 'RJS_NATS_URL=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222' -e 'RJS_NATS_MONITOR_URLS=http://nats-1:8222,http://nats-2:8222,http://nats-3:8222' -e RJS_METADATA_REPLICAS=3 -e RJS_INSTANCE_ID=management-2 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s rabbit-jetstream/management:local
+            Invoke-Docker run -d --name $Second --network $Network -p 28223:8223 -e 'RJS_NATS_URL=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222' -e 'RJS_NATS_MONITOR_URLS=http://nats-1:8222,http://nats-2:8222,http://nats-3:8222' -e RJS_ADMIN_TOKEN=desktop-test-token -e RJS_METADATA_REPLICAS=3 -e RJS_INSTANCE_ID=management-2 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s rabbit-jetstream/management:local
             $Apply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Apply.status -ne 'ready') { throw 'cluster Queue apply failed' }
+            $OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/cluster' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
+            $Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster-updated.yaml | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready') { throw 'cluster Queue update failed' }
+            $StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='cluster'}; spec=@{subjects=@('cluster.>'); replicas=3; storage='file'}} | ConvertTo-Json -Depth 8
+            $StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
+            if ($StaleResponse.StatusCode -ne 409) { throw "cross-instance stale update returned $($StaleResponse.StatusCode), expected 409" }
+            $SharedDeclaration = Invoke-RestMethod -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -TimeoutSec 5
+            if ($SharedDeclaration.revision -ne $Updated.revision) { throw 'management instances do not share the latest declaration revision' }
             Start-Sleep -Seconds 3
             $FirstStatus = Get-NetworkJson $Network 'http://management:8223/api/v1/controller'
             $SecondStatus = Get-NetworkJson $Network "http://${Second}:8223/api/v1/controller"

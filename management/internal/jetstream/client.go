@@ -2,6 +2,7 @@ package jetstream
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,15 @@ import (
 	jsapi "github.com/nats-io/nats.go/jetstream"
 )
 
-var ErrNotFound = errors.New("resource not found")
+var (
+	ErrNotFound = errors.New("resource not found")
+	ErrConflict = errors.New("concurrent resource change")
+)
+
+type ApplyPrecondition struct {
+	CreateOnly       bool
+	ExpectedRevision *uint64
+}
 
 type Client struct {
 	conn             *nats.Conn
@@ -182,6 +191,45 @@ func (c *Client) ListConsumers(ctx context.Context, streamName string) ([]Consum
 
 // Apply creates or safely updates the resources in plan. Blocked plans never write.
 func (c *Client) Apply(ctx context.Context, plan topology.Plan) (topology.ReconcileResult, error) {
+	release, err := c.acquireQueueLock(ctx, plan.Queue)
+	if err != nil {
+		return topology.ReconcileResult{}, err
+	}
+	defer release()
+	return c.applyUnlocked(ctx, plan)
+}
+
+func (c *Client) ApplyConditional(ctx context.Context, plan topology.Plan, precondition ApplyPrecondition) (topology.ReconcileResult, error) {
+	release, err := c.acquireQueueLock(ctx, plan.Queue)
+	if err != nil {
+		return topology.ReconcileResult{}, err
+	}
+	defer release()
+	declaration, err := c.Declaration(ctx, plan.Queue)
+	if precondition.CreateOnly {
+		if err == nil {
+			return topology.ReconcileResult{}, fmt.Errorf("%w: Queue %s already exists", ErrConflict, plan.Queue)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return topology.ReconcileResult{}, err
+		}
+	} else {
+		if err != nil {
+			return topology.ReconcileResult{}, err
+		}
+		if precondition.ExpectedRevision == nil || declaration.KVRevision != *precondition.ExpectedRevision {
+			return topology.ReconcileResult{}, fmt.Errorf("%w: Queue %s revision changed", ErrConflict, plan.Queue)
+		}
+	}
+	return c.applyUnlocked(ctx, plan)
+}
+
+func (c *Client) ApplyDeclaration(ctx context.Context, declaration topology.Declaration) (topology.ReconcileResult, error) {
+	revision := declaration.KVRevision
+	return c.ApplyConditional(ctx, declaration.Plan, ApplyPrecondition{ExpectedRevision: &revision})
+}
+
+func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topology.ReconcileResult, error) {
 	observed, err := c.observedTopology(ctx, plan)
 	if err != nil {
 		return topology.ReconcileResult{}, err
@@ -213,6 +261,56 @@ func (c *Client) Apply(ctx context.Context, plan topology.Plan) (topology.Reconc
 		return result, fmt.Errorf("apply consumer %s: %w", plan.Consumer.Name, err)
 	}
 	return result, c.persistDeclaration(ctx, plan)
+}
+
+type resourceLock struct {
+	Holder    string    `json:"holder"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (c *Client) acquireQueueLock(ctx context.Context, queue string) (func(), error) {
+	kv, err := c.metadataStore(ctx, true)
+	if err != nil {
+		return nil, fmt.Errorf("open metadata bucket for Queue lock: %w", err)
+	}
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return nil, fmt.Errorf("generate Queue lock holder: %w", err)
+	}
+	holder := fmt.Sprintf("%x", random)
+	key := "locks.queue." + queue
+	now := time.Now().UTC()
+	value, _ := json.Marshal(resourceLock{Holder: holder, ExpiresAt: now.Add(30 * time.Second)})
+	entry, err := kv.Get(ctx, key)
+	var revision uint64
+	if errors.Is(err, jsapi.ErrKeyNotFound) {
+		revision, err = kv.Create(ctx, key, value)
+		if errors.Is(err, jsapi.ErrKeyExists) {
+			return nil, fmt.Errorf("%w: Queue %s is being changed", ErrConflict, queue)
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("read Queue lock: %w", err)
+	} else {
+		var current resourceLock
+		if err := json.Unmarshal(entry.Value(), &current); err != nil {
+			return nil, fmt.Errorf("decode Queue lock: %w", err)
+		}
+		if current.ExpiresAt.After(now) {
+			return nil, fmt.Errorf("%w: Queue %s is being changed", ErrConflict, queue)
+		}
+		revision, err = kv.Update(ctx, key, value, entry.Revision())
+		if errors.Is(err, jsapi.ErrKeyExists) {
+			return nil, fmt.Errorf("%w: Queue %s is being changed", ErrConflict, queue)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("acquire Queue lock: %w", err)
+	}
+	return func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = kv.Delete(releaseCtx, key, jsapi.LastRevision(revision))
+	}, nil
 }
 
 func (c *Client) persistDeclaration(ctx context.Context, plan topology.Plan) error {
@@ -287,7 +385,64 @@ func (c *Client) ListDeclarations(ctx context.Context) ([]topology.Declaration, 
 	return result, nil
 }
 
+func (c *Client) Declaration(ctx context.Context, name string) (*topology.Declaration, error) {
+	kv, err := c.metadataStore(ctx, false)
+	if errors.Is(err, jsapi.ErrBucketNotFound) {
+		return nil, fmt.Errorf("%w: Queue %s", ErrNotFound, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open metadata bucket %s: %w", c.metadataBucket, err)
+	}
+	entry, err := kv.Get(ctx, "queues."+name)
+	if errors.Is(err, jsapi.ErrKeyNotFound) {
+		return nil, fmt.Errorf("%w: Queue %s", ErrNotFound, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read Queue declaration %s: %w", name, err)
+	}
+	var declaration topology.Declaration
+	if err := json.Unmarshal(entry.Value(), &declaration); err != nil {
+		return nil, fmt.Errorf("decode Queue declaration %s: %w", name, err)
+	}
+	declaration.KVRevision = entry.Revision()
+	return &declaration, nil
+}
+
 func (c *Client) DeleteQueue(ctx context.Context, name string, force bool) (topology.DeleteResult, error) {
+	release, err := c.acquireQueueLock(ctx, name)
+	if err != nil {
+		return topology.DeleteResult{}, err
+	}
+	defer release()
+	return c.deleteQueueUnlocked(ctx, name, force)
+}
+
+func (c *Client) DeleteQueueConditional(ctx context.Context, name string, force bool, precondition ApplyPrecondition) (topology.DeleteResult, error) {
+	release, err := c.acquireQueueLock(ctx, name)
+	if err != nil {
+		return topology.DeleteResult{}, err
+	}
+	defer release()
+	declaration, err := c.Declaration(ctx, name)
+	if precondition.CreateOnly {
+		if err == nil {
+			return topology.DeleteResult{}, fmt.Errorf("%w: Queue %s now exists", ErrConflict, name)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return topology.DeleteResult{}, err
+		}
+	} else {
+		if err != nil {
+			return topology.DeleteResult{}, err
+		}
+		if precondition.ExpectedRevision == nil || declaration.KVRevision != *precondition.ExpectedRevision {
+			return topology.DeleteResult{}, fmt.Errorf("%w: Queue %s revision changed", ErrConflict, name)
+		}
+	}
+	return c.deleteQueueUnlocked(ctx, name, force)
+}
+
+func (c *Client) deleteQueueUnlocked(ctx context.Context, name string, force bool) (topology.DeleteResult, error) {
 	result := topology.DeleteResult{Queue: name, Stream: topology.StreamName(name), Forced: force}
 	stream, err := c.Stream(ctx, result.Stream)
 	if errors.Is(err, ErrNotFound) {

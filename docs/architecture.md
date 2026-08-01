@@ -62,6 +62,8 @@
 
 Controller 使用同一 KV bucket 中的 CAS 租约选出唯一 leader。Leader 周期读取声明并仅执行安全的 create/update/noop；需要 recreation、保留策略缩减或未实现能力的计划保持 blocked，不自动执行破坏性操作。每个声明前续租，优雅退出时条件释放租约；实例异常退出时由 TTL 保证接管上界。
 
+所有 Queue apply、delete 和 controller reconcile 共享 Queue 级 KV CAS 锁，避免两个管理实例同时修改同一组 Stream/Consumer。HTTP 写入和 controller 快照都必须携带声明 KV revision；因此后到达的旧配置会收到冲突，而不会覆盖已提交的新配置，已删除 Queue 也不会被旧 reconcile 快照复活。锁包含过期时间，异常退出后可自动接管。
+
 ## 6. 高可用与安全
 
 - 单机方案用于开发和低风险环境；集群方案默认 3 个 JetStream 节点、资源副本数 3；

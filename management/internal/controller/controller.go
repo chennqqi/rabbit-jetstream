@@ -13,7 +13,7 @@ type Backend interface {
 	AcquireControllerLease(context.Context, string, time.Duration) (bool, error)
 	ReleaseControllerLease(context.Context, string) error
 	ListDeclarations(context.Context) ([]topology.Declaration, error)
-	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
+	ApplyDeclaration(context.Context, topology.Declaration) (topology.ReconcileResult, error)
 }
 
 type Status struct {
@@ -104,7 +104,7 @@ func (c *Controller) runOnce(parent context.Context) {
 			return
 		}
 		applyCtx, applyCancel := context.WithTimeout(parent, c.interval)
-		result, applyErr := c.backend.Apply(applyCtx, declaration.Plan)
+		result, applyErr := c.backend.ApplyDeclaration(applyCtx, declaration)
 		applyCancel()
 		if applyErr != nil {
 			c.update(now, true, len(declarations), reconciled, blocked, applyErr.Error())

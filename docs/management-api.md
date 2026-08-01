@@ -15,6 +15,7 @@ The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitorin
 | `GET /api/v1/streams/{stream}` | Stream configuration, state, leader, and replicas |
 | `GET /api/v1/streams/{stream}/consumers` | Paginated Consumer delivery and backlog state |
 | `GET /api/v1/queues` | Queue declarations persisted in JetStream KV |
+| `GET /api/v1/queues/{queue}` | Queue declaration; returns its KV revision as `ETag` |
 | `PUT /api/v1/queues/{queue}` | Authenticated, reconciled Queue apply |
 | `DELETE /api/v1/queues/{queue}` | Authenticated Queue deletion with explicit confirmation |
 | `GET /api/v1/controller` | Local controller instance, leadership, reconcile counts, and last error |
@@ -35,4 +36,4 @@ Errors have a stable envelope:
 
 `/api/v1/nodes` collects each configured monitoring endpoint concurrently. Its top-level status is `available`, `degraded`, or `unavailable`. Individual nodes preserve endpoint-specific errors so one failed member does not hide healthy members. Credentials embedded in monitoring URLs are never returned.
 
-Write requests require `Authorization: Bearer <token>`. Delete additionally requires `X-RJS-Confirm-Queue` to exactly match the path name. Unsafe reconcile plans and non-empty deletion without `force=true` return `409` without performing the destructive operation.
+Write requests require `Authorization: Bearer <token>` and an optimistic concurrency precondition. Use `If-None-Match: *` for creation or `If-Match: "<KV revision>"` for updates and deletion. Missing conditions return `428`; stale revisions and active Queue locks return `409`. Delete additionally requires `X-RJS-Confirm-Queue` to exactly match the path name. Unsafe reconcile plans and non-empty deletion without `force=true` return `409` without performing the destructive operation. `rjsctl` reads the current ETag and supplies these headers automatically.

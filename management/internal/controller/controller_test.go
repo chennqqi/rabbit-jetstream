@@ -31,7 +31,7 @@ func (f *fakeBackend) ListDeclarations(context.Context) ([]topology.Declaration,
 	f.listCalls++
 	return f.declarations, f.listErr
 }
-func (f *fakeBackend) Apply(context.Context, topology.Plan) (topology.ReconcileResult, error) {
+func (f *fakeBackend) ApplyDeclaration(context.Context, topology.Declaration) (topology.ReconcileResult, error) {
 	f.applyCalls++
 	return topology.ReconcileResult{Blocked: f.blocked}, f.applyErr
 }
