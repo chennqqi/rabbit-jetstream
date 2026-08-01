@@ -20,7 +20,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Check formatting
-        run: test -z "$(gofmt -l management tools)"
+        run: test -z "$(find admin-ui api internal management tests tools -name '*.go' -print0 | xargs -0 gofmt -l)"
       - name: Vet
         run: go vet ./...
       - name: Unit tests with race detector
@@ -108,6 +108,21 @@ jobs:
       - name: Capture and reconcile real RabbitMQ and JetStream shadows
         shell: pwsh
         run: ./tests/integration/shadow-capture.ps1
+
+  performance-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify three-replica performance workload and message integrity
+        shell: pwsh
+        run: ./tests/performance/jetstream.ps1 -Mode ci -Output performance-ci.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: performance-ci
+          path: |
+            performance-ci.json
+            performance-ci.json.resources.ndjson
+          retention-days: 30
 
   linux-images:
     runs-on: ubuntu-latest

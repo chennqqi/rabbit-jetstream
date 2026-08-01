@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-helm test-rolling coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak test-helm test-rolling coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -22,6 +22,15 @@ test-linux-smoke:
 test-linux-fault:
 	bash tests/fault/single-node-recovery.sh
 
+test-performance:
+	pwsh -NoProfile -File tests/performance/jetstream.ps1 -Mode ci
+
+test-scale:
+	pwsh -NoProfile -File tests/performance/jetstream.ps1 -Mode scale -Output performance-scale.json
+
+test-soak:
+	pwsh -NoProfile -File tests/performance/jetstream.ps1 -Mode soak -Output performance-soak.json -Baseline performance-baseline.json
+
 test-helm:
 	pwsh -File tests/deployment/helm.ps1
 
@@ -36,7 +45,7 @@ coverage-check:
 	bash tests/coverage/check.sh
 
 fmt:
-	gofmt -w $$(find . -name '*.go' -not -path './outlink/*')
+	gofmt -w $$(find admin-ui api internal management tests tools -name '*.go')
 
 run:
 	go run ./management/cmd/rjs-management

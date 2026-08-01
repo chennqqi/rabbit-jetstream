@@ -68,4 +68,7 @@ On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
 .\tests\integration\migration.ps1
 .\tests\integration\shadow-capture.ps1
 .\tests\integration\backup-restore.ps1
+.\tests\performance\jetstream.ps1 -Mode ci -Output performance-ci.json
 ```
+
+The CI profile verifies a three-replica persistent workload and retains its report. Large-scale and release-soak profiles, baseline rules, resource evidence, and interpretation limits are defined in [Performance and Soak Testing](performance-testing.md). The release profile enforces a minimum 24-hour duration; the short CI profile never satisfies that gate.
