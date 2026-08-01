@@ -83,3 +83,39 @@ func TestQueueReconcilePlansCreateWithoutWriting(t *testing.T) {
 		t.Fatalf("requests = %d, output = %s", requests, output.String())
 	}
 }
+
+func TestQueueApplyUsesAuthenticatedPut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queue.yaml")
+	if err := os.WriteFile(path, []byte(queueFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/queues/orders" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"queue":"orders","revision":"abc","status":"ready","blocked":false,"operations":[]}`))
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := run([]string{"queue", "apply", "--url", server.URL, "--token", "secret", path}, &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"queue": "orders"`) {
+		t.Fatalf("output = %s", output.String())
+	}
+}
+
+func TestQueueApplyRequiresToken(t *testing.T) {
+	t.Setenv("RJS_ADMIN_TOKEN", "")
+	path := filepath.Join(t.TempDir(), "queue.yaml")
+	if err := os.WriteFile(path, []byte(queueFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"queue", "apply", path}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("apply succeeded without token")
+	}
+}

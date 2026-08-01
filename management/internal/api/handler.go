@@ -2,13 +2,16 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
@@ -20,6 +23,7 @@ type Backend interface {
 	ListStreams(context.Context) ([]jetstream.Stream, error)
 	Stream(context.Context, string) (*jetstream.Stream, error)
 	ListConsumers(context.Context, string) ([]jetstream.Consumer, error)
+	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
 }
 
 type Monitor interface {
@@ -27,20 +31,21 @@ type Monitor interface {
 }
 
 type Handler struct {
-	client  Backend
-	monitor Monitor
-	logger  *slog.Logger
-	name    string
-	version string
-	started time.Time
+	client     Backend
+	monitor    Monitor
+	logger     *slog.Logger
+	name       string
+	version    string
+	started    time.Time
+	adminToken string
 }
 
-func New(client Backend, logger *slog.Logger, name, version string, monitors ...Monitor) http.Handler {
-	var monitor Monitor
-	if len(monitors) > 0 {
-		monitor = monitors[0]
+func New(client Backend, logger *slog.Logger, name, version string, monitor Monitor, adminTokens ...string) http.Handler {
+	var adminToken string
+	if len(adminTokens) > 0 {
+		adminToken = adminTokens[0]
 	}
-	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now()}
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), adminToken: adminToken}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
@@ -50,7 +55,48 @@ func New(client Backend, logger *slog.Logger, name, version string, monitors ...
 	mux.HandleFunc("GET /api/v1/streams", h.streams)
 	mux.HandleFunc("GET /api/v1/streams/{stream}", h.stream)
 	mux.HandleFunc("GET /api/v1/streams/{stream}/consumers", h.consumers)
+	mux.HandleFunc("PUT /api/v1/queues/{queue}", h.applyQueue)
 	return h.logging(mux)
+}
+
+func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
+	if h.adminToken == "" {
+		writeAPIError(w, http.StatusNotFound, "write_api_disabled", "write API is disabled")
+		return
+	}
+	want := "Bearer " + h.adminToken
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(want)) != 1 {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
+		return
+	}
+	defer r.Body.Close()
+	queue, err := topology.ParseQueue(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_queue", err.Error())
+		return
+	}
+	if queue.Metadata.Name != r.PathValue("queue") {
+		writeAPIError(w, http.StatusConflict, "name_mismatch", "URL and document Queue names differ")
+		return
+	}
+	plan, err := topology.BuildPlan(*queue)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_queue", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	result, err := h.client.Apply(ctx, plan)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	status := http.StatusOK
+	if result.Blocked {
+		status = http.StatusConflict
+	}
+	writeJSON(w, status, result)
 }
 
 func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {

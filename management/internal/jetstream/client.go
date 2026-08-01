@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 	"github.com/nats-io/nats.go"
 	jsapi "github.com/nats-io/nats.go/jetstream"
@@ -104,6 +105,68 @@ func (c *Client) ListConsumers(ctx context.Context, streamName string) ([]Consum
 	}
 	sort.Slice(consumers, func(i, j int) bool { return consumers[i].Name < consumers[j].Name })
 	return consumers, nil
+}
+
+// Apply creates or safely updates the resources in plan. Blocked plans never write.
+func (c *Client) Apply(ctx context.Context, plan topology.Plan) (topology.ReconcileResult, error) {
+	observed, err := c.observedTopology(ctx, plan)
+	if err != nil {
+		return topology.ReconcileResult{}, err
+	}
+	result := topology.Reconcile(plan, observed)
+	if result.Blocked || result.Status == "noop" {
+		return result, nil
+	}
+	streamConfig := jsapi.StreamConfig{
+		Name: plan.Stream.Name, Subjects: plan.Stream.Subjects, Storage: storageType(plan.Stream.Storage),
+		Replicas: plan.Stream.Replicas, Retention: jsapi.WorkQueuePolicy, Discard: jsapi.DiscardOld,
+		MaxAge: time.Duration(plan.Stream.MaxAgeNanos), MaxBytes: plan.Stream.MaxBytes,
+		MaxMsgs: plan.Stream.MaxMessages, Metadata: cloneMetadata(plan.Stream.Metadata),
+	}
+	if _, err := c.js.CreateOrUpdateStream(ctx, streamConfig); err != nil {
+		return result, fmt.Errorf("apply stream %s: %w", plan.Stream.Name, err)
+	}
+	consumerConfig := jsapi.ConsumerConfig{
+		Name: plan.Consumer.Name, Durable: plan.Consumer.Name,
+		FilterSubjects: plan.Consumer.FilterSubjects, DeliverPolicy: jsapi.DeliverAllPolicy,
+		AckPolicy: jsapi.AckExplicitPolicy, AckWait: time.Duration(plan.Consumer.AckWaitNanos),
+		MaxDeliver: plan.Consumer.MaxDeliver, ReplayPolicy: jsapi.ReplayInstantPolicy,
+		Metadata: cloneMetadata(plan.Consumer.Metadata),
+	}
+	if _, err := c.js.CreateOrUpdateConsumer(ctx, plan.Stream.Name, consumerConfig); err != nil {
+		return result, fmt.Errorf("apply consumer %s: %w", plan.Consumer.Name, err)
+	}
+	return result, nil
+}
+
+func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topology.ObservedTopology, error) {
+	var observed topology.ObservedTopology
+	stream, err := c.Stream(ctx, plan.Stream.Name)
+	if errors.Is(err, ErrNotFound) {
+		return observed, nil
+	}
+	if err != nil {
+		return observed, err
+	}
+	observed.Stream = &topology.ObservedStream{Name: stream.Name, Subjects: stream.Subjects, Storage: stream.Storage, Replicas: stream.Replicas, Retention: stream.Retention, Discard: stream.Discard, MaxAgeNanos: stream.MaxAgeNanos, MaxBytes: stream.MaxBytes, MaxMessages: stream.MaxMessages, Metadata: stream.Metadata}
+	consumers, err := c.ListConsumers(ctx, plan.Stream.Name)
+	if err != nil {
+		return observed, err
+	}
+	for _, consumer := range consumers {
+		if consumer.Name == plan.Consumer.Name {
+			observed.Consumer = &topology.ObservedConsumer{Stream: consumer.Stream, Name: consumer.Name, Durable: consumer.Durable, FilterSubject: consumer.FilterSubject, FilterSubjects: consumer.FilterSubjects, Mode: consumer.Mode, DeliverPolicy: consumer.DeliverPolicy, AckPolicy: consumer.AckPolicy, AckWaitNanos: consumer.AckWaitNanos, MaxDeliver: consumer.MaxDeliver, ReplayPolicy: consumer.ReplayPolicy, Metadata: consumer.Metadata}
+			break
+		}
+	}
+	return observed, nil
+}
+
+func storageType(value string) jsapi.StorageType {
+	if value == "memory" {
+		return jsapi.MemoryStorage
+	}
+	return jsapi.FileStorage
 }
 
 func streamFromInfo(info *jsapi.StreamInfo) Stream {

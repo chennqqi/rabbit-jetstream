@@ -38,3 +38,14 @@ This mapping intentionally covers Queue semantics only. Exchange-style direct/to
 - `reject`: the requested capability is not implemented.
 
 The result is `blocked` for destructive retention reductions, recreation, or unsupported DLQ workers. Reconcile only performs HTTP GET requests and never writes JetStream resources.
+
+## Authenticated Apply
+
+Set `RJS_ADMIN_TOKEN` on the management service to enable the write endpoint. With no token configured, the endpoint returns 404 and the deployment remains read-only. Prefer passing the CLI token through the environment so it is not exposed in the process list:
+
+```bash
+export RJS_ADMIN_TOKEN='replace-with-a-secret-manager-value'
+rjsctl queue apply --url http://127.0.0.1:8223 examples/queues/orders.yaml
+```
+
+Apply runs the same reconcile first. It executes only `create`, safe `update`, and `noop` operations; blocked recreation, retention reduction, and DLQ plans return HTTP 409 without writes. Creation is recoverable rather than transactional: if Consumer creation fails after Stream creation, repeating apply resumes from the observed partial state.

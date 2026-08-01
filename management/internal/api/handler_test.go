@@ -11,15 +11,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
 
 type fakeBackend struct {
-	err       error
-	account   jetstream.Account
-	streams   []jetstream.Stream
-	consumers []jetstream.Consumer
+	err         error
+	account     jetstream.Account
+	streams     []jetstream.Stream
+	consumers   []jetstream.Consumer
+	applyResult topology.ReconcileResult
 }
 
 type fakeMonitor struct{ snapshot monitoring.Snapshot }
@@ -48,9 +50,12 @@ func (f *fakeBackend) Stream(_ context.Context, name string) (*jetstream.Stream,
 func (f *fakeBackend) ListConsumers(context.Context, string) ([]jetstream.Consumer, error) {
 	return f.consumers, f.err
 }
+func (f *fakeBackend) Apply(context.Context, topology.Plan) (topology.ReconcileResult, error) {
+	return f.applyResult, f.err
+}
 
 func TestHealthEndpoint(t *testing.T) {
-	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev")
+	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -122,6 +127,41 @@ func TestManagementEndpointErrors(t *testing.T) {
 				t.Fatalf("body = %s", recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestApplyQueueRequiresAuthenticationAndMatchingName(t *testing.T) {
+	backend := &fakeBackend{applyResult: topology.ReconcileResult{Queue: "orders", Status: "ready"}}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	body := `{"apiVersion":"rabbit-jetstream.io/v1alpha1","kind":"Queue","metadata":{"name":"orders"},"spec":{"subjects":["orders.>"],"replicas":1}}`
+	for _, test := range []struct {
+		name, path, token string
+		status            int
+	}{
+		{"missing token", "/api/v1/queues/orders", "", http.StatusUnauthorized},
+		{"wrong token", "/api/v1/queues/orders", "wrong", http.StatusUnauthorized},
+		{"name mismatch", "/api/v1/queues/other", "secret", http.StatusConflict},
+		{"accepted", "/api/v1/queues/orders", "secret", http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, test.path, strings.NewReader(body))
+			if test.token != "" {
+				req.Header.Set("Authorization", "Bearer "+test.token)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != test.status {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestApplyQueueIsDisabledWithoutToken(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newTestHandler(&fakeBackend{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader("{}")))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", rec.Code)
 	}
 }
 

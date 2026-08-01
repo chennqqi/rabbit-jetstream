@@ -27,7 +27,7 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout)),
+		Handler:           api.New(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), cfg.AdminToken),
 		ReadHeaderTimeout: cfg.ConnectTimeout,
 	}
 	return &App{cfg: cfg, logger: logger, client: client, server: server}, nil

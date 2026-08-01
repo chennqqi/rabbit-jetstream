@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -24,9 +24,11 @@ function Wait-Healthy([string]$ContainerName) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
+		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
+		if ($Scenario -eq 'apply') { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
             $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
@@ -55,9 +57,22 @@ try {
                 $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
                 if ($Streams.total -ne 0) { throw 'reconcile unexpectedly wrote JetStream resources' }
             }
+			if ($Scenario -eq 'apply') {
+				$Network = "${Project}_default"
+				$First = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $First.status -ne 'ready') { throw 'first apply failed' }
+				$Second = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $Second.status -ne 'noop') { throw 'second apply was not idempotent' }
+				$Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready' -or @($Updated.operations | Where-Object action -eq 'update').Count -ne 2) { throw 'safe update apply failed' }
+				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
+				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 5
+				if ($Stream.replicas -ne 1 -or $Stream.max_bytes -ne 16777216 -or $Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic' -or $Consumers.items[0].max_deliver -ne 7) { throw 'applied resources are incorrect' }
+			}
             Invoke-Docker compose -p $Project -f $Compose ps
         } finally {
             Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
+			$env:RJS_ADMIN_TOKEN = $PreviousAdminToken
         }
         return
     }

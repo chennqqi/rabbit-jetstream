@@ -1,0 +1,14 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: basic
+spec:
+  subjects:
+    - basic.>
+  replicas: 1
+  storage: file
+  retention:
+    maxBytes: 16MiB
+  delivery:
+    ackWait: 45s
+    maxDeliver: 7
