@@ -22,6 +22,7 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/identity"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
@@ -55,6 +56,7 @@ type AuditBackend interface {
 type AuthConfig struct {
 	OperatorTokens []string
 	AuditorTokens  []string
+	OIDC           identity.Verifier
 }
 
 type Handler struct {
@@ -309,28 +311,51 @@ func applyPrecondition(r *http.Request) (jetstream.ApplyPrecondition, error) {
 }
 
 func (h *Handler) authorizeWrite(w http.ResponseWriter, r *http.Request) bool {
-	return h.authorize(w, r, h.auth.OperatorTokens, "write_api_disabled", "write API")
+	return h.authorize(w, r, map[string]bool{"operator": true}, "write_api_disabled", "write API")
 }
 
 func (h *Handler) authorizeAudit(w http.ResponseWriter, r *http.Request) bool {
-	tokens := make([]string, 0, len(h.auth.OperatorTokens)+len(h.auth.AuditorTokens))
-	tokens = append(tokens, h.auth.OperatorTokens...)
-	tokens = append(tokens, h.auth.AuditorTokens...)
-	return h.authorize(w, r, tokens, "audit_api_disabled", "audit API")
+	return h.authorize(w, r, map[string]bool{"operator": true, "auditor": true}, "audit_api_disabled", "audit API")
 }
 
-func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, tokens []string, disabledCode, capability string) bool {
-	if len(tokens) == 0 {
+type principalKey struct{}
+
+func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, allowed map[string]bool, disabledCode, capability string) bool {
+	if len(h.auth.OperatorTokens) == 0 && len(h.auth.AuditorTokens) == 0 && h.auth.OIDC == nil {
 		writeAPIError(w, http.StatusNotFound, disabledCode, capability+" is disabled")
 		return false
 	}
 	const prefix = "Bearer "
 	provided := r.Header.Get("Authorization")
-	if !strings.HasPrefix(provided, prefix) || !matchesToken(strings.TrimPrefix(provided, prefix), tokens) {
+	if !strings.HasPrefix(provided, prefix) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
 		return false
 	}
+	raw := strings.TrimPrefix(provided, prefix)
+	principal := identity.Principal{}
+	if matchesToken(raw, h.auth.OperatorTokens) {
+		principal = identity.Principal{Actor: tokenActor(raw), Role: "operator"}
+	} else if matchesToken(raw, h.auth.AuditorTokens) {
+		principal = identity.Principal{Actor: tokenActor(raw), Role: "auditor"}
+	} else if h.auth.OIDC != nil {
+		var err error
+		principal, err = h.auth.OIDC.Verify(r.Context(), raw)
+		if err != nil {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
+			return false
+		}
+	} else {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
+		return false
+	}
+	if !allowed[principal.Role] {
+		writeAPIError(w, http.StatusForbidden, "forbidden", "authenticated identity lacks the required role")
+		return false
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), principalKey{}, principal))
 	return true
 }
 
@@ -368,7 +393,8 @@ func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, acti
 	}
 	requestID := auditRequestID(r)
 	w.Header().Set("X-Request-ID", requestID)
-	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: auditActor(r), ActorRole: "operator", SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
+	principal, _ := r.Context().Value(principalKey{}).(identity.Principal)
+	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: principal.Actor, ActorRole: principal.Role, SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
@@ -419,8 +445,7 @@ func randomAuditID() string {
 	return hex.EncodeToString(value)
 }
 
-func auditActor(r *http.Request) string {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+func tokenActor(token string) string {
 	digest := sha256.Sum256([]byte(token))
 	return "token-sha256:" + hex.EncodeToString(digest[:])
 }

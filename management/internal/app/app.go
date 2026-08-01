@@ -9,6 +9,7 @@ import (
 
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/api"
+	managementauth "github.com/chennqqi/rabbit-jetstream/management/internal/auth"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
@@ -29,6 +30,16 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 		return nil, err
 	}
 	control := controller.New(client, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
+	var oidcVerifier *managementauth.OIDCVerifier
+	if cfg.OIDCIssuer != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectTimeout)
+		defer cancel()
+		oidcVerifier, err = managementauth.NewOIDC(ctx, managementauth.OIDCConfig{Issuer: cfg.OIDCIssuer, Audience: cfg.OIDCAudience, RoleClaim: cfg.OIDCRoleClaim, OperatorRole: cfg.OIDCOperatorRole, AuditorRole: cfg.OIDCAuditorRole, AllowInsecureIssuer: cfg.OIDCAllowInsecure})
+		if err != nil {
+			client.Close()
+			return nil, err
+		}
+	}
 	operatorTokens := cfg.AdminTokens
 	if len(operatorTokens) == 0 && cfg.AdminToken != "" {
 		operatorTokens = []string{cfg.AdminToken}
@@ -38,6 +49,7 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 		Handler: api.NewWithControllerAuth(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, api.AuthConfig{
 			OperatorTokens: operatorTokens,
 			AuditorTokens:  cfg.AuditTokens,
+			OIDC:           oidcVerifier,
 		}),
 		ReadHeaderTimeout: cfg.ConnectTimeout,
 	}

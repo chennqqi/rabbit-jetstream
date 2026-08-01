@@ -35,8 +35,22 @@
     },
     "auth": {
       "type": "object", "additionalProperties": false,
-      "required": ["existingSecret", "username"],
-      "properties": {"existingSecret": {"type": "string"}, "username": {"type": "string", "minLength": 1}}
+      "required": ["existingSecret", "username", "oidc"],
+      "properties": {
+        "existingSecret": {"type": "string"},
+        "username": {"type": "string", "minLength": 1},
+        "oidc": {
+          "type": "object", "additionalProperties": false,
+          "required": ["issuer", "audience", "roleClaim", "operatorRole", "auditorRole", "allowInsecureIssuer"],
+          "properties": {
+            "issuer": {"type": "string"}, "audience": {"type": "string"},
+            "roleClaim": {"type": "string", "minLength": 1},
+            "operatorRole": {"type": "string", "minLength": 1},
+            "auditorRole": {"type": "string", "minLength": 1},
+            "allowInsecureIssuer": {"type": "boolean"}
+          }
+        }
+      }
     },
     "controller": {
       "type": "object", "additionalProperties": false,

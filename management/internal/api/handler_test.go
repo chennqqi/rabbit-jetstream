@@ -13,6 +13,7 @@ import (
 
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/identity"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
 )
@@ -481,8 +482,49 @@ func TestRoleTokensSupportRotationAndLeastPrivilege(t *testing.T) {
 	auditorWrite.Header.Set("Authorization", "Bearer audit-reader")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, auditorWrite)
-	if rec.Code != http.StatusUnauthorized {
+	if rec.Code != http.StatusForbidden {
 		t.Fatalf("auditor write status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+type fakeIdentityVerifier struct {
+	principal identity.Principal
+	err       error
+}
+
+func (v fakeIdentityVerifier) Verify(context.Context, string) (identity.Principal, error) {
+	return v.principal, v.err
+}
+
+func TestFederatedIdentityAuthorizesAndAttributesAudit(t *testing.T) {
+	backend := &fakeBackend{applyResult: topology.ReconcileResult{Queue: "orders", Status: "ready"}}
+	handler := NewWithControllerAuth(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, nil, AuthConfig{OIDC: fakeIdentityVerifier{principal: identity.Principal{Actor: "oidc:https://idp.example#alice", Role: "operator"}}})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(`{"apiVersion":"rabbit-jetstream.io/v1alpha1","kind":"Queue","metadata":{"name":"orders"},"spec":{"subjects":["orders.>"],"replicas":1}}`))
+	req.Header.Set("Authorization", "Bearer signed.jwt")
+	req.Header.Set("If-None-Match", "*")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || len(backend.auditEvents) != 2 || backend.auditEvents[0].Actor != "oidc:https://idp.example#alice" || backend.auditEvents[0].ActorRole != "operator" {
+		t.Fatalf("status=%d audit=%+v body=%s", rec.Code, backend.auditEvents, rec.Body.String())
+	}
+}
+
+func TestFederatedAuditorCannotWriteAndInvalidTokenIsUnauthorized(t *testing.T) {
+	for _, test := range []struct {
+		verifier identity.Verifier
+		want     int
+	}{
+		{fakeIdentityVerifier{principal: identity.Principal{Actor: "auditor", Role: "auditor"}}, http.StatusForbidden},
+		{fakeIdentityVerifier{err: errors.New("bad token")}, http.StatusUnauthorized},
+	} {
+		handler := NewWithControllerAuth(&fakeBackend{}, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, nil, AuthConfig{OIDC: test.verifier})
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer credential")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != test.want {
+			t.Fatalf("status=%d want=%d body=%s", rec.Code, test.want, rec.Body.String())
+		}
 	}
 }
 

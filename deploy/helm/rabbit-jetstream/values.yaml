@@ -33,6 +33,13 @@ auth:
   # admin-tokens and audit-tokens (comma-separated).
   existingSecret: ""
   username: rjs
+  oidc:
+    issuer: ""
+    audience: ""
+    roleClaim: roles
+    operatorRole: rabbit-jetstream-operator
+    auditorRole: rabbit-jetstream-auditor
+    allowInsecureIssuer: false
 
 controller:
   interval: 5s

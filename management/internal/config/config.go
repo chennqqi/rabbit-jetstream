@@ -21,6 +21,12 @@ type Config struct {
 	AdminToken         string
 	AdminTokens        []string
 	AuditTokens        []string
+	OIDCIssuer         string
+	OIDCAudience       string
+	OIDCRoleClaim      string
+	OIDCOperatorRole   string
+	OIDCAuditorRole    string
+	OIDCAllowInsecure  bool
 	MetadataBucket     string
 	MetadataReplicas   int
 	InstanceID         string
@@ -49,6 +55,12 @@ func FromEnv() Config {
 		AdminToken:         os.Getenv("RJS_ADMIN_TOKEN"),
 		AdminTokens:        tokens(os.Getenv("RJS_ADMIN_TOKEN"), os.Getenv("RJS_ADMIN_TOKENS")),
 		AuditTokens:        tokens("", os.Getenv("RJS_AUDIT_TOKENS")),
+		OIDCIssuer:         os.Getenv("RJS_OIDC_ISSUER"),
+		OIDCAudience:       os.Getenv("RJS_OIDC_AUDIENCE"),
+		OIDCRoleClaim:      env("RJS_OIDC_ROLE_CLAIM", "roles"),
+		OIDCOperatorRole:   env("RJS_OIDC_OPERATOR_ROLE", "rabbit-jetstream-operator"),
+		OIDCAuditorRole:    env("RJS_OIDC_AUDITOR_ROLE", "rabbit-jetstream-auditor"),
+		OIDCAllowInsecure:  boolean("RJS_OIDC_ALLOW_INSECURE_ISSUER", false),
 		MetadataBucket:     env("RJS_METADATA_BUCKET", "RJS_META"),
 		MetadataReplicas:   replicas("RJS_METADATA_REPLICAS", 1),
 		InstanceID:         env("RJS_INSTANCE_ID", defaultInstanceID()),

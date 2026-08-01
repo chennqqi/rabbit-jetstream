@@ -76,6 +76,12 @@ spec:
                   name: {{ include "rabbit-jetstream.authSecret" . }}
                   key: audit-tokens
                   optional: true
+            - {name: RJS_OIDC_ISSUER, value: {{ .Values.auth.oidc.issuer | quote }}}
+            - {name: RJS_OIDC_AUDIENCE, value: {{ .Values.auth.oidc.audience | quote }}}
+            - {name: RJS_OIDC_ROLE_CLAIM, value: {{ .Values.auth.oidc.roleClaim | quote }}}
+            - {name: RJS_OIDC_OPERATOR_ROLE, value: {{ .Values.auth.oidc.operatorRole | quote }}}
+            - {name: RJS_OIDC_AUDITOR_ROLE, value: {{ .Values.auth.oidc.auditorRole | quote }}}
+            - {name: RJS_OIDC_ALLOW_INSECURE_ISSUER, value: {{ .Values.auth.oidc.allowInsecureIssuer | quote }}}
             - {name: RJS_METADATA_REPLICAS, value: {{ .Values.nats.replicaCount | quote }}}
             - {name: RJS_CONTROLLER_INTERVAL, value: {{ .Values.controller.interval | quote }}}
             - {name: RJS_CONTROLLER_LEASE_TTL, value: {{ .Values.controller.leaseTTL | quote }}}

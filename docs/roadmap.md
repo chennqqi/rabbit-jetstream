@@ -51,7 +51,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 带脱敏、部分失败记录和 SHA-256 清单的 CLI 诊断包；
 - [x] 基于 JetStream 的写前意图/写后结果审计日志、受保护查询 API 与 CLI；
 - [x] 静态 operator/auditor 最小 RBAC 与重叠 Token 无中断轮换；
-- OIDC 联邦认证；
+- [x] OIDC discovery/JWKS 联邦认证、operator/auditor 角色映射及签名密钥轮换；
 - [x] 三/五节点 StatefulSet、双管理副本、PVC/PDB/NetworkPolicy 的 Helm chart；
 - [x] 三节点滚动升级/回滚自动化演练及容量规划手册；
 - [x] 全 account Stream/KV/Consumer 备份、校验、恢复与数据卷销毁演练；
