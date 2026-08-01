@@ -135,8 +135,11 @@ spec:
       {{- end }}
       topologySpreadConstraints:
         - maxSkew: 1
+          {{- if .Values.production.enabled }}
+          minDomains: {{ .Values.management.replicaCount }}
+          {{- end }}
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: {{ if .Values.production.enabled }}DoNotSchedule{{ else }}ScheduleAnyway{{ end }}
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: {{ include "rabbit-jetstream.name" . }}

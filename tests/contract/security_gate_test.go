@@ -126,6 +126,10 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 			t.Errorf("Helm production profile lost invariant %q", requirement)
 		}
 	}
+	managementTemplate := read("deploy/helm/rabbit-jetstream/templates/management.yaml")
+	if !strings.Contains(managementTemplate, "minDomains: {{ .Values.management.replicaCount }}") || !strings.Contains(managementTemplate, "DoNotSchedule") {
+		t.Error("production management replicas no longer require distinct nodes")
+	}
 	secretTemplate := read("deploy/helm/rabbit-jetstream/templates/secret.yaml")
 	for _, requirement := range []string{`hasKey $current.data "nats-password"`, `hasKey $current.data "nats-password-bcrypt"`, `$passwordHash = (index $current.data "nats-password-bcrypt" | b64dec)`, `hasKey $current.data "admin-token"`} {
 		if !strings.Contains(secretTemplate, requirement) {

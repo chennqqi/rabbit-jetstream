@@ -144,6 +144,9 @@ try {
 	$ProductionValues = @('template', 'production', $Chart, '--namespace', 'messaging', '--set', 'production.enabled=true', '--set', 'nats.storage.storageClass=fast-retain', '--set', 'nats.tls.enabled=true', '--set', 'nats.tls.serverSecret=production-nats-server-tls', '--set', 'nats.tls.clientSecret=production-nats-client-tls', '--set-string', "nats.image.digest=$Digest", '--set-string', "management.image.digest=$Digest", '--set-string', "operator.image.digest=$Digest")
 	$ProductionRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues) -join "`n"
 	if ($LASTEXITCODE -ne 0 -or -not $ProductionRendered.Contains("rabbit-jetstream/nats-server@$Digest")) { throw 'valid production Helm profile failed' }
+	if (-not $ProductionRendered.Contains('minDomains: 2') -or [regex]::Matches($ProductionRendered, '(?m)^\s+whenUnsatisfiable: DoNotSchedule\r?$').Count -ne 2) {
+		throw 'production profile does not require distinct NATS and management nodes'
+	}
 	$ProductionIngress = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues --set ingress.enabled=true --set networkPolicy.ingress.enabled=true --set-string networkPolicy.ingress.namespaceSelector.name=ingress-system --set-string networkPolicy.ingress.podSelector.app=ingress-controller --set-string 'ingress.tls[0].secretName=rjs-management-ingress-tls' --set-string 'ingress.tls[0].hosts[0]=rabbit-jetstream.local') -join "`n"
 	if ($LASTEXITCODE -ne 0 -or -not $ProductionIngress.Contains('secretName: rjs-management-ingress-tls')) { throw 'valid production Ingress TLS profile failed' }
 	function Assert-ProductionRejected([string]$Name, [string[]]$Overrides) {
