@@ -41,6 +41,9 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]") {
 		t.Error("CI management scenario matrix is incomplete")
 	}
+	if !strings.Contains(workflow, "make verify-upstream-online") || !strings.Contains(read("Makefile"), "go run ./tools/upstreamcheck -online") {
+		t.Error("CI no longer verifies the official NATS subtree provenance")
+	}
 	for _, workflowFile := range []string{".github/workflows/ci.yml", ".github/workflows/release.yml"} {
 		for lineNumber, line := range strings.Split(read(workflowFile), "\n") {
 			fields := strings.Fields(line)
@@ -87,7 +90,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		t.Error("Helm production guidance must require digest-pinned images")
 	}
 	release := read(".github/workflows/release.yml")
-	for _, requirement := range []string{"needs: release-gates", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
+	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {
 			t.Errorf("release workflow lost requirement %q", requirement)
 		}

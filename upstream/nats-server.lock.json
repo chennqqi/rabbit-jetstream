@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/nats-io/nats-server.git",
+  "tag": "v2.14.1",
+  "commit": "cb557cd5d3ee8b4a253071d9923730d7d5588f99",
+  "tree": "e86e9e29fba760657c1a71bd5507bb05b3f7e104",
+  "subtree_commit": "a51b751575024febc15b89aa7116208b025cc654"
+}

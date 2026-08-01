@@ -27,6 +27,7 @@ jobs:
           cache: true
       - name: Go quality and coverage
         run: |
+          make verify-upstream-online
           test -z "$(find admin-ui api internal management tests tools -name '*.go' -print0 | xargs -0 gofmt -l)"
           go vet ./...
           go test -race ./...

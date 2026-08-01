@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-rolling test-security coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-rolling test-security coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -6,6 +6,12 @@ build:
 
 build-upstream:
 	cd upstream/nats-server && go build -o ../../bin/nats-server .
+
+verify-upstream:
+	go run ./tools/upstreamcheck
+
+verify-upstream-online:
+	go run ./tools/upstreamcheck -online
 
 build-operator:
 	docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:local .

@@ -43,6 +43,8 @@ jobs:
         with:
           go-version-file: upstream/nats-server/go.mod
           cache-dependency-path: upstream/nats-server/go.sum
+      - name: Verify official NATS subtree provenance
+        run: make verify-upstream-online
       - name: Build pinned NATS Server
         working-directory: upstream/nats-server
         run: go build .
