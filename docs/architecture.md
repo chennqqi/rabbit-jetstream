@@ -58,7 +58,7 @@
 - `observability`：内嵌 Prometheus 指标、JetStream advisories、告警规则、持久化审计日志，以及可选 OTLP/HTTP traces 与 metrics；
 - `amqp-gateway`（未来）：独立可选组件，不侵入 JetStream。
 
-当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。只读 Admin UI 内嵌在管理二进制并通过 `/admin/` 提供集群、Queue、Stream、Consumer、controller 和 DLQ 状态；写操作、OIDC/RBAC 与更完整策略控制继续按 Roadmap 增量加入。
+当前控制面已将成功 apply 的规范化 Queue plan、revision 和操作时间保存到 JetStream KV；管理进程重启后可恢复查询。Admin UI 内嵌在管理二进制并通过 `/admin/` 提供集群、Queue、Stream、Consumer、controller 和 DLQ 状态，也通过同一版本化 API 执行 Queue apply/delete。浏览器中的写操作必须携带内存态 Bearer Token、ETag 前置条件和精确删除确认，服务端继续执行 OIDC/RBAC、所有权校验和持久审计。
 
 `rjsctl diagnostics collect` 通过只读管理 API 采集运行快照，不读取消息负载或 credentials 文件。诊断 ZIP 允许单个端点失败，清单记录每个文件的状态、大小与 SHA-256；敏感字段和 URL 用户信息在写盘前脱敏。
 

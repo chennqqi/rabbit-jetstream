@@ -12,6 +12,8 @@ func TestHandlerServesConsoleAndAssets(t *testing.T) {
 		{"/admin/", "Rabbit JetStream"},
 		{"/admin/styles.css", "--ink"},
 		{"/admin/app.js", "loadDashboard"},
+		{"/admin/management.js", "If-None-Match"},
+		{"/admin/management.css", ".danger-zone"},
 		{"/admin/queues/example", "Rabbit JetStream"},
 	} {
 		recorder := httptest.NewRecorder()
@@ -30,5 +32,17 @@ func TestHandlerRejectsTraversal(t *testing.T) {
 	Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/..%2fsecret", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status=%d", recorder.Code)
+	}
+}
+
+func TestManagementUIPreservesMutationSafetyContract(t *testing.T) {
+	script, err := assets.ReadFile("dist/management.js")
+	if err != nil { t.Fatal(err) }
+	value := string(script)
+	for _, required := range []string{"Authorization", "If-None-Match", "If-Match", "X-RJS-Confirm-Queue", "operator-token"} {
+		if !strings.Contains(value, required) { t.Errorf("management UI missing %q", required) }
+	}
+	for _, forbidden := range []string{"localStorage", "sessionStorage", "document.cookie"} {
+		if strings.Contains(value, forbidden) { t.Errorf("management UI persists bearer credential through %q", forbidden) }
 	}
 }

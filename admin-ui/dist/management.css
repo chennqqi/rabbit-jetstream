@@ -1,0 +1,17 @@
+button,input,textarea{font:inherit}
+button:disabled{cursor:not-allowed;opacity:.55}
+.primary{background:var(--green);border-color:var(--green);color:#fff}
+.danger{background:var(--red);border-color:var(--red);color:#fff}
+.token-field{display:flex;align-items:center;gap:7px}
+.token-field span{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.token-field input{width:170px;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.queue-actions{display:flex;align-items:center;gap:9px}
+.field{display:grid;gap:7px;font-size:12px;font-weight:700}
+.field textarea,.field input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;background:#fbfcfb}
+.field textarea{font:12px/1.5 "SFMono-Regular",Consolas,monospace;resize:vertical}
+.form-help{font-size:12px;margin:0 0 15px}
+.dialog-actions{display:flex;justify-content:flex-end;gap:9px;padding:16px 22px}
+.danger-zone{background:#fffafa}
+.danger-zone .check{display:flex;gap:8px;align-items:center;margin:12px 0;font-size:12px}
+@media(max-width:700px){.token-field{display:none}}
+@media(max-width:580px){.queue-actions,.search,.search input{width:100%}.queue-actions{align-items:stretch;flex-direction:column}}

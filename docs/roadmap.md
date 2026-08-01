@@ -24,10 +24,10 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] Bearer Token 保护的声明式 Queue apply，支持安全 create/update 与重复 apply noop；
 - [x] 所有权校验、非空保护和显式确认的幂等 Queue delete；
 - [x] 基于 JetStream KV 的 Queue 声明/revision 持久化与重启恢复查询；
-- 幂等创建/查询/删除 stream 与 consumer；
+- [x] 通过 Queue 声明幂等创建/查询/删除所拥有的 Stream 与 durable Consumer；
 - [x] direct、topic、fanout Queue 绑定、队列级 subject 协议与真实 JetStream 路由测试；
 - [x] TTL、长度限制、explicit ack/AckWait/MaxDeliver 与 durable advisory DLQ 基础策略；
-- CLI/API 的声明式 apply、diff、delete；
+- [x] CLI/API 的声明式 apply、diff、delete；
 - [x] 基于 JetStream KV CAS 租约的 leader election 与 leader-only 持续安全 reconcile；
 - [x] 多管理实例 Queue 级 CAS 锁、revision 前置条件与冲突响应；
 
@@ -45,7 +45,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 ## M3：运维产品化与 WebUI
 
-- [x] 队列、consumer、消息积压、节点和集群只读页面；
+- [x] 队列、consumer、消息积压、节点和集群页面，以及受 RBAC/ETag/审计保护的 Queue apply/delete；
 - [x] Prometheus 指标、固定版本部署 profile 和关键告警模板；
 - [x] OpenTelemetry OTLP/HTTP traces、W3C 上下文提取、Queue 控制面属性及退出 flush；
 - [x] OpenTelemetry OTLP/HTTP metrics 周期导出与退出 flush，并保留 Prometheus endpoint；
