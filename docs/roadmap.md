@@ -50,7 +50,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - OpenTelemetry traces/metrics；
 - [x] 带脱敏、部分失败记录和 SHA-256 清单的 CLI 诊断包；
 - OIDC/RBAC、审计日志、凭据轮换；
-- Helm chart、滚动升级、备份恢复及容量手册；
+- Helm chart、滚动升级及容量手册；
+- [x] 全 account Stream/KV/Consumer 备份、校验、恢复与数据卷销毁演练；
 - 管理 API 版本兼容策略。
 
 验收：三节点故障与滚动升级演练通过；关键 SLI 有仪表盘和告警；权限与审计测试通过。

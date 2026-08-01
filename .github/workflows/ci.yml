@@ -61,6 +61,14 @@ jobs:
       - name: Verify three-replica write during one-node outage
         run: tests/fault/single-node-recovery.sh
 
+  backup-restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Destroy and restore JetStream data
+        shell: pwsh
+        run: ./tests/integration/backup-restore.ps1
+
   linux-images:
     runs-on: ubuntu-latest
     strategy:
@@ -73,3 +81,5 @@ jobs:
         run: docker buildx build --platform ${{ matrix.platform }} -f packaging/Dockerfile.nats-server --output type=cacheonly .
       - name: Build management image
         run: docker buildx build --platform ${{ matrix.platform }} -f packaging/Dockerfile.management --output type=cacheonly .
+      - name: Build operator image
+        run: docker buildx build --platform ${{ matrix.platform }} -f packaging/Dockerfile.operator --output type=cacheonly .

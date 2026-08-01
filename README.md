@@ -41,9 +41,10 @@ RJS_ADMIN_TOKEN=secret go run ./tools/rjsctl queue apply --url http://127.0.0.1:
 RJS_ADMIN_TOKEN=secret go run ./tools/rjsctl queue delete --url http://127.0.0.1:8223 --confirm basic basic
 go run ./tools/rjsctl queue list --url http://127.0.0.1:8223
 go run ./tools/rjsctl diagnostics collect --url http://127.0.0.1:8223 --output diagnostics.zip
+docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:local .
 ```
 
-配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[可观测性](docs/observability.md)、[诊断包](docs/diagnostics.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
+配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[可观测性](docs/observability.md)、[诊断包](docs/diagnostics.md)、[备份恢复](docs/backup-restore.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
 
 ## 仓库结构
 

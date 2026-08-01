@@ -1,0 +1,12 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal ./internal
+COPY tools ./tools
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/rjsctl ./tools/rjsctl
+
+FROM natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c
+COPY --from=build /out/rjsctl /usr/local/bin/rjsctl
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/rjsctl"]

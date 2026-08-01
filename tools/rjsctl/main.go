@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | diagnostics collect [--url URL] [--output FILE] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | diagnostics collect [--url URL] [--output FILE] | backup create|verify|restore [flags] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -39,6 +39,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if args[0] == "diagnostics" {
 		return runDiagnostics(args[1:], stdout, stderr)
+	}
+	if args[0] == "backup" {
+		return runBackup(args[1:], stdout, stderr)
 	}
 	if args[0] != "status" {
 		return fmt.Errorf("unknown command %q", args[0])
@@ -65,6 +68,68 @@ func run(args []string, stdout, stderr io.Writer) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func runBackup(args []string, stdout, stderr io.Writer) error {
+	if len(args) < 1 {
+		return errors.New("usage: rjsctl backup create|verify|restore [flags]")
+	}
+	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("backup create", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		server := fs.String("server", os.Getenv("NATS_URL"), "NATS server URL (defaults to NATS_URL/nats context)")
+		output := fs.String("output", "", "new backup directory")
+		natsBin := fs.String("nats-bin", "nats", "nats CLI executable")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 || *output == "" {
+			return errors.New("usage: rjsctl backup create --output DIRECTORY [--server URL] [--nats-bin PATH]")
+		}
+		if err := createBackup(execRunner{}, *natsBin, *server, *output, time.Now(), stdout, stderr); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "backup written to %s\n", *output)
+		return nil
+	case "verify":
+		fs := flag.NewFlagSet("backup verify", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		input := fs.String("input", "", "backup directory")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 || *input == "" {
+			return errors.New("usage: rjsctl backup verify --input DIRECTORY")
+		}
+		manifest, err := verifyBackup(*input)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "verified %d Streams, %d files, %d bytes\n", len(manifest.Streams), manifest.FileCount, manifest.TotalBytes)
+		return nil
+	case "restore":
+		fs := flag.NewFlagSet("backup restore", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		server := fs.String("server", os.Getenv("NATS_URL"), "destination NATS server URL")
+		input := fs.String("input", "", "backup directory")
+		confirm := fs.String("confirm", "", "must be RESTORE")
+		replicas := fs.Int("replicas", 0, "override replicas (1, 3, or 5)")
+		natsBin := fs.String("nats-bin", "nats", "nats CLI executable")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 || *input == "" {
+			return errors.New("usage: rjsctl backup restore --input DIRECTORY --confirm RESTORE [--server URL] [--replicas N]")
+		}
+		if err := restoreBackup(execRunner{}, *natsBin, *server, *input, *confirm, *replicas, stdout, stderr); err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, "backup restore completed")
+		return nil
+	default:
+		return fmt.Errorf("unknown backup command %q", args[0])
+	}
 }
 
 func runDiagnostics(args []string, stdout, stderr io.Writer) error {
