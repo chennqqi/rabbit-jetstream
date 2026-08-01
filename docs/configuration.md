@@ -10,6 +10,8 @@
 | `RJS_NATS_CREDS` | 空 | NATS credentials 文件；设置后优先于用户名密码 |
 | `RJS_NATS_MONITOR_URLS` | `http://127.0.0.1:8222` | NATS monitoring 基础地址，多个节点以逗号分隔 |
 | `RJS_ADMIN_TOKEN` | 空 | 启用 apply/delete 写 API 的 Bearer Token；为空时写 API 关闭 |
+| `RJS_ADMIN_TOKENS` | 空 | 逗号分隔的 operator Token；全部可 apply/delete 及读取审计，用于重叠轮换 |
+| `RJS_AUDIT_TOKENS` | 空 | 逗号分隔的 auditor Token；只能读取审计 API，不能修改 Queue |
 | `RJS_METADATA_BUCKET` | `RJS_META` | Queue 声明使用的 JetStream KV bucket |
 | `RJS_METADATA_REPLICAS` | `1` | KV 副本数，仅允许 1、3、5；生产三节点集群应设为 3 |
 | `RJS_INSTANCE_ID` | 主机名与进程号 | 管理实例唯一标识；多副本部署必须唯一 |

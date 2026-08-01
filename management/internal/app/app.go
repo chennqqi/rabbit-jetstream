@@ -29,9 +29,16 @@ func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
 		return nil, err
 	}
 	control := controller.New(client, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
+	operatorTokens := cfg.AdminTokens
+	if len(operatorTokens) == 0 && cfg.AdminToken != "" {
+		operatorTokens = []string{cfg.AdminToken}
+	}
 	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           api.NewWithController(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, cfg.AdminToken),
+		Addr: cfg.HTTPAddr,
+		Handler: api.NewWithControllerAuth(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, api.AuthConfig{
+			OperatorTokens: operatorTokens,
+			AuditorTokens:  cfg.AuditTokens,
+		}),
 		ReadHeaderTimeout: cfg.ConnectTimeout,
 	}
 	return &App{cfg: cfg, logger: logger, client: client, server: server, controller: control}, nil

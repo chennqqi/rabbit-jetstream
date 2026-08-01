@@ -388,7 +388,7 @@ func TestApplyWritesCorrelatedAuditIntentAndOutcome(t *testing.T) {
 		t.Fatalf("status=%d applies=%d audit=%#v", rec.Code, backend.applyCalls, backend.auditEvents)
 	}
 	intent, outcome := backend.auditEvents[0], backend.auditEvents[1]
-	if intent.Phase != "intent" || intent.Outcome != "attempted" || intent.RequestID != "operator-request-42" || intent.SourceIP != "192.0.2.10" || intent.Revision != "create" {
+	if intent.Phase != "intent" || intent.Outcome != "attempted" || intent.RequestID != "operator-request-42" || intent.ActorRole != "operator" || intent.SourceIP != "192.0.2.10" || intent.Revision != "create" {
 		t.Fatalf("intent=%#v", intent)
 	}
 	if outcome.Phase != "outcome" || outcome.IntentID != intent.ID || outcome.Outcome != "succeeded" || outcome.Revision != "revision-2" || rec.Header().Get("X-Request-ID") != intent.RequestID {
@@ -441,6 +441,54 @@ func TestAuditListRequiresAdminTokenAndPaginates(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"one"`) || !strings.Contains(rec.Body.String(), `"total":2`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRoleTokensSupportRotationAndLeastPrivilege(t *testing.T) {
+	backend := &fakeBackend{auditEvents: []jetstream.AuditEvent{{ID: "one"}}, applyResult: topology.ReconcileResult{Queue: "orders", Status: "ready"}}
+	handler := NewWithControllerAuth(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, nil, AuthConfig{
+		OperatorTokens: []string{"old-operator", "new-operator"},
+		AuditorTokens:  []string{"audit-reader"},
+	})
+	for _, token := range []string{"old-operator", "new-operator", "audit-reader"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/audit", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("token=%s audit status=%d body=%s", token, rec.Code, rec.Body.String())
+		}
+	}
+	for _, token := range []string{"old-operator", "new-operator"} {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(`{"apiVersion":"rabbit-jetstream.io/v1alpha1","kind":"Queue","metadata":{"name":"orders"},"spec":{"subjects":["orders.>"],"replicas":1}}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("If-None-Match", "*")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("token=%s write status=%d body=%s", token, rec.Code, rec.Body.String())
+		}
+	}
+	auditorWrite := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(`{}`))
+	auditorWrite.Header.Set("Authorization", "Bearer audit-reader")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, auditorWrite)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("auditor write status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDisabledAuditAPIIsHidden(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newTestHandler(&fakeBackend{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/audit", nil))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "audit_api_disabled") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMatchesTokenChecksAllConfiguredCredentials(t *testing.T) {
+	if !matchesToken("second", []string{"first", "second"}) || matchesToken("missing", []string{"first", "second"}) || len(tokenList("")) != 0 || len(cleanTokens([]string{"", "valid"})) != 1 {
+		t.Fatal("token matching failed")
 	}
 }
 

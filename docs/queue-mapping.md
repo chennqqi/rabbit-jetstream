@@ -53,7 +53,7 @@ The result is `blocked` for destructive retention reductions, recreation, or uns
 
 ## Authenticated Apply
 
-Set `RJS_ADMIN_TOKEN` on the management service to enable the write endpoint. With no token configured, the endpoint returns 404 and the deployment remains read-only. Prefer passing the CLI token through the environment so it is not exposed in the process list:
+Set `RJS_ADMIN_TOKEN` or `RJS_ADMIN_TOKENS` on the management service to enable the write endpoint. With no operator token configured, the endpoint returns 404 and the deployment remains read-only. Prefer passing the CLI token through the environment so it is not exposed in the process list:
 
 ```bash
 export RJS_ADMIN_TOKEN='replace-with-a-secret-manager-value'

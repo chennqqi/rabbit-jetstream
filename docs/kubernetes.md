@@ -19,7 +19,7 @@ helm test rabbit-jetstream --namespace messaging
 
 Defaults create a persistent 3-node cluster, two management replicas, per-pod PVCs, readiness/liveness probes, topology spreading, PodDisruptionBudgets and namespace-scoped NetworkPolicies. The chart generates NATS credentials and an admin token once and preserves them across upgrades using `lookup`.
 
-For GitOps or disaster recovery, create a Secret with `nats-username`, `nats-password`, `nats-password-bcrypt`, and `admin-token`, then set `auth.existingSecret`. The bcrypt value must hash `nats-password`; the NATS pods never receive the plaintext password. Back up this Secret separately; JetStream snapshots do not contain Kubernetes Secrets.
+For GitOps or disaster recovery, create a Secret with `nats-username`, `nats-password`, `nats-password-bcrypt`, and `admin-token`, then set `auth.existingSecret`. Optional comma-separated `admin-tokens` and `audit-tokens` keys enable overlapping operator rotation and read-only auditors. The bcrypt value must hash `nats-password`; the NATS pods never receive the plaintext password. Back up this Secret separately; JetStream snapshots do not contain Kubernetes Secrets. See [Management Credential Rotation](credential-rotation.md) before changing live credentials.
 
 ## Production Checklist
 

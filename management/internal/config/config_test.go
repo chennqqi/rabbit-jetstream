@@ -11,6 +11,8 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	t.Setenv("RJS_NATS_MONITOR_URLS", "http://nats-1:8222,http://nats-2:8222")
 	t.Setenv("RJS_CONNECT_TIMEOUT", "3s")
 	t.Setenv("RJS_ADMIN_TOKEN", "secret")
+	t.Setenv("RJS_ADMIN_TOKENS", "next-secret, secret")
+	t.Setenv("RJS_AUDIT_TOKENS", " auditor-one, auditor-two ")
 	t.Setenv("RJS_METADATA_BUCKET", "TEST_META")
 	t.Setenv("RJS_METADATA_REPLICAS", "3")
 	t.Setenv("RJS_INSTANCE_ID", "management-2")
@@ -26,11 +28,21 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	if cfg.AdminToken != "secret" {
 		t.Fatalf("admin token was not loaded")
 	}
+	if len(cfg.AdminTokens) != 2 || cfg.AdminTokens[0] != "secret" || cfg.AdminTokens[1] != "next-secret" || len(cfg.AuditTokens) != 2 {
+		t.Fatalf("role tokens were not normalized: admins=%v auditors=%v", cfg.AdminTokens, cfg.AuditTokens)
+	}
 	if cfg.MetadataBucket != "TEST_META" || cfg.MetadataReplicas != 3 {
 		t.Fatalf("metadata config = %#v", cfg)
 	}
 	if cfg.InstanceID != "management-2" || cfg.ControllerInterval != 2*time.Second || cfg.ControllerLeaseTTL != 6*time.Second {
 		t.Fatalf("controller config = %#v", cfg)
+	}
+}
+
+func TestTokensDropsEmptyAndDuplicateValues(t *testing.T) {
+	got := tokens(" old ", "new,,old, new")
+	if len(got) != 2 || got[0] != "old" || got[1] != "new" {
+		t.Fatalf("tokens=%v", got)
 	}
 }
 

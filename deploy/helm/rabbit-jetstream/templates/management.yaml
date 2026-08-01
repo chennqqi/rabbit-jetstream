@@ -64,6 +64,18 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ include "rabbit-jetstream.authSecret" . }}, key: nats-password}}
             - name: RJS_ADMIN_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "rabbit-jetstream.authSecret" . }}, key: admin-token}}
+            - name: RJS_ADMIN_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rabbit-jetstream.authSecret" . }}
+                  key: admin-tokens
+                  optional: true
+            - name: RJS_AUDIT_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rabbit-jetstream.authSecret" . }}
+                  key: audit-tokens
+                  optional: true
             - {name: RJS_METADATA_REPLICAS, value: {{ .Values.nats.replicaCount | quote }}}
             - {name: RJS_CONTROLLER_INTERVAL, value: {{ .Values.controller.interval | quote }}}
             - {name: RJS_CONTROLLER_LEASE_TTL, value: {{ .Values.controller.leaseTTL | quote }}}

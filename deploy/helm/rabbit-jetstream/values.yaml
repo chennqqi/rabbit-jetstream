@@ -29,7 +29,8 @@ management:
 
 auth:
   # Existing Secret keys: nats-username, nats-password,
-  # nats-password-bcrypt, admin-token.
+  # nats-password-bcrypt, admin-token. Optional rotation/RBAC keys:
+  # admin-tokens and audit-tokens (comma-separated).
   existingSecret: ""
   username: rjs
 

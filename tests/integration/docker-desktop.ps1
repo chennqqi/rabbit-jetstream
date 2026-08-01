@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'auth', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -41,12 +41,19 @@ function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'routing', 'dlq', 'metrics', 'diagnostics')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'auth', 'routing', 'dlq', 'metrics', 'diagnostics')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
+		$PreviousAdminTokens = $env:RJS_ADMIN_TOKENS
+		$PreviousAuditTokens = $env:RJS_AUDIT_TOKENS
 		$DiagnosticBundle = Join-Path $RepositoryRoot ".tmp-rjs-diagnostics-$PID.zip"
 		if ($Scenario -in @('apply', 'delete', 'audit', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -eq 'auth') {
+			$env:RJS_ADMIN_TOKEN = 'legacy-operator'
+			$env:RJS_ADMIN_TOKENS = 'next-operator'
+			$env:RJS_AUDIT_TOKENS = 'audit-reader'
+		}
         try {
 			if ($Scenario -eq 'metrics') {
 				Invoke-Docker compose -p $Project -f $Compose --profile observability up -d --build --wait
@@ -136,6 +143,23 @@ try {
 				$AfterRestart = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization='Bearer desktop-test-token'} -TimeoutSec 10
 				if ($AfterRestart.total -ne 2 -or $AfterRestart.items[0].phase -ne 'outcome') { throw 'audit events did not survive management restart' }
 			}
+			if ($Scenario -eq 'auth') {
+				$Network = "${Project}_default"
+				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=next-operator -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				foreach ($Token in @('legacy-operator', 'next-operator', 'audit-reader')) {
+					$Response = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -SkipHttpErrorCheck
+					if ($Response.StatusCode -ne 200) { throw "$Token could not read audit events" }
+				}
+				$AuditorWrite = Invoke-WebRequest -Method Delete -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer audit-reader'; 'If-Match'='"1"'; 'X-RJS-Confirm-Queue'='basic'} -TimeoutSec 5 -SkipHttpErrorCheck
+				if ($AuditorWrite.StatusCode -ne 401) { throw "auditor write returned $($AuditorWrite.StatusCode), expected 401" }
+				$env:RJS_ADMIN_TOKEN = ''
+				$env:RJS_ADMIN_TOKENS = 'next-operator'
+				Invoke-Docker compose -p $Project -f $Compose up -d --force-recreate --no-deps management
+				Wait-Healthy "${Project}-management-1"
+				$Old = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit' -Headers @{Authorization='Bearer legacy-operator'} -TimeoutSec 5 -SkipHttpErrorCheck
+				$New = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit' -Headers @{Authorization='Bearer next-operator'} -TimeoutSec 5 -SkipHttpErrorCheck
+				if ($Old.StatusCode -ne 401 -or $New.StatusCode -ne 200) { throw "rotation removal failed: old=$($Old.StatusCode) new=$($New.StatusCode)" }
+			}
 			if ($Scenario -eq 'routing') {
 				$Network = "${Project}_default"
 				foreach ($Fixture in @('queue-routing-direct.yaml', 'queue-routing-topic.yaml', 'queue-routing-fanout-a.yaml', 'queue-routing-fanout-b.yaml')) {
@@ -223,6 +247,8 @@ try {
 				Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
 			}
 			$env:RJS_ADMIN_TOKEN = $PreviousAdminToken
+			$env:RJS_ADMIN_TOKENS = $PreviousAdminTokens
+			$env:RJS_AUDIT_TOKENS = $PreviousAuditTokens
 			Remove-Item -LiteralPath $DiagnosticBundle -Force -ErrorAction SilentlyContinue
         }
         return

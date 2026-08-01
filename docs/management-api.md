@@ -4,7 +4,7 @@ The embedded read-only Admin UI is served at `/admin/` and consumes only the end
 
 `GET /metrics` exposes Prometheus text metrics without authentication for in-cluster scraping. Do not expose it directly to untrusted networks.
 
-The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitoring integrations. Responses use JSON. Collection endpoints return `items`, `total`, `offset`, and `limit`; the default limit is 50 and the maximum is 200. Queue writes are disabled unless `RJS_ADMIN_TOKEN` is configured.
+The versioned API is intended for `rjsctl`, Admin UI, diagnostics, and monitoring integrations. Responses use JSON. Collection endpoints return `items`, `total`, `offset`, and `limit`; the default limit is 50 and the maximum is 200. Queue writes are disabled unless an operator token is configured.
 
 Reported NATS and monitoring URLs never include URL user information. `rjsctl diagnostics collect` composes the read-only endpoints into a redacted, checksummed support bundle; see [Diagnostic Bundles](diagnostics.md).
 
@@ -46,4 +46,4 @@ Errors have a stable envelope:
 
 Write requests require `Authorization: Bearer <token>` and an optimistic concurrency precondition. Use `If-None-Match: *` for creation or `If-Match: "<KV revision>"` for updates and deletion. Missing conditions return `428`; stale revisions and active Queue locks return `409`. Delete additionally requires `X-RJS-Confirm-Queue` to exactly match the path name. Unsafe reconcile plans and non-empty deletion without `force=true` return `409` without performing the destructive operation. `rjsctl` reads the current ETag and supplies these headers automatically.
 
-The same bearer token protects `GET /api/v1/audit`. Authenticated, validated mutations are durably recorded before execution and fail closed if the intent cannot be persisted. See [Management Audit Trail](audit.md) for outcome semantics and retention limits.
+Operator tokens protect Queue writes and may read `GET /api/v1/audit`; auditor tokens may only read that endpoint. Authenticated, validated mutations are durably recorded before execution and fail closed if the intent cannot be persisted. See [Management Audit Trail](audit.md) for outcome semantics and [Management Credential Rotation](credential-rotation.md) for role and rotation procedures.

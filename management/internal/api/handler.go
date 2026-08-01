@@ -51,6 +51,11 @@ type AuditBackend interface {
 	ListAudit(context.Context, int, int) (jetstream.AuditPage, error)
 }
 
+type AuthConfig struct {
+	OperatorTokens []string
+	AuditorTokens  []string
+}
+
 type Handler struct {
 	client     Backend
 	monitor    Monitor
@@ -58,7 +63,7 @@ type Handler struct {
 	name       string
 	version    string
 	started    time.Time
-	adminToken string
+	auth       AuthConfig
 	controller ControllerMonitor
 	metrics    *Metrics
 	audit      AuditBackend
@@ -69,16 +74,22 @@ func New(client Backend, logger *slog.Logger, name, version string, monitor Moni
 	if len(adminTokens) > 0 {
 		adminToken = adminTokens[0]
 	}
-	return newHandler(client, logger, name, version, monitor, nil, adminToken)
+	return newHandler(client, logger, name, version, monitor, nil, AuthConfig{OperatorTokens: tokenList(adminToken)})
 }
 
 func NewWithController(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, adminToken string) http.Handler {
-	return newHandler(client, logger, name, version, monitor, control, adminToken)
+	return NewWithControllerAuth(client, logger, name, version, monitor, control, AuthConfig{OperatorTokens: tokenList(adminToken)})
 }
 
-func newHandler(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, adminToken string) http.Handler {
+func NewWithControllerAuth(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, auth AuthConfig) http.Handler {
+	return newHandler(client, logger, name, version, monitor, control, auth)
+}
+
+func newHandler(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, auth AuthConfig) http.Handler {
 	audit, _ := client.(AuditBackend)
-	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), adminToken: adminToken, controller: control, metrics: NewMetrics(), audit: audit}
+	auth.OperatorTokens = cleanTokens(auth.OperatorTokens)
+	auth.AuditorTokens = cleanTokens(auth.AuditorTokens)
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), auth: auth, controller: control, metrics: NewMetrics(), audit: audit}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
@@ -254,7 +265,7 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) auditEvents(w http.ResponseWriter, r *http.Request) {
-	if !h.authorizeAdmin(w, r) {
+	if !h.authorizeAudit(w, r) {
 		return
 	}
 	if h.audit == nil {
@@ -292,21 +303,56 @@ func applyPrecondition(r *http.Request) (jetstream.ApplyPrecondition, error) {
 }
 
 func (h *Handler) authorizeWrite(w http.ResponseWriter, r *http.Request) bool {
-	return h.authorizeAdmin(w, r)
+	return h.authorize(w, r, h.auth.OperatorTokens, "write_api_disabled", "write API")
 }
 
-func (h *Handler) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if h.adminToken == "" {
-		writeAPIError(w, http.StatusNotFound, "write_api_disabled", "write API is disabled")
+func (h *Handler) authorizeAudit(w http.ResponseWriter, r *http.Request) bool {
+	tokens := make([]string, 0, len(h.auth.OperatorTokens)+len(h.auth.AuditorTokens))
+	tokens = append(tokens, h.auth.OperatorTokens...)
+	tokens = append(tokens, h.auth.AuditorTokens...)
+	return h.authorize(w, r, tokens, "audit_api_disabled", "audit API")
+}
+
+func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, tokens []string, disabledCode, capability string) bool {
+	if len(tokens) == 0 {
+		writeAPIError(w, http.StatusNotFound, disabledCode, capability+" is disabled")
 		return false
 	}
-	want := "Bearer " + h.adminToken
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(want)) != 1 {
+	const prefix = "Bearer "
+	provided := r.Header.Get("Authorization")
+	if !strings.HasPrefix(provided, prefix) || !matchesToken(strings.TrimPrefix(provided, prefix), tokens) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
 		return false
 	}
 	return true
+}
+
+func matchesToken(provided string, tokens []string) bool {
+	providedDigest := sha256.Sum256([]byte(provided))
+	matched := 0
+	for _, token := range tokens {
+		tokenDigest := sha256.Sum256([]byte(token))
+		matched |= subtle.ConstantTimeCompare(providedDigest[:], tokenDigest[:])
+	}
+	return matched == 1
+}
+
+func tokenList(token string) []string {
+	if token == "" {
+		return nil
+	}
+	return []string{token}
+}
+
+func cleanTokens(tokens []string) []string {
+	cleaned := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if token != "" {
+			cleaned = append(cleaned, token)
+		}
+	}
+	return cleaned
 }
 
 func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, action, resource, revision string, force bool) (jetstream.AuditEvent, bool) {
@@ -316,7 +362,7 @@ func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, acti
 	}
 	requestID := auditRequestID(r)
 	w.Header().Set("X-Request-ID", requestID)
-	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: auditActor(r), SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
+	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: auditActor(r), ActorRole: "operator", SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {

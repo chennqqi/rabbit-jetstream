@@ -19,6 +19,8 @@ type Config struct {
 	NATSCreds          string
 	NATSMonitorURLs    string
 	AdminToken         string
+	AdminTokens        []string
+	AuditTokens        []string
 	MetadataBucket     string
 	MetadataReplicas   int
 	InstanceID         string
@@ -45,6 +47,8 @@ func FromEnv() Config {
 		NATSCreds:          os.Getenv("RJS_NATS_CREDS"),
 		NATSMonitorURLs:    env("RJS_NATS_MONITOR_URLS", "http://127.0.0.1:8222"),
 		AdminToken:         os.Getenv("RJS_ADMIN_TOKEN"),
+		AdminTokens:        tokens(os.Getenv("RJS_ADMIN_TOKEN"), os.Getenv("RJS_ADMIN_TOKENS")),
+		AuditTokens:        tokens("", os.Getenv("RJS_AUDIT_TOKENS")),
 		MetadataBucket:     env("RJS_METADATA_BUCKET", "RJS_META"),
 		MetadataReplicas:   replicas("RJS_METADATA_REPLICAS", 1),
 		InstanceID:         env("RJS_INSTANCE_ID", defaultInstanceID()),
@@ -55,6 +59,23 @@ func FromEnv() Config {
 		ConnectTimeout:     duration("RJS_CONNECT_TIMEOUT", 5*time.Second),
 		ShutdownTimeout:    duration("RJS_SHUTDOWN_TIMEOUT", 10*time.Second),
 	}
+}
+
+func tokens(legacy, values string) []string {
+	result := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, value := range append([]string{legacy}, strings.Split(values, ",")...) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func positiveDuration(key string, fallback time.Duration) time.Duration {

@@ -28,7 +28,7 @@ try {
     Invoke-Docker run --rm -v "${Temporary}:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /work/default.yaml
 
     $Rendered = Get-Content -LiteralPath $Default -Raw
-    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS')) {
+    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
         if (-not $Rendered.Contains($Required)) { throw "default Helm output is missing $Required" }
     }
 	function Read-SecretValue([string]$Key) {
