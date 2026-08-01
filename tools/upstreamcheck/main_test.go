@@ -77,6 +77,37 @@ func TestVerifyLocalRejectsModifiedSubtree(t *testing.T) {
 	if err := verifyLocal(repository, lock); err != nil {
 		t.Fatalf("clean subtree rejected: %v", err)
 	}
+	t.Run("tree mismatch", func(t *testing.T) {
+		candidate := lock
+		candidate.Tree = strings.Repeat("b", 40)
+		if err := verifyLocal(repository, candidate); err == nil || !strings.Contains(err.Error(), "checked-in subtree tree") {
+			t.Fatalf("expected checked-in tree mismatch, got %v", err)
+		}
+	})
+	t.Run("subtree commit mismatch", func(t *testing.T) {
+		candidate := lock
+		candidate.SubtreeCommit = mustGit("rev-parse", "HEAD")
+		if err := verifyLocal(repository, candidate); err == nil || !strings.Contains(err.Error(), "subtree commit tree") {
+			t.Fatalf("expected subtree commit mismatch, got %v", err)
+		}
+	})
+	t.Run("official commit missing from message", func(t *testing.T) {
+		candidate := lock
+		candidate.Commit = strings.Repeat("b", 40)
+		if err := verifyLocal(repository, candidate); err == nil || !strings.Contains(err.Error(), "does not identify") {
+			t.Fatalf("expected commit identity failure, got %v", err)
+		}
+	})
+	t.Run("untracked upstream file", func(t *testing.T) {
+		untracked := filepath.Join(destination, "untracked.txt")
+		if err := os.WriteFile(untracked, []byte("unexpected\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(untracked)
+		if err := verifyLocal(repository, lock); err == nil || !strings.Contains(err.Error(), "untracked upstream files") {
+			t.Fatalf("expected untracked file failure, got %v", err)
+		}
+	})
 	if err := os.WriteFile(file, []byte("locally patched\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -86,5 +117,39 @@ func TestVerifyLocalRejectsModifiedSubtree(t *testing.T) {
 	mustGit("add", filepath.ToSlash(filepath.Join(subtreePath, "source.txt")))
 	if err := verifyLocal(repository, lock); err == nil {
 		t.Fatal("staged subtree modification was accepted")
+	}
+}
+
+func TestVerifyOfficialChecksTaggedCommitAndTree(t *testing.T) {
+	repository := t.TempDir()
+	mustGit := func(arguments ...string) string {
+		t.Helper()
+		value, err := git(repository, arguments...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	mustGit("init", "--quiet")
+	mustGit("config", "user.name", "upstreamcheck test")
+	mustGit("config", "user.email", "upstreamcheck@example.invalid")
+	if err := os.WriteFile(filepath.Join(repository, "source.txt"), []byte("official source\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mustGit("add", "source.txt")
+	mustGit("commit", "--quiet", "-m", "official release")
+	mustGit("tag", "v1.2.3")
+	lock := lockFile{
+		Repository: repository,
+		Tag:        "v1.2.3",
+		Commit:     mustGit("rev-parse", "HEAD^{commit}"),
+		Tree:       mustGit("rev-parse", "HEAD^{tree}"),
+	}
+	if err := verifyOfficial(lock); err != nil {
+		t.Fatalf("valid official tag rejected: %v", err)
+	}
+	lock.Commit = strings.Repeat("a", 40)
+	if err := verifyOfficial(lock); err == nil || !strings.Contains(err.Error(), "official tag resolves") {
+		t.Fatalf("expected tagged commit mismatch, got %v", err)
 	}
 }
