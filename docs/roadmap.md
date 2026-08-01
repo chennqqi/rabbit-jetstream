@@ -64,7 +64,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 - [x] RabbitMQ definitions 到 Queue 声明的严格转换、兼容报告与校验工具；
 - [x] 基于稳定消息 ID、SHA-256 和大小的影子数据核对 CLI、阈值门禁与不可覆盖证据报告；
-- 双写/影子采集适配器及自动化切流和回滚流程；
+- [x] RabbitMQ 独立 shadow queue 与 JetStream Limits-retention shadow Stream 实际采集适配器；
+- 双写适配器及自动化切流和回滚流程；
 - 常见客户端迁移指南及兼容矩阵；
 - 大规模压测与长期稳定性测试。
 

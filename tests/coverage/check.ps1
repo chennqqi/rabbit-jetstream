@@ -5,7 +5,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $profile = Join-Path ([System.IO.Path]::GetTempPath()) ("rjs-coverage-{0}.out" -f [guid]::NewGuid())
 try {
-    go test "-coverprofile=$profile" ./...
+    $packages = @(go list ./... | Where-Object { $_ -notmatch '/tests/helpers/' })
+    if ($LASTEXITCODE -ne 0 -or $packages.Count -eq 0) { throw 'unable to list coverage packages' }
+    go test "-coverprofile=$profile" @packages
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $total = go tool cover "-func=$profile" | Select-String '^total:'
     if ($LASTEXITCODE -ne 0 -or -not $total) { throw 'unable to read total coverage' }

@@ -105,6 +105,9 @@ jobs:
       - name: Convert and validate RabbitMQ definitions
         shell: pwsh
         run: ./tests/integration/migration.ps1
+      - name: Capture and reconcile real RabbitMQ and JetStream shadows
+        shell: pwsh
+        run: ./tests/integration/shadow-capture.ps1
 
   linux-images:
     runs-on: ubuntu-latest

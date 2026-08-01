@@ -64,5 +64,6 @@ On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
 .\tests\integration\docker-desktop.ps1 fault
 .\tests\integration\rolling-upgrade.ps1 -BuildLocal
 .\tests\integration\migration.ps1
+.\tests\integration\shadow-capture.ps1
 .\tests\integration\backup-restore.ps1
 ```

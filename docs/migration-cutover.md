@@ -10,7 +10,7 @@ Both shadow consumers must emit one NDJSON observation per received delivery wit
 {"id":"order-0001","sha256":"<64 lowercase hex>","size":128}
 ```
 
-`id` is the immutable application message ID shared by RabbitMQ `message_id` and JetStream `Nats-Msg-Id`; it must identify one logical publish. `sha256` is computed over the canonical application payload before transport encoding, and `size` is that canonical byte length. Do not include payloads or secrets in evidence files. A redelivery produces a second identical observation and is reported as a duplicate; conflicting observations for one ID invalidate the evidence.
+`id` is the immutable application message ID shared by RabbitMQ `message_id` and JetStream `Nats-Msg-Id`; it must identify one logical publish. The adapters compute `sha256` and `size` over the exact broker payload bytes, so dual publishers must send identical encodings. Do not include payloads or secrets in evidence files. A redelivery produces a second identical observation and is reported as a duplicate; conflicting observations for one ID invalidate the evidence.
 
 Compare each bounded window before cutover:
 
@@ -26,7 +26,19 @@ The default gate requires at least one unique source message and allows zero mis
 
 Publishing independently to two brokers cannot be atomic. Use a transactional application outbox with one stable message ID and independently recorded RabbitMQ and JetStream confirms. Retry JetStream with the same `Nats-Msg-Id`; never generate a new ID on retry. Do not acknowledge or delete an outbox row until both confirms are durable. Alert on oldest incomplete row and preserve the outbox through rollback.
 
-Shadow consumers use separate RabbitMQ/JetStream consumer identities, disable external side effects, and record evidence only after validating/decrypting the same canonical payload. Run at least one peak-load and one failure/recovery window. Zero-count windows do not qualify.
+Create a RabbitMQ shadow queue bound to the same exchange/routing keys as the source queue. For JetStream, create a dedicated **Limits-retention** shadow Stream capturing the same ingress subject before the window starts. Never attach a shadow consumer to the managed Queue Stream: it uses WorkQueue retention, where an overlapping consumer is unsafe and may be rejected. The CLI enforces this restriction.
+
+Start both captures before publishing:
+
+```sh
+RJS_RABBITMQ_URL='amqps://...' rjsctl migrate capture rabbitmq \
+  --queue orders.shadow --count 10000 --timeout 15m --output rabbitmq.ndjson
+RJS_NATS_URL='nats://...' rjsctl migrate capture jetstream \
+  --stream ORDERS_SHADOW --filter rjs.q.orders.ingress \
+  --count 10000 --timeout 15m --output jetstream.ndjson
+```
+
+Supply connection secrets through environment variables or credentials files, not command arguments. Each adapter writes and synchronizes evidence before ACK; a crash can create a visible duplicate but cannot silently acknowledge an unrecorded sample. Run at least one peak-load and one failure/recovery window. Zero-count windows do not qualify.
 
 ## Cutover and rollback
 

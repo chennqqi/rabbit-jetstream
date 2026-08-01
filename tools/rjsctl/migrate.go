@@ -17,6 +17,9 @@ func runMigrate(args []string, stdout, stderr io.Writer) error {
 	if len(args) < 1 {
 		return errors.New("usage: rjsctl migrate rabbitmq-definitions|reconcile [flags]")
 	}
+	if args[0] == "capture" {
+		return runCapture(args[1:], stdout, stderr)
+	}
 	if args[0] == "reconcile" {
 		return runReconcile(args[1:], stdout, stderr)
 	}
