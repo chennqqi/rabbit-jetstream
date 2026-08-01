@@ -34,5 +34,6 @@ On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
 
 ```powershell
 .\tests\integration\docker-desktop.ps1 standalone
+.\tests\integration\docker-desktop.ps1 api
 .\tests\integration\docker-desktop.ps1 fault
 ```

@@ -16,6 +16,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 ## M1：队列控制面 MVP
 
+- [x] 只读账户、Stream、Consumer API，包含稳定模型、分页和错误结构；
+- [ ] 节点及 NATS monitoring API 聚合；
 - 队列声明模型及版本化 schema；
 - 幂等创建/查询/删除 stream 与 consumer；
 - direct、topic、fanout 路由约定；

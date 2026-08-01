@@ -15,6 +15,16 @@ curl --fail --silent --show-error http://127.0.0.1:8223/healthz
 curl --fail --silent --show-error http://127.0.0.1:8223/readyz
 curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/info
 
+network="${project}_default"
+docker run --rm --network "$network" natsio/nats-box:latest \
+  nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
+docker run --rm --network "$network" natsio/nats-box:latest \
+  nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/cluster | grep -q '"streams":1'
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams | grep -q '"name":"RJS_API"'
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API | grep -q '"replicas":1'
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers | grep -q '"name":"WORKER"'
+
 docker image inspect rabbit-jetstream/nats-server:local \
   --format '{{if ne .Os "linux"}}{{json .}}{{end}}' | grep -q '^$'
 docker image inspect rabbit-jetstream/management:local \

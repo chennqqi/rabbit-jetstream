@@ -44,3 +44,6 @@ sleep 3
 cluster_json="$(nats nats-1 stream info RJS_E2E --json)"
 test "$(printf '%s' "$cluster_json" | grep -c '"current": true')" -eq 2
 test "$(printf '%s' "$cluster_json" | grep -c '"messages": 2')" -eq 1
+managed_stream="$(curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_E2E)"
+test "$(printf '%s' "$managed_stream" | grep -c '"messages":2')" -eq 1
+test "$(printf '%s' "$managed_stream" | grep -c '"current":true')" -eq 2
