@@ -30,6 +30,7 @@ The `operator.image` value records the digest-pinned, on-demand `rjsctl` image s
 - Use immutable image tags/digests and a `Retain` StorageClass; the `local` image defaults are for development only.
 - Keep `nats.replicaCount` at 3 or 5 and ensure nodes span failure domains. A one-node chart is allowed only for development/recovery.
 - Keep management and NATS client services private. If Ingress is enabled, add authentication at the ingress and TLS; read-only management endpoints are otherwise unauthenticated.
+- With both Ingress and NetworkPolicy enabled, also set `networkPolicy.ingress.enabled=true` and provide non-empty `namespaceSelector` and `podSelector` maps matching only the ingress controller. The chart rejects an unrestricted cross-namespace path instead of opening port 8223 globally.
 - Enable `nats.tls` before crossing untrusted networks. The profile requires verified client certificates on both client and cluster-route ports; distribute dedicated client certificates to external publishers and consumers.
 - Enable `serviceMonitor` only when the Prometheus Operator CRD is installed.
 - Run the backup/restore drill and record RPO/RTO before production cutover.

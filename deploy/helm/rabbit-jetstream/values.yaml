@@ -75,6 +75,10 @@ controller:
 
 networkPolicy:
   enabled: true
+  ingress:
+    enabled: false
+    namespaceSelector: {}
+    podSelector: {}
 
 podDisruptionBudget:
   enabled: true

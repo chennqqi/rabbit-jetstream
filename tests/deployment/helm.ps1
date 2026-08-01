@@ -37,6 +37,7 @@ try {
 	if ([regex]::Matches($Rendered, '(?m)^\s+automountServiceAccountToken: false\r?$').Count -ne 2) {
 		throw 'NATS and management Pods must not mount Kubernetes API credentials'
 	}
+	if ($Rendered.Contains('namespaceSelector:')) { throw 'default NetworkPolicy unexpectedly allows a cross-namespace peer' }
 	function Read-SecretValue([string]$Key) {
 		$Pattern = '(?m)^  ' + [regex]::Escape($Key) + ':\s+["'']?([^"''\r\n]+)'
 		$Match = [regex]::Match($Rendered, $Pattern)
@@ -113,9 +114,17 @@ try {
 	}
 
     $Optional = Join-Path $Temporary 'optional.yaml'
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set serviceMonitor.enabled=true --set ingress.enabled=true | Set-Content -LiteralPath $Optional -Encoding utf8NoBOM
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set serviceMonitor.enabled=true --set ingress.enabled=true --set networkPolicy.ingress.enabled=true --set-string networkPolicy.ingress.namespaceSelector.name=ingress-system --set-string networkPolicy.ingress.podSelector.app=ingress-controller | Set-Content -LiteralPath $Optional -Encoding utf8NoBOM
     if ($LASTEXITCODE -ne 0) { throw 'optional Helm render failed' }
     Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -ignore-missing-schemas -summary /work/optional.yaml
+	$OptionalRendered = Get-Content -LiteralPath $Optional -Raw
+	foreach ($Required in @('namespaceSelector:', 'name: ingress-system', 'podSelector:', 'app: ingress-controller')) {
+		if (-not $OptionalRendered.Contains($Required)) { throw "restricted Ingress NetworkPolicy is missing $Required" }
+	}
+	& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set ingress.enabled=true 2>$null | Out-Null
+	if ($LASTEXITCODE -eq 0) { throw 'chart accepted an Ingress without an explicit NetworkPolicy peer' }
+	& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set networkPolicy.ingress.enabled=true --set networkPolicy.ingress.namespaceSelector.name=1 --set-string networkPolicy.ingress.podSelector.app=ingress-controller 2>$null | Out-Null
+	if ($LASTEXITCODE -eq 0) { throw 'values schema accepted a non-string NetworkPolicy label' }
 
     $ExistingSecret = & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set auth.existingSecret=production-auth
     if ($LASTEXITCODE -ne 0 -or ($ExistingSecret -join "`n") -match '(?m)^kind: Secret$') { throw 'existing Secret mode rendered a generated Secret' }
