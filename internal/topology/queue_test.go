@@ -42,6 +42,12 @@ func TestParseQueueDefaultsAndNormalizes(t *testing.T) {
 	}
 }
 
+func TestValidQueueName(t *testing.T) {
+	if !ValidQueueName("orders_2026") || ValidQueueName("orders.eu") || ValidQueueName("") {
+		t.Fatal("queue name validation mismatch")
+	}
+}
+
 func TestParseQueueRejectsUnknownAndMultipleDocuments(t *testing.T) {
 	tests := []string{
 		strings.Replace(validQueueYAML, "  replicas: 3", "  replicas: 3\n  unexpected: true", 1),

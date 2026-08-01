@@ -2,13 +2,20 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 )
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
 
 const queueFile = `apiVersion: rabbit-jetstream.io/v1alpha1
 kind: Queue
@@ -197,4 +204,128 @@ func TestQueueListReadsDeclarations(t *testing.T) {
 	if !strings.Contains(output.String(), `"revision": "abc"`) {
 		t.Fatalf("output = %s", output.String())
 	}
+}
+
+func TestTopLevelCommands(t *testing.T) {
+	for _, args := range [][]string{nil, {"help"}, {"--help"}} {
+		var output bytes.Buffer
+		if err := run(args, &output, &output); err != nil || !strings.Contains(output.String(), "Usage:") {
+			t.Fatalf("args=%v output=%q err=%v", args, output.String(), err)
+		}
+	}
+	var output bytes.Buffer
+	if err := run([]string{"version"}, &output, &output); err != nil || !strings.Contains(output.String(), version) {
+		t.Fatalf("output=%q err=%v", output.String(), err)
+	}
+	for _, args := range [][]string{{"unknown"}, {"queue"}, {"queue", "unknown"}} {
+		if err := run(args, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+			t.Fatalf("args=%v unexpectedly succeeded", args)
+		}
+	}
+}
+
+func TestStatusSuccessAndFailures(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/info" {
+				t.Fatalf("path=%s", r.URL.Path)
+			}
+			_, _ = w.Write([]byte(`{"version":"test"}`))
+		}))
+		defer server.Close()
+		var output bytes.Buffer
+		if err := run([]string{"status", "--url", server.URL}, &output, &output); err != nil || !strings.Contains(output.String(), `"version": "test"`) {
+			t.Fatalf("output=%q err=%v", output.String(), err)
+		}
+	})
+	for _, test := range []struct {
+		name, body string
+		status     int
+	}{
+		{"bad status", "unavailable", http.StatusServiceUnavailable},
+		{"bad json", "{", http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			if err := run([]string{"status", "--url", server.URL}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+				t.Fatal("status unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestQueueRevisionHeadersFailures(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+		etag   string
+	}{
+		{"missing etag", http.StatusOK, ""},
+		{"backend failure", http.StatusServiceUnavailable, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("ETag", test.etag)
+				w.WriteHeader(test.status)
+			}))
+			defer server.Close()
+			if _, _, err := queueRevisionHeaders(server.Client(), server.URL); err == nil {
+				t.Fatal("lookup unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestReadObservedTopologyFindsConsumer(t *testing.T) {
+	plan, err := topology.BuildPlan(*mustReadQueue(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/consumers"):
+			_, _ = w.Write([]byte(`{"items":[{"name":"other"},{"name":"` + plan.Consumer.Name + `"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"name":"` + plan.Stream.Name + `"}`))
+		}
+	}))
+	defer server.Close()
+	observed, err := readObservedTopology(server.URL, plan)
+	if err != nil || observed.Stream == nil || observed.Consumer == nil || observed.Consumer.Name != plan.Consumer.Name {
+		t.Fatalf("observed=%#v err=%v", observed, err)
+	}
+}
+
+func TestReadObservedTopologyRejectsBackendFailures(t *testing.T) {
+	plan, err := topology.BuildPlan(*mustReadQueue(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []int{http.StatusUnauthorized, http.StatusServiceUnavailable} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+		_, err := readObservedTopology(server.URL, plan)
+		server.Close()
+		if err == nil {
+			t.Fatalf("status %d unexpectedly succeeded", status)
+		}
+	}
+}
+
+func TestReadErrorBodyFailure(t *testing.T) {
+	if got := readErrorBody(failingReader{}); got != "unreadable response" {
+		t.Fatalf("got=%q", got)
+	}
+}
+
+func mustReadQueue(t *testing.T) *topology.Queue {
+	t.Helper()
+	queue, err := topology.ParseQueue(strings.NewReader(queueFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return queue
 }

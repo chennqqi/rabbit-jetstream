@@ -19,6 +19,7 @@ type fakeBackend struct {
 	blocked                                         bool
 	dlqResult                                       topology.DeadLetterProcessResult
 	dlqErr                                          error
+	leaderResults                                   []bool
 }
 
 func (f *fakeBackend) ProcessDeadLetters(context.Context, []topology.Declaration, int) (topology.DeadLetterProcessResult, error) {
@@ -27,6 +28,11 @@ func (f *fakeBackend) ProcessDeadLetters(context.Context, []topology.Declaration
 
 func (f *fakeBackend) AcquireControllerLease(context.Context, string, time.Duration) (bool, error) {
 	f.leaseCalls++
+	if len(f.leaderResults) > 0 {
+		result := f.leaderResults[0]
+		f.leaderResults = f.leaderResults[1:]
+		return result, f.leaseErr
+	}
 	return f.leader, f.leaseErr
 }
 func (f *fakeBackend) ReleaseControllerLease(context.Context, string) error {
@@ -86,6 +92,51 @@ func TestLeaderReportsDeadLetterFailure(t *testing.T) {
 	control.runOnce(context.Background())
 	if status := control.Status(); status.LastError != "dlq unavailable" || !status.Leader {
 		t.Fatalf("status=%#v", status)
+	}
+}
+
+func TestControllerReportsLeaseAndListFailures(t *testing.T) {
+	backend := &fakeBackend{leader: true, leaseErr: errors.New("lease unavailable")}
+	control := testController(backend)
+	control.runOnce(context.Background())
+	if status := control.Status(); status.Leader || status.LastError != "lease unavailable" || backend.listCalls != 0 {
+		t.Fatalf("status=%#v backend=%#v", status, backend)
+	}
+	backend.leaseErr, backend.listErr = nil, errors.New("list unavailable")
+	control.runOnce(context.Background())
+	if status := control.Status(); !status.Leader || status.LastError != "list unavailable" || backend.listCalls != 1 {
+		t.Fatalf("status=%#v backend=%#v", status, backend)
+	}
+}
+
+func TestControllerStopsWhenLeaseIsLostDuringReconcile(t *testing.T) {
+	backend := &fakeBackend{leader: true, leaderResults: []bool{true, true, false}, declarations: []topology.Declaration{{Queue: "a"}, {Queue: "b"}}}
+	control := testController(backend)
+	control.runOnce(context.Background())
+	if status := control.Status(); status.Leader || backend.applyCalls != 1 || status.Reconciled != 1 {
+		t.Fatalf("status=%#v backend=%#v", status, backend)
+	}
+}
+
+func TestControllerAccumulatesDeadLetterCounters(t *testing.T) {
+	backend := &fakeBackend{leader: true, dlqResult: topology.DeadLetterProcessResult{Processed: 2, Moved: 1, Failed: 1}}
+	control := testController(backend)
+	control.runOnce(context.Background())
+	control.runOnce(context.Background())
+	status := control.Status()
+	if status.DLQProcessed != 4 || status.DLQMoved != 2 || status.DLQFailed != 2 {
+		t.Fatalf("status=%#v", status)
+	}
+}
+
+func TestControllerRunReleasesLease(t *testing.T) {
+	backend := &fakeBackend{leader: true}
+	control := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "instance-1", true, time.Millisecond, time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	control.Run(ctx)
+	if backend.releaseCalls != 1 || backend.leaseCalls != 1 {
+		t.Fatalf("backend=%#v", backend)
 	}
 }
 

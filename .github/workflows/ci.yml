@@ -22,7 +22,9 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Unit tests with race detector
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test -race ./...
+      - name: Enforce repository coverage
+        run: make coverage-check
       - name: Build management tools
         run: make build
 

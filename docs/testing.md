@@ -17,6 +17,20 @@ Replacing RabbitMQ makes correctness and recoverability release requirements, no
 - A release candidate must pass three-node failure recovery, backup/restore, rolling upgrade/rollback, a 24-hour soak, and performance-regression gates.
 - Flaky tests are production defects. Quarantine requires an owner, linked issue, and expiry date.
 
+The repository-wide 80% gate is executable and fails below the threshold:
+
+```bash
+make coverage-check
+```
+
+From PowerShell, without WSL:
+
+```powershell
+.\tests\coverage\check.ps1
+```
+
+Set `RJS_COVERAGE_MIN` only to raise the threshold in stricter release pipelines; lowering the committed baseline is not an acceptable merge workaround.
+
 Test evidence and benchmark reports are retained with each release. Claims of RabbitMQ replacement or performance advantage require published, repeatable workloads.
 
 ## Linux Production Baseline

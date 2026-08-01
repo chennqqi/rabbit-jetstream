@@ -1,4 +1,4 @@
-.PHONY: build build-upstream test test-race test-linux-smoke test-linux-fault coverage fmt run
+.PHONY: build build-upstream test test-race test-linux-smoke test-linux-fault coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -22,6 +22,9 @@ test-linux-fault:
 coverage:
 	go test -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out
+
+coverage-check:
+	bash tests/coverage/check.sh
 
 fmt:
 	gofmt -w $$(find . -name '*.go' -not -path './outlink/*')

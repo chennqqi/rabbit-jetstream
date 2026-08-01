@@ -99,6 +99,31 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestReadyAndInfoEndpoints(t *testing.T) {
+	backend := &fakeBackend{account: jetstream.Account{MemoryUsed: 10, StorageUsed: 20, Streams: 2, Consumers: 3}}
+	h := newTestHandler(backend)
+	for _, test := range []struct {
+		path     string
+		status   int
+		contains string
+	}{
+		{"/readyz", http.StatusOK, `"status":"ready"`},
+		{"/api/v1/info", http.StatusOK, `"storage_used":20`},
+	} {
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if recorder.Code != test.status || !strings.Contains(recorder.Body.String(), test.contains) {
+			t.Fatalf("%s status=%d body=%s", test.path, recorder.Code, recorder.Body.String())
+		}
+	}
+	backend.err = errors.New("offline")
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "not_ready") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestAdminUIEndpoints(t *testing.T) {
 	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil)
 	for _, test := range []struct {

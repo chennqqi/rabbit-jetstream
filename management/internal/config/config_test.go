@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -30,6 +31,27 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	}
 	if cfg.InstanceID != "management-2" || cfg.ControllerInterval != 2*time.Second || cfg.ControllerLeaseTTL != 6*time.Second {
 		t.Fatalf("controller config = %#v", cfg)
+	}
+}
+
+func TestLogLevels(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  slog.Level
+	}{{"debug", slog.LevelDebug}, {"warn", slog.LevelWarn}, {"warning", slog.LevelWarn}, {"error", slog.LevelError}, {"unknown", slog.LevelInfo}} {
+		if got := LogLevel(test.value); got != test.want {
+			t.Fatalf("LogLevel(%q)=%v want=%v", test.value, got, test.want)
+		}
+	}
+}
+
+func TestInvalidBooleanAndReplicasUseDefaults(t *testing.T) {
+	t.Setenv("RJS_CONTROLLER_ENABLED", "not-a-bool")
+	t.Setenv("RJS_METADATA_REPLICAS", "2")
+	t.Setenv("RJS_CONTROLLER_INTERVAL", "-1s")
+	cfg := FromEnv()
+	if !cfg.ControllerEnabled || cfg.MetadataReplicas != 1 || cfg.ControllerInterval != 5*time.Second {
+		t.Fatalf("cfg=%#v", cfg)
 	}
 }
 
