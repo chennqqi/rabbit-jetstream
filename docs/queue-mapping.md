@@ -1,0 +1,27 @@
+# Queue to JetStream Mapping
+
+`rjsctl queue plan` converts a validated logical Queue into deterministic JetStream resources without contacting the server.
+
+| Logical resource | JetStream plan |
+|---|---|
+| Queue `orders` | Stream `RJSQ_orders` |
+| Competing consumer group | Durable pull Consumer `RJSQC_orders` |
+| Subjects | Stream subjects and Consumer filter subjects |
+| Storage and replicas | Stream storage and replica count |
+| Retention limits | Stream `MaxAge`, `MaxBytes`, and `MaxMsgs` |
+| Delivery | Explicit Ack, AckWait, MaxDeliver, instant replay |
+| DLQ | Dependency Stream plus server-side advisory republisher |
+
+The Stream uses WorkQueue retention. All SDK instances consuming the same logical Queue share the durable Consumer, which provides competing-consumer behavior. Resource names preserve Queue name case to avoid collisions.
+
+```bash
+rjsctl queue plan examples/queues/orders.yaml
+```
+
+Every plan includes a deterministic 128-bit revision derived from the normalized Queue document. The revision and logical Queue identity are copied into resource metadata. Subject ordering does not change the revision.
+
+## Important DLQ Boundary
+
+JetStream `MaxDeliver` stops delivery attempts but does not automatically move the message to another Stream. A Queue with `deadLetter` therefore plans an `advisory-republish` worker and declares the target Queue as a dependency. Until that server-side worker exists, apply must reject DLQ-enabled plans rather than silently promise RabbitMQ DLX behavior.
+
+This mapping intentionally covers Queue semantics only. Exchange-style direct/topic/fanout declarations and priority subjects require separate versioned contracts before they can enter an apply controller.

@@ -40,6 +40,13 @@ func TestQueueValidateAndDiff(t *testing.T) {
 	if !strings.Contains(output.String(), `"path": "spec.replicas"`) || !strings.Contains(output.String(), `"impact": "disruptive"`) {
 		t.Fatalf("output = %q", output.String())
 	}
+	output.Reset()
+	if err := run([]string{"queue", "plan", current}, &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"name": "RJSQ_orders"`) || !strings.Contains(output.String(), `"retention": "workqueue"`) {
+		t.Fatalf("output = %q", output.String())
+	}
 }
 
 func TestQueueValidateRejectsInvalidFile(t *testing.T) {

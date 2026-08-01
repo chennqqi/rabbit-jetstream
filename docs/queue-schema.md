@@ -4,6 +4,7 @@
 
 ```bash
 rjsctl queue validate examples/queues/orders.yaml
+rjsctl queue plan examples/queues/orders.yaml
 rjsctl queue diff current.yaml desired.yaml
 ```
 
@@ -30,3 +31,5 @@ Diff output is deterministic and classifies every change:
 - `destructive`: identity, storage type, or reduced retention limits.
 
 This stage performs no JetStream writes. A later controller will require explicit confirmation or policy approval for destructive changes.
+
+The generated resource contract and DLQ limitation are documented in [Queue to JetStream Mapping](queue-mapping.md).
