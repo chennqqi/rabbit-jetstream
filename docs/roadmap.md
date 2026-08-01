@@ -49,7 +49,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] Prometheus 指标、固定版本部署 profile 和关键告警模板；
 - OpenTelemetry traces/metrics；
 - [x] 带脱敏、部分失败记录和 SHA-256 清单的 CLI 诊断包；
-- OIDC/RBAC、审计日志、凭据轮换；
+- [x] 基于 JetStream 的写前意图/写后结果审计日志、受保护查询 API 与 CLI；
+- OIDC/RBAC、凭据轮换；
 - [x] 三/五节点 StatefulSet、双管理副本、PVC/PDB/NetworkPolicy 的 Helm chart；
 - 滚动升级及容量手册；
 - [x] 全 account Stream/KV/Consumer 备份、校验、恢复与数据卷销毁演练；

@@ -2,12 +2,16 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,6 +46,11 @@ type Monitor interface {
 
 type ControllerMonitor interface{ Status() controller.Status }
 
+type AuditBackend interface {
+	RecordAudit(context.Context, jetstream.AuditEvent) (uint64, error)
+	ListAudit(context.Context, int, int) (jetstream.AuditPage, error)
+}
+
 type Handler struct {
 	client     Backend
 	monitor    Monitor
@@ -52,6 +61,7 @@ type Handler struct {
 	adminToken string
 	controller ControllerMonitor
 	metrics    *Metrics
+	audit      AuditBackend
 }
 
 func New(client Backend, logger *slog.Logger, name, version string, monitor Monitor, adminTokens ...string) http.Handler {
@@ -67,7 +77,8 @@ func NewWithController(client Backend, logger *slog.Logger, name, version string
 }
 
 func newHandler(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, adminToken string) http.Handler {
-	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), adminToken: adminToken, controller: control, metrics: NewMetrics()}
+	audit, _ := client.(AuditBackend)
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), adminToken: adminToken, controller: control, metrics: NewMetrics(), audit: audit}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
@@ -82,6 +93,7 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 	mux.HandleFunc("GET /api/v1/queues", h.queues)
 	mux.HandleFunc("GET /api/v1/queues/{queue}", h.queue)
 	mux.HandleFunc("GET /api/v1/controller", h.controllerStatus)
+	mux.HandleFunc("GET /api/v1/audit", h.auditEvents)
 	mux.HandleFunc("GET /metrics", h.prometheus)
 	mux.Handle("GET /admin/", adminui.Handler())
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
@@ -156,16 +168,31 @@ func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusPreconditionRequired, "precondition_required", err.Error())
 		return
 	}
+	intent, ok := h.recordAuditIntent(w, r, "queue.delete", name, preconditionRevision(precondition), force)
+	if !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	result, err := h.client.DeleteQueueConditional(ctx, name, force, precondition)
 	if err != nil {
+		status, code := backendErrorDetails(err)
+		if !h.recordAuditOutcome(w, intent, "failed", status, code, "") {
+			return
+		}
 		writeBackendError(w, err)
 		return
 	}
 	status := http.StatusOK
 	if result.Blocked {
 		status = http.StatusConflict
+	}
+	outcome := "succeeded"
+	if result.Blocked {
+		outcome = "blocked"
+	}
+	if !h.recordAuditOutcome(w, intent, outcome, status, "", "") {
+		return
 	}
 	writeJSON(w, status, result)
 }
@@ -194,10 +221,18 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusPreconditionRequired, "precondition_required", err.Error())
 		return
 	}
+	intent, ok := h.recordAuditIntent(w, r, "queue.apply", plan.Queue, preconditionRevision(precondition), false)
+	if !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	result, err := h.client.ApplyConditional(ctx, plan, precondition)
 	if err != nil {
+		status, code := backendErrorDetails(err)
+		if !h.recordAuditOutcome(w, intent, "failed", status, code, plan.Revision) {
+			return
+		}
 		writeBackendError(w, err)
 		return
 	}
@@ -208,7 +243,37 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 	if result.Blocked {
 		status = http.StatusConflict
 	}
+	outcome := "succeeded"
+	if result.Blocked {
+		outcome = "blocked"
+	}
+	if !h.recordAuditOutcome(w, intent, outcome, status, "", result.Revision) {
+		return
+	}
 	writeJSON(w, status, result)
+}
+
+func (h *Handler) auditEvents(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeAdmin(w, r) {
+		return
+	}
+	if h.audit == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "audit backend is not configured")
+		return
+	}
+	offset, limit, err := pagination(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_pagination", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	page, err := h.audit.ListAudit(ctx, offset, limit)
+	if err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 
 func applyPrecondition(r *http.Request) (jetstream.ApplyPrecondition, error) {
@@ -227,6 +292,10 @@ func applyPrecondition(r *http.Request) (jetstream.ApplyPrecondition, error) {
 }
 
 func (h *Handler) authorizeWrite(w http.ResponseWriter, r *http.Request) bool {
+	return h.authorizeAdmin(w, r)
+}
+
+func (h *Handler) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if h.adminToken == "" {
 		writeAPIError(w, http.StatusNotFound, "write_api_disabled", "write API is disabled")
 		return false
@@ -238,6 +307,88 @@ func (h *Handler) authorizeWrite(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, action, resource, revision string, force bool) (jetstream.AuditEvent, bool) {
+	if h.audit == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "write rejected because audit backend is unavailable")
+		return jetstream.AuditEvent{}, false
+	}
+	requestID := auditRequestID(r)
+	w.Header().Set("X-Request-ID", requestID)
+	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: auditActor(r), SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
+		h.logger.Error("audit intent failed; mutation rejected", "request_id", requestID, "action", action, "queue", resource, "error", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "write rejected because audit intent could not be persisted")
+		return jetstream.AuditEvent{}, false
+	}
+	return event, true
+}
+
+func (h *Handler) recordAuditOutcome(w http.ResponseWriter, intent jetstream.AuditEvent, outcome string, status int, code, revision string) bool {
+	event := intent
+	event.ID = randomAuditID()
+	event.IntentID = intent.ID
+	event.Time = time.Now().UTC()
+	event.Phase = "outcome"
+	event.Outcome = outcome
+	event.HTTPStatus = status
+	event.ErrorCode = code
+	if revision != "" {
+		event.Revision = revision
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
+		h.logger.Error("audit outcome failed after mutation attempt", "request_id", intent.RequestID, "intent_id", intent.ID, "outcome", outcome, "error", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "mutation outcome could not be persisted; inspect resource state before retrying")
+		return false
+	}
+	return true
+}
+
+func auditRequestID(r *http.Request) string {
+	value := r.Header.Get("X-Request-ID")
+	if value != "" && len(value) <= 128 && strings.IndexFunc(value, func(ch rune) bool {
+		return !(ch == '-' || ch == '_' || ch == '.' || ch == ':' || ch >= '0' && ch <= '9' || ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z')
+	}) == -1 {
+		return value
+	}
+	return randomAuditID()
+}
+
+func randomAuditID() string {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(value)
+}
+
+func auditActor(r *http.Request) string {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	digest := sha256.Sum256([]byte(token))
+	return "token-sha256:" + hex.EncodeToString(digest[:])
+}
+
+func remoteIP(value string) string {
+	host, _, err := net.SplitHostPort(value)
+	if err == nil {
+		return host
+	}
+	return value
+}
+
+func preconditionRevision(value jetstream.ApplyPrecondition) string {
+	if value.CreateOnly {
+		return "create"
+	}
+	if value.ExpectedRevision != nil {
+		return strconv.FormatUint(*value.ExpectedRevision, 10)
+	}
+	return ""
 }
 
 func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
@@ -380,15 +531,18 @@ func page[T any](items []T, offset, limit int) map[string]any {
 }
 
 func writeBackendError(w http.ResponseWriter, err error) {
+	status, code := backendErrorDetails(err)
+	writeAPIError(w, status, code, err.Error())
+}
+
+func backendErrorDetails(err error) (int, string) {
 	if errors.Is(err, jetstream.ErrConflict) {
-		writeAPIError(w, http.StatusConflict, "conflict", err.Error())
-		return
+		return http.StatusConflict, "conflict"
 	}
 	if errors.Is(err, jetstream.ErrNotFound) {
-		writeAPIError(w, http.StatusNotFound, "not_found", err.Error())
-		return
+		return http.StatusNotFound, "not_found"
 	}
-	writeAPIError(w, http.StatusServiceUnavailable, "jetstream_unavailable", err.Error())
+	return http.StatusServiceUnavailable, "jetstream_unavailable"
 }
 
 func writeAPIError(w http.ResponseWriter, status int, code, message string) {

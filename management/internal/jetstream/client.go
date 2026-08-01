@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
@@ -31,6 +32,8 @@ type Client struct {
 	js               jsapi.JetStream
 	metadataBucket   string
 	metadataReplicas int
+	auditMu          sync.Mutex
+	auditReady       bool
 }
 
 type controllerLease struct {

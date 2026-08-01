@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -62,7 +63,7 @@ func (f *fakeJS) CreateOrUpdateStream(_ context.Context, cfg jsapi.StreamConfig)
 	defer f.mu.Unlock()
 	stream := f.streams[cfg.Name]
 	if stream == nil {
-		stream = &fakeStream{consumers: make(map[string]*jsapi.ConsumerInfo)}
+		stream = &fakeStream{consumers: make(map[string]*jsapi.ConsumerInfo), messages: make(map[uint64]*jsapi.RawStreamMsg)}
 		f.streams[cfg.Name] = stream
 	}
 	state := streamState(stream)
@@ -109,7 +110,21 @@ func (f *fakeJS) PublishMsg(_ context.Context, message *nats.Msg, _ ...jsapi.Pub
 		return nil, f.publishErr
 	}
 	f.published = append(f.published, &nats.Msg{Subject: message.Subject, Data: append([]byte(nil), message.Data...), Header: cloneHeader(message.Header)})
-	return &jsapi.PubAck{}, nil
+	ack := &jsapi.PubAck{}
+	for name, stream := range f.streams {
+		if stream.info == nil || !slices.Contains(stream.info.Config.Subjects, message.Subject) {
+			continue
+		}
+		sequence := stream.info.State.LastSeq + 1
+		if stream.messages == nil {
+			stream.messages = make(map[uint64]*jsapi.RawStreamMsg)
+		}
+		stream.messages[sequence] = &jsapi.RawStreamMsg{Subject: message.Subject, Sequence: sequence, Header: cloneHeader(message.Header), Data: append([]byte(nil), message.Data...), Time: time.Now()}
+		stream.info.State = streamState(stream)
+		ack.Stream, ack.Sequence = name, sequence
+		break
+	}
+	return ack, nil
 }
 func (f *fakeJS) ListStreams(context.Context, ...jsapi.StreamListOpt) jsapi.StreamInfoLister {
 	items := make([]*jsapi.StreamInfo, 0, len(f.streams))
@@ -127,6 +142,9 @@ type fakeStream struct {
 }
 
 func (f *fakeStream) CachedInfo() *jsapi.StreamInfo { return f.info }
+func (f *fakeStream) Info(context.Context, ...jsapi.StreamInfoOpt) (*jsapi.StreamInfo, error) {
+	return f.info, nil
+}
 func (f *fakeStream) ListConsumers(context.Context) jsapi.ConsumerInfoLister {
 	items := make([]*jsapi.ConsumerInfo, 0, len(f.consumers))
 	for _, consumer := range f.consumers {
@@ -222,10 +240,19 @@ func (f *fakeConsumerLister) Info() <-chan *jsapi.ConsumerInfo {
 func (f *fakeConsumerLister) Err() error { return f.err }
 
 func streamState(stream *fakeStream) jsapi.StreamState {
-	if stream == nil || stream.info == nil {
+	if stream == nil || len(stream.messages) == 0 {
 		return jsapi.StreamState{}
 	}
-	return stream.info.State
+	var first, last uint64
+	for sequence := range stream.messages {
+		if first == 0 || sequence < first {
+			first = sequence
+		}
+		if sequence > last {
+			last = sequence
+		}
+	}
+	return jsapi.StreamState{Msgs: uint64(len(stream.messages)), FirstSeq: first, LastSeq: last}
 }
 
 type memoryKV struct {

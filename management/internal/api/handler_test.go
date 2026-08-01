@@ -25,8 +25,13 @@ type fakeBackend struct {
 	applyResult  topology.ReconcileResult
 	deleteResult topology.DeleteResult
 	deleteCalls  int
+	applyCalls   int
 	declarations []topology.Declaration
 	serverURL    string
+	auditEvents  []jetstream.AuditEvent
+	auditErr     error
+	auditCalls   int
+	auditFailAt  int
 }
 
 type fakeMonitor struct{ snapshot monitoring.Snapshot }
@@ -66,6 +71,7 @@ func (f *fakeBackend) Apply(context.Context, topology.Plan) (topology.ReconcileR
 	return f.applyResult, f.err
 }
 func (f *fakeBackend) ApplyConditional(context.Context, topology.Plan, jetstream.ApplyPrecondition) (topology.ReconcileResult, error) {
+	f.applyCalls++
 	return f.applyResult, f.err
 }
 func (f *fakeBackend) DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error) {
@@ -86,6 +92,34 @@ func (f *fakeBackend) Declaration(_ context.Context, name string) (*topology.Dec
 		}
 	}
 	return nil, jetstream.ErrNotFound
+}
+func (f *fakeBackend) RecordAudit(_ context.Context, event jetstream.AuditEvent) (uint64, error) {
+	f.auditCalls++
+	if f.auditFailAt > 0 && f.auditCalls == f.auditFailAt {
+		return 0, errors.New("audit failure")
+	}
+	if f.auditErr != nil {
+		return 0, f.auditErr
+	}
+	f.auditEvents = append(f.auditEvents, event)
+	return uint64(len(f.auditEvents)), nil
+}
+func (f *fakeBackend) ListAudit(_ context.Context, offset, limit int) (jetstream.AuditPage, error) {
+	if f.auditErr != nil {
+		return jetstream.AuditPage{}, f.auditErr
+	}
+	items := append([]jetstream.AuditEvent(nil), f.auditEvents...)
+	for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+		items[left], items[right] = items[right], items[left]
+	}
+	if offset > len(items) {
+		offset = len(items)
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return jetstream.AuditPage{Items: items[offset:end], Total: len(items), Offset: offset, Limit: limit}, nil
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -337,6 +371,87 @@ func TestDeleteQueueReturnsConflictWhenBlocked(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestApplyWritesCorrelatedAuditIntentAndOutcome(t *testing.T) {
+	backend := &fakeBackend{applyResult: topology.ReconcileResult{Queue: "orders", Revision: "revision-2", Status: "ready"}}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(`{"apiVersion":"rabbit-jetstream.io/v1alpha1","kind":"Queue","metadata":{"name":"orders"},"spec":{"subjects":["orders.>"],"replicas":1}}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("If-None-Match", "*")
+	req.Header.Set("X-Request-ID", "operator-request-42")
+	req.RemoteAddr = "192.0.2.10:4321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || backend.applyCalls != 1 || len(backend.auditEvents) != 2 {
+		t.Fatalf("status=%d applies=%d audit=%#v", rec.Code, backend.applyCalls, backend.auditEvents)
+	}
+	intent, outcome := backend.auditEvents[0], backend.auditEvents[1]
+	if intent.Phase != "intent" || intent.Outcome != "attempted" || intent.RequestID != "operator-request-42" || intent.SourceIP != "192.0.2.10" || intent.Revision != "create" {
+		t.Fatalf("intent=%#v", intent)
+	}
+	if outcome.Phase != "outcome" || outcome.IntentID != intent.ID || outcome.Outcome != "succeeded" || outcome.Revision != "revision-2" || rec.Header().Get("X-Request-ID") != intent.RequestID {
+		t.Fatalf("outcome=%#v headers=%v", outcome, rec.Header())
+	}
+	encoded, _ := json.Marshal(backend.auditEvents)
+	if strings.Contains(string(encoded), `"secret"`) || !strings.HasPrefix(intent.Actor, "token-sha256:") {
+		t.Fatalf("audit leaked token or actor missing: %s", encoded)
+	}
+}
+
+func TestAuditIntentFailureRejectsMutation(t *testing.T) {
+	backend := &fakeBackend{auditErr: errors.New("audit unavailable")}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("X-RJS-Confirm-Queue", "orders")
+	req.Header.Set("If-None-Match", "*")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || backend.deleteCalls != 0 || !strings.Contains(rec.Body.String(), "audit_unavailable") {
+		t.Fatalf("status=%d deletes=%d body=%s", rec.Code, backend.deleteCalls, rec.Body.String())
+	}
+}
+
+func TestAuditOutcomeFailureReportsUncertainMutation(t *testing.T) {
+	backend := &fakeBackend{auditFailAt: 2, applyResult: topology.ReconcileResult{Queue: "orders", Status: "ready"}}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/queues/orders", strings.NewReader(`{"apiVersion":"rabbit-jetstream.io/v1alpha1","kind":"Queue","metadata":{"name":"orders"},"spec":{"subjects":["orders.>"],"replicas":1}}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("If-None-Match", "*")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || backend.applyCalls != 1 || len(backend.auditEvents) != 1 || !strings.Contains(rec.Body.String(), "inspect resource state") {
+		t.Fatalf("status=%d applies=%d audits=%d body=%s", rec.Code, backend.applyCalls, len(backend.auditEvents), rec.Body.String())
+	}
+}
+
+func TestAuditListRequiresAdminTokenAndPaginates(t *testing.T) {
+	backend := &fakeBackend{auditEvents: []jetstream.AuditEvent{{ID: "one"}, {ID: "two"}}}
+	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	unauthorized := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/v1/audit", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized=%d", unauthorized.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit?offset=1&limit=1", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"one"`) || !strings.Contains(rec.Body.String(), `"total":2`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuditHelpersRejectUnsafeRequestID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Request-ID", "bad request id\n")
+	if got := auditRequestID(req); got == "bad request id\n" || len(got) != 32 {
+		t.Fatalf("request id=%q", got)
+	}
+	if got := remoteIP("not-a-socket"); got != "not-a-socket" {
+		t.Fatalf("ip=%q", got)
 	}
 }
 

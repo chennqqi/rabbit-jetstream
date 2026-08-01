@@ -26,6 +26,7 @@ Reported NATS and monitoring URLs never include URL user information. `rjsctl di
 | `PUT /api/v1/queues/{queue}` | Authenticated, reconciled Queue apply |
 | `DELETE /api/v1/queues/{queue}` | Authenticated Queue deletion with explicit confirmation |
 | `GET /api/v1/controller` | Local controller instance, leadership, reconcile counts, cumulative DLQ processed/moved/failed counts, and last error |
+| `GET /api/v1/audit` | Authenticated, newest-first Queue mutation audit events |
 
 Example:
 
@@ -44,3 +45,5 @@ Errors have a stable envelope:
 `/api/v1/nodes` collects each configured monitoring endpoint concurrently. Its top-level status is `available`, `degraded`, or `unavailable`. Individual nodes preserve endpoint-specific errors so one failed member does not hide healthy members. Credentials embedded in monitoring URLs are never returned.
 
 Write requests require `Authorization: Bearer <token>` and an optimistic concurrency precondition. Use `If-None-Match: *` for creation or `If-Match: "<KV revision>"` for updates and deletion. Missing conditions return `428`; stale revisions and active Queue locks return `409`. Delete additionally requires `X-RJS-Confirm-Queue` to exactly match the path name. Unsafe reconcile plans and non-empty deletion without `force=true` return `409` without performing the destructive operation. `rjsctl` reads the current ETag and supplies these headers automatically.
+
+The same bearer token protects `GET /api/v1/audit`. Authenticated, validated mutations are durably recorded before execution and fail closed if the intent cannot be persisted. See [Management Audit Trail](audit.md) for outcome semantics and retention limits.

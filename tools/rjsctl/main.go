@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | diagnostics collect [--url URL] [--output FILE] | backup create|verify|restore [flags] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | audit list [--url URL] [--token TOKEN] [--offset N] [--limit N] | diagnostics collect [--url URL] [--output FILE] | backup create|verify|restore [flags] | queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -42,6 +42,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if args[0] == "backup" {
 		return runBackup(args[1:], stdout, stderr)
+	}
+	if args[0] == "audit" {
+		return runAudit(args[1:], stdout, stderr)
 	}
 	if args[0] != "status" {
 		return fmt.Errorf("unknown command %q", args[0])
@@ -68,6 +71,50 @@ func run(args []string, stdout, stderr io.Writer) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func runAudit(args []string, stdout, stderr io.Writer) error {
+	if len(args) < 1 || args[0] != "list" {
+		return errors.New("usage: rjsctl audit list [--url URL] [--token TOKEN] [--offset N] [--limit N]")
+	}
+	fs := flag.NewFlagSet("audit list", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+	token := fs.String("token", os.Getenv("RJS_ADMIN_TOKEN"), "management admin token")
+	offset := fs.Int("offset", 0, "number of newest events to skip")
+	limit := fs.Int("limit", 100, "maximum events to return")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || *offset < 0 || *limit < 1 || *limit > 200 {
+		return errors.New("usage: rjsctl audit list [--url URL] [--token TOKEN] [--offset N] [--limit N]")
+	}
+	if *token == "" {
+		return errors.New("audit list requires --token or RJS_ADMIN_TOKEN")
+	}
+	endpoint := strings.TrimRight(*baseURL, "/") + "/api/v1/audit?" + url.Values{
+		"offset": {fmt.Sprint(*offset)}, "limit": {fmt.Sprint(*limit)},
+	}.Encode()
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+*token)
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("management API returned %s", response.Status)
+	}
+	var page any
+	if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(page)
 }
 
 func runBackup(args []string, stdout, stderr io.Writer) error {

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')]
+    [ValidateSet('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')]
     [string]$Scenario = 'standalone'
 )
 
@@ -41,12 +41,12 @@ function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
 
 Push-Location $RepositoryRoot
 try {
-    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'routing', 'dlq', 'metrics', 'diagnostics')) {
+    if ($Scenario -in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'routing', 'dlq', 'metrics', 'diagnostics')) {
         $Project = "rjs-desktop-$Scenario"
         $Compose = 'deploy/compose/standalone.yml'
 		$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
 		$DiagnosticBundle = Join-Path $RepositoryRoot ".tmp-rjs-diagnostics-$PID.zip"
-		if ($Scenario -in @('apply', 'delete', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -in @('apply', 'delete', 'audit', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
         try {
 			if ($Scenario -eq 'metrics') {
 				Invoke-Docker compose -p $Project -f $Compose --profile observability up -d --build --wait
@@ -120,6 +120,21 @@ try {
 				if ($LASTEXITCODE -eq 0) { throw 'foreign Stream deletion unexpectedly succeeded' }
 				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -TimeoutSec 5
 				if ($Foreign.name -ne 'RJSQ_foreign') { throw 'foreign Stream ownership protection failed' }
+			}
+			if ($Scenario -eq 'audit') {
+				$Network = "${Project}_default"
+				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				$Audit = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src golang:1.25-bookworm go run ./tools/rjsctl audit list --url http://management:8223 --limit 10 | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $Audit.total -ne 2 -or $Audit.items[0].phase -ne 'outcome' -or $Audit.items[1].phase -ne 'intent') { throw 'audit intent/outcome events are incorrect' }
+				if ($Audit.items[0].intentId -ne $Audit.items[1].id -or $Audit.items[0].requestId -ne $Audit.items[1].requestId) { throw 'audit event correlation is incorrect' }
+				$SerializedAudit = $Audit | ConvertTo-Json -Depth 8
+				if ($SerializedAudit.Contains('desktop-test-token')) { throw 'audit events exposed the admin token' }
+				$StreamInfo = & docker run --rm --network $Network natsio/nats-box:latest nats --server nats://nats:4222 stream info RJS_AUDIT_EVENTS --json | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or -not $StreamInfo.config.deny_delete -or -not $StreamInfo.config.deny_purge -or $StreamInfo.state.messages -ne 2) { throw 'audit Stream protection or state is incorrect' }
+				Invoke-Docker compose -p $Project -f $Compose restart management
+				Wait-Healthy "${Project}-management-1"
+				$AfterRestart = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization='Bearer desktop-test-token'} -TimeoutSec 10
+				if ($AfterRestart.total -ne 2 -or $AfterRestart.items[0].phase -ne 'outcome') { throw 'audit events did not survive management restart' }
 			}
 			if ($Scenario -eq 'routing') {
 				$Network = "${Project}_default"

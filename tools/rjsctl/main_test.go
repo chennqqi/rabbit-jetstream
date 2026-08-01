@@ -206,6 +206,43 @@ func TestQueueListReadsDeclarations(t *testing.T) {
 	}
 }
 
+func TestAuditListUsesAdminTokenAndPagination(t *testing.T) {
+	t.Setenv("RJS_ADMIN_TOKEN", "environment-secret")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/audit" || r.URL.Query().Get("offset") != "2" || r.URL.Query().Get("limit") != "25" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer environment-secret" {
+			t.Fatalf("authorization=%q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"items":[{"id":"audit-1"}],"total":3,"offset":2,"limit":25}`))
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := run([]string{"audit", "list", "--url", server.URL, "--offset", "2", "--limit", "25"}, &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"id": "audit-1"`) {
+		t.Fatalf("output=%s", output.String())
+	}
+}
+
+func TestAuditListRejectsInvalidArgumentsAndAPIError(t *testing.T) {
+	t.Setenv("RJS_ADMIN_TOKEN", "")
+	for _, args := range [][]string{{"audit"}, {"audit", "unknown"}, {"audit", "list"}, {"audit", "list", "--token", "x", "--offset", "-1"}, {"audit", "list", "--token", "x", "--limit", "201"}} {
+		if err := run(args, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+			t.Fatalf("args=%v unexpectedly succeeded", args)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	if err := run([]string{"audit", "list", "--url", server.URL, "--token", "x"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestTopLevelCommands(t *testing.T) {
 	for _, args := range [][]string{nil, {"help"}, {"--help"}} {
 		var output bytes.Buffer

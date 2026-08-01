@@ -62,6 +62,8 @@
 
 `rjsctl diagnostics collect` 通过只读管理 API 采集运行快照，不读取消息负载或 credentials 文件。诊断 ZIP 允许单个端点失败，清单记录每个文件的状态、大小与 SHA-256；敏感字段和 URL 用户信息在写盘前脱敏。
 
+Queue 管理写操作先向独立的 JetStream 审计 Stream 持久化意图，再执行资源变更，最后写入相关联的结果事件。意图落盘失败时拒绝变更；结果落盘失败时返回状态不确定错误，要求运维先核查资源。
+
 Controller 使用同一 KV bucket 中的 CAS 租约选出唯一 leader。Leader 周期读取声明并仅执行安全的 create/update/noop；需要 recreation、保留策略缩减或未实现能力的计划保持 blocked，不自动执行破坏性操作。每个声明前续租，优雅退出时条件释放租约；实例异常退出时由 TTL 保证接管上界。
 
 所有 Queue apply、delete 和 controller reconcile 共享 Queue 级 KV CAS 锁，避免两个管理实例同时修改同一组 Stream/Consumer。HTTP 写入和 controller 快照都必须携带声明 KV revision；因此后到达的旧配置会收到冲突，而不会覆盖已提交的新配置，已删除 Queue 也不会被旧 reconcile 快照复活。锁包含过期时间，异常退出后可自动接管。

@@ -39,13 +39,14 @@ go run ./tools/rjsctl queue plan examples/queues/orders.yaml
 go run ./tools/rjsctl queue reconcile --url http://127.0.0.1:8223 tests/fixtures/queue-basic.yaml
 RJS_ADMIN_TOKEN=secret go run ./tools/rjsctl queue apply --url http://127.0.0.1:8223 tests/fixtures/queue-basic.yaml
 RJS_ADMIN_TOKEN=secret go run ./tools/rjsctl queue delete --url http://127.0.0.1:8223 --confirm basic basic
+RJS_ADMIN_TOKEN=secret go run ./tools/rjsctl audit list --url http://127.0.0.1:8223 --limit 100
 go run ./tools/rjsctl queue list --url http://127.0.0.1:8223
 go run ./tools/rjsctl diagnostics collect --url http://127.0.0.1:8223 --output diagnostics.zip
 docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:local .
 helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream --namespace messaging --create-namespace
 ```
 
-配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[可观测性](docs/observability.md)、[诊断包](docs/diagnostics.md)、[备份恢复](docs/backup-restore.md)、[Kubernetes 部署](docs/kubernetes.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
+配置通过 `RJS_*` 环境变量或启动参数注入，详见 [配置说明](docs/configuration.md)。总体设计、[Queue Schema](docs/queue-schema.md)、[管理 API](docs/management-api.md)、[审计日志](docs/audit.md)、[可观测性](docs/observability.md)、[诊断包](docs/diagnostics.md)、[备份恢复](docs/backup-restore.md)、[Kubernetes 部署](docs/kubernetes.md)、上游维护、测试门禁和分期计划分别见 [架构设计](docs/architecture.md)、[上游管理](docs/upstream.md)、[测试策略](docs/testing.md) 与 [Roadmap](docs/roadmap.md)。
 
 ## 仓库结构
 
