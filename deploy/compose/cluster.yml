@@ -24,6 +24,21 @@ services:
     <<: *nats
     command: ["-c", "/etc/nats/nats.conf"]
     volumes: ["../nats/cluster-3.conf:/etc/nats/nats.conf:ro", "nats-3:/data"]
+  management:
+    image: rabbit-jetstream/management:local
+    build:
+      context: ../..
+      dockerfile: packaging/Dockerfile.management
+    environment:
+      RJS_NATS_URL: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+    ports: ["8223:8223"]
+    depends_on:
+      nats-1:
+        condition: service_healthy
+      nats-2:
+        condition: service_healthy
+      nats-3:
+        condition: service_healthy
 
 volumes:
   nats-1:

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l management tools)"
+      - name: Vet
+        run: go vet ./...
+      - name: Unit tests with race detector
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Build management tools
+        run: make build
+
+  upstream-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: upstream/nats-server/go.mod
+          cache-dependency-path: upstream/nats-server/go.sum
+      - name: Build pinned NATS Server
+        working-directory: upstream/nats-server
+        run: go build .
+
+  compose-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f deploy/compose/standalone.yml config --quiet
+      - run: docker compose -f deploy/compose/cluster.yml config --quiet
