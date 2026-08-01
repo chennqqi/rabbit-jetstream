@@ -50,6 +50,11 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "make verify-upstream-online") || !strings.Contains(read("Makefile"), "go run ./tools/upstreamcheck -online") {
 		t.Error("CI no longer verifies the official NATS subtree provenance")
 	}
+	upstreamJobStart := strings.Index(workflow, "  upstream-build:")
+	upstreamJobEnd := strings.Index(workflow, "\n  security:")
+	if upstreamJobStart < 0 || upstreamJobEnd <= upstreamJobStart || !strings.Contains(workflow[upstreamJobStart:upstreamJobEnd], "fetch-depth: 0") {
+		t.Error("CI upstream provenance job must fetch the historical subtree commit")
+	}
 	for _, workflowFile := range []string{".github/workflows/ci.yml", ".github/workflows/release.yml"} {
 		for lineNumber, line := range strings.Split(read(workflowFile), "\n") {
 			fields := strings.Fields(line)
@@ -128,6 +133,11 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		}
 	}
 	release := read(".github/workflows/release.yml")
+	releaseGateStart := strings.Index(release, "  release-gates:")
+	releaseGateEnd := strings.Index(release, "\n  publish:")
+	if releaseGateStart < 0 || releaseGateEnd <= releaseGateStart || !strings.Contains(release[releaseGateStart:releaseGateEnd], "fetch-depth: 0") {
+		t.Error("release provenance gate must fetch the historical subtree commit")
+	}
 	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "alpine/helm:3.18.4@sha256:", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {
 			t.Errorf("release workflow lost requirement %q", requirement)
