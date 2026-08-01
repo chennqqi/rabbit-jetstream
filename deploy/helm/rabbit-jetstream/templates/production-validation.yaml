@@ -1,4 +1,7 @@
 {{- if .Values.production.enabled }}
+{{- if and .Values.auth.oidc.issuer (not .Values.auth.oidc.audience) }}
+{{- fail "auth.oidc.audience is required when auth.oidc.issuer is configured" }}
+{{- end }}
 {{- if lt (int .Values.nats.replicaCount) 3 }}
 {{- fail "production.enabled requires nats.replicaCount >= 3" }}
 {{- end }}
@@ -21,6 +24,12 @@
 {{- end }}
 {{- if not .Values.networkPolicy.enabled }}
 {{- fail "production.enabled requires networkPolicy.enabled=true" }}
+{{- end }}
+{{- if not .Values.networkPolicy.egress.enabled }}
+{{- fail "production.enabled requires networkPolicy.egress.enabled=true" }}
+{{- end }}
+{{- if and (or .Values.auth.oidc.issuer .Values.management.telemetry.tracesEndpoint .Values.management.telemetry.metricsEndpoint) (eq (len .Values.networkPolicy.egress.additionalRules) 0) }}
+{{- fail "production.enabled requires explicit networkPolicy.egress.additionalRules for OIDC or OTLP destinations" }}
 {{- end }}
 {{- if not .Values.podDisruptionBudget.enabled }}
 {{- fail "production.enabled requires podDisruptionBudget.enabled=true" }}

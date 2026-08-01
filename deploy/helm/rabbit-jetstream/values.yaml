@@ -84,6 +84,17 @@ networkPolicy:
     enabled: false
     namespaceSelector: {}
     podSelector: {}
+  egress:
+    enabled: false
+    dns:
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+      podSelector:
+        k8s-app: kube-dns
+    # Additional Kubernetes NetworkPolicy egress rules for explicitly approved
+    # OIDC/OTLP destinations. Production rejects configured exporters/issuers
+    # while this list is empty.
+    additionalRules: []
 
 podDisruptionBudget:
   enabled: true

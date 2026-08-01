@@ -121,7 +121,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		t.Error("Helm production guidance must require digest-pinned images")
 	}
 	productionValidation := read("deploy/helm/rabbit-jetstream/templates/production-validation.yaml")
-	for _, requirement := range []string{"nats.replicaCount >= 3", "management.replicaCount >= 2", "nats.storage.storageClass", "nats.tls.enabled=true", "distinct NATS server and client TLS Secrets", "nats.image.digest", "management.image.digest", "operator.image.digest", "networkPolicy.enabled=true", "podDisruptionBudget.enabled=true", "management.service.type=ClusterIP", "ingress.tls"} {
+	for _, requirement := range []string{"nats.replicaCount >= 3", "management.replicaCount >= 2", "nats.storage.storageClass", "nats.tls.enabled=true", "distinct NATS server and client TLS Secrets", "nats.image.digest", "management.image.digest", "operator.image.digest", "networkPolicy.enabled=true", "networkPolicy.egress.enabled=true", "networkPolicy.egress.additionalRules", "podDisruptionBudget.enabled=true", "management.service.type=ClusterIP", "ingress.tls"} {
 		if !strings.Contains(productionValidation, requirement) {
 			t.Errorf("Helm production profile lost invariant %q", requirement)
 		}

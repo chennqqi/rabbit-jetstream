@@ -19,6 +19,7 @@ helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream \
   --set nats.tls.enabled=true \
   --set nats.tls.serverSecret=rjs-nats-server-tls \
   --set nats.tls.clientSecret=rjs-management-nats-tls \
+  --set networkPolicy.egress.enabled=true \
   --set production.enabled=true
 helm test rabbit-jetstream --namespace messaging
 ```
@@ -29,7 +30,9 @@ For GitOps or disaster recovery, create a Secret with `nats-username`, `nats-pas
 
 Production clusters should enable mutual TLS for NATS client and route traffic. Create a server Secret and a distinct management-client Secret, each containing `ca.crt`, `tls.crt`, and `tls.key`. The server certificate SANs must cover the client Service and every StatefulSet/headless-Service DNS name. Install with `--set nats.tls.enabled=true --set nats.tls.serverSecret=rjs-nats-server-tls --set nats.tls.clientSecret=rjs-management-nats-tls`. Override `nats.tls.serverName` only when the certificate uses a different stable DNS name. The chart mounts each Secret only into its intended workload and never generates private keys.
 
-`production.enabled=true` is the fail-closed deployment profile. Helm then requires three or five NATS replicas, at least two management replicas, a named StorageClass, distinct server/client mTLS Secrets, digest-pinned NATS/management/operator images, NetworkPolicies, PodDisruptionBudgets, a private `ClusterIP` management Service, and secure OIDC/telemetry transport. NATS and management replicas must span distinct hostname domains; insufficient nodes leave Pods pending instead of silently removing fault tolerance. An enabled Ingress must also declare TLS. Keep this switch enabled in GitOps values so an unsafe override fails during rendering rather than reaching the cluster.
+`production.enabled=true` is the fail-closed deployment profile. Helm then requires three or five NATS replicas, at least two management replicas, a named StorageClass, distinct server/client mTLS Secrets, digest-pinned NATS/management/operator images, ingress and egress NetworkPolicies, PodDisruptionBudgets, a private `ClusterIP` management Service, and secure OIDC/telemetry transport. NATS and management replicas must span distinct hostname domains; insufficient nodes leave Pods pending instead of silently removing fault tolerance. An enabled Ingress must also declare TLS. Keep this switch enabled in GitOps values so an unsafe override fails during rendering rather than reaching the cluster.
+
+Production egress isolation is enabled with `networkPolicy.egress.enabled=true`. The built-in rules permit DNS, NATS route traffic, and management access to NATS client/monitoring ports only. If OIDC or OTLP is configured, add narrowly scoped Kubernetes NetworkPolicy rules under `networkPolicy.egress.additionalRules`; the production profile rejects those endpoints while the list is empty. Adjust the configurable DNS namespace/Pod selectors if the cluster DNS labels differ from the Kubernetes defaults.
 
 The `operator.image` value records the digest-pinned, on-demand `rjsctl` image shipped with the same release. The chart deliberately does not create a permanent operator Pod; run that image only for an approved administration, backup, restore, diagnostic, or migration operation.
 
@@ -39,6 +42,7 @@ The `operator.image` value records the digest-pinned, on-demand `rjsctl` image s
 - Keep `nats.replicaCount` at 3 or 5 and provide at least that many schedulable nodes with distinct `kubernetes.io/hostname` values. The chart uses `minDomains` plus `DoNotSchedule`, so it fails closed instead of co-locating durable replicas. A one-node chart is allowed only for development/recovery.
 - Keep management and NATS client services private. If Ingress is enabled, add authentication at the ingress and TLS; read-only management endpoints are otherwise unauthenticated.
 - With both Ingress and NetworkPolicy enabled, also set `networkPolicy.ingress.enabled=true` and provide non-empty `namespaceSelector` and `podSelector` maps matching only the ingress controller. The chart rejects an unrestricted cross-namespace path instead of opening port 8223 globally.
+- Keep `networkPolicy.egress.enabled=true`; explicitly allow only approved IdP and telemetry Collector peers in `networkPolicy.egress.additionalRules`.
 - Enable `nats.tls` before crossing untrusted networks. The profile requires verified client certificates on both client and cluster-route ports; distribute dedicated client certificates to external publishers and consumers.
 - Enable `serviceMonitor` only when the Prometheus Operator CRD is installed.
 - Run the backup/restore drill and record RPO/RTO before production cutover.

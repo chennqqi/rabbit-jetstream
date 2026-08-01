@@ -11,5 +11,5 @@ Run the installation health test:
   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 
 Before production use, set production.enabled=true. This makes Helm reject missing
-image digests, mTLS, durable storage, quorum, disruption, or network safeguards.
+image digests, mTLS, durable storage, quorum, disruption, or ingress/egress safeguards.
 Back up the generated Secret and review docs/kubernetes.md.
