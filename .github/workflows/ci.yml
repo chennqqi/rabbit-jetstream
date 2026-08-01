@@ -64,6 +64,25 @@ jobs:
       - name: Verify three-replica write during one-node outage
         run: tests/fault/single-node-recovery.sh
 
+  management-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify durable audit trail
+        shell: pwsh
+        run: ./tests/integration/docker-desktop.ps1 -Scenario audit
+      - name: Verify RBAC and token rotation
+        shell: pwsh
+        run: ./tests/integration/docker-desktop.ps1 -Scenario auth
+
+  rolling-upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify three-node rolling upgrade and rollback
+        shell: pwsh
+        run: ./tests/integration/rolling-upgrade.ps1 -BuildLocal
+
   backup-restore:
     runs-on: ubuntu-latest
     steps:

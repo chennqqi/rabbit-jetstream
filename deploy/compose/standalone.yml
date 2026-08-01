@@ -1,6 +1,6 @@
 services:
   nats:
-    image: rabbit-jetstream/nats-server:local
+    image: ${RJS_NATS_IMAGE:-rabbit-jetstream/nats-server:local}
     build:
       context: ../..
       dockerfile: packaging/Dockerfile.nats-server
@@ -17,7 +17,7 @@ services:
       timeout: 2s
       retries: 12
   management:
-    image: rabbit-jetstream/management:local
+    image: ${RJS_MANAGEMENT_IMAGE:-rabbit-jetstream/management:local}
     build:
       context: ../..
       dockerfile: packaging/Dockerfile.management

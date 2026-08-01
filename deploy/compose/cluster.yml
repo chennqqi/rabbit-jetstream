@@ -1,5 +1,5 @@
 x-nats: &nats
-  image: rabbit-jetstream/nats-server:local
+  image: ${RJS_NATS_IMAGE:-rabbit-jetstream/nats-server:local}
   build:
     context: ../..
     dockerfile: packaging/Dockerfile.nats-server
@@ -25,7 +25,7 @@ services:
     command: ["-c", "/etc/nats/nats.conf"]
     volumes: ["../nats/cluster-3.conf:/etc/nats/nats.conf:ro", "nats-3:/data"]
   management:
-    image: rabbit-jetstream/management:local
+    image: ${RJS_MANAGEMENT_IMAGE:-rabbit-jetstream/management:local}
     build:
       context: ../..
       dockerfile: packaging/Dockerfile.management

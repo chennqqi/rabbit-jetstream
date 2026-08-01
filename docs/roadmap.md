@@ -53,7 +53,7 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 - [x] 静态 operator/auditor 最小 RBAC 与重叠 Token 无中断轮换；
 - OIDC 联邦认证；
 - [x] 三/五节点 StatefulSet、双管理副本、PVC/PDB/NetworkPolicy 的 Helm chart；
-- 滚动升级及容量手册；
+- [x] 三节点滚动升级/回滚自动化演练及容量规划手册；
 - [x] 全 account Stream/KV/Consumer 备份、校验、恢复与数据卷销毁演练；
 - 管理 API 版本兼容策略。
 
