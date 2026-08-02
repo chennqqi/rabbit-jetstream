@@ -73,11 +73,23 @@ type evidence struct {
 	Binaries        map[string]string `json:"binaries"`
 }
 
+type qualificationEnvironment struct {
+	goos     string
+	goarch   string
+	readFile func(string) ([]byte, error)
+	command  func(string, ...string) (string, error)
+	now      func() time.Time
+}
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithQualifier(args, stdout, stderr, qualify)
+}
+
+func runWithQualifier(args []string, stdout, stderr io.Writer, qualifier func(string, string) (evidence, error)) int {
 	flags := flag.NewFlagSet("nativequal", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	bundle := flags.String("bundle", "", "local release bundle directory")
@@ -90,7 +102,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "-bundle and -output are required")
 		return 2
 	}
-	result, err := qualify(*bundle, *expectedRevision)
+	result, err := qualifier(*bundle, *expectedRevision)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -110,25 +122,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func qualify(bundle, expectedRevision string) (evidence, error) {
+	return qualifyWithEnvironment(bundle, expectedRevision, qualificationEnvironment{
+		goos: runtime.GOOS, goarch: runtime.GOARCH, readFile: os.ReadFile,
+		command: commandOutput, now: time.Now,
+	})
+}
+
+func qualifyWithEnvironment(bundle, expectedRevision string, environment qualificationEnvironment) (evidence, error) {
 	var result evidence
-	if runtime.GOOS != "linux" {
-		return result, fmt.Errorf("native Linux is required; current runtime is %s/%s", runtime.GOOS, runtime.GOARCH)
+	if environment.goos != "linux" {
+		return result, fmt.Errorf("native Linux is required; current runtime is %s/%s", environment.goos, environment.goarch)
 	}
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
-		return result, fmt.Errorf("unsupported production architecture: %s", runtime.GOARCH)
+	if environment.goarch != "amd64" && environment.goarch != "arm64" {
+		return result, fmt.Errorf("unsupported production architecture: %s", environment.goarch)
 	}
-	kernel, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	kernel, err := environment.readFile("/proc/sys/kernel/osrelease")
 	if err != nil {
 		return result, fmt.Errorf("read kernel release: %w", err)
 	}
-	version, err := os.ReadFile("/proc/version")
+	version, err := environment.readFile("/proc/version")
 	if err != nil {
 		return result, fmt.Errorf("read kernel version: %w", err)
 	}
 	if strings.Contains(strings.ToLower(string(kernel)+string(version)), "microsoft") {
 		return result, errors.New("WSL is not accepted for release qualification")
 	}
-	docker, err := readDockerInfo()
+	docker, err := readDockerInfo(environment.command)
 	if err != nil {
 		return result, err
 	}
@@ -139,14 +158,14 @@ func qualify(bundle, expectedRevision string) (evidence, error) {
 	if strings.Contains(identity, "docker desktop") {
 		return result, errors.New("Docker Desktop is not accepted for release qualification")
 	}
-	head, err := commandOutput("git", "rev-parse", "HEAD")
+	head, err := environment.command("git", "rev-parse", "HEAD")
 	if err != nil {
 		return result, err
 	}
 	if len(head) != 40 {
 		return result, fmt.Errorf("invalid source revision %q", head)
 	}
-	status, err := commandOutput("git", "status", "--porcelain")
+	status, err := environment.command("git", "status", "--porcelain")
 	if err != nil {
 		return result, err
 	}
@@ -195,9 +214,9 @@ func qualify(bundle, expectedRevision string) (evidence, error) {
 		images = append(images, platformResult{Archive: name, Platforms: platforms})
 	}
 	binaries := make(map[string]string, 2)
-	binDir := filepath.Join(bundle, "bin", "linux-"+runtime.GOARCH)
+	binDir := filepath.Join(bundle, "bin", "linux-"+environment.goarch)
 	for name, args := range map[string][]string{"rjsctl": {"version"}, "rjs-management": {"--version"}} {
-		value, err := commandOutput(filepath.Join(binDir, name), args...)
+		value, err := environment.command(filepath.Join(binDir, name), args...)
 		if err != nil {
 			return result, fmt.Errorf("execute %s: %w", name, err)
 		}
@@ -207,19 +226,19 @@ func qualify(bundle, expectedRevision string) (evidence, error) {
 		binaries[name] = value
 	}
 	result = evidence{
-		Schema: evidenceSchema, GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Schema: evidenceSchema, GeneratedAt: environment.now().UTC().Format(time.RFC3339Nano),
 		SourceRevision: head, ReleaseVersion: manifest.Version, SDKVersion: manifest.SDK.Version,
 		SDKRevision: manifest.SDK.Revision, ContractVersion: manifest.ContractVersion,
-		NATSVersion: manifest.NATSVersion, Runtime: runtime.GOOS + "/" + runtime.GOARCH,
+		NATSVersion: manifest.NATSVersion, Runtime: environment.goos + "/" + environment.goarch,
 		KernelRelease: strings.TrimSpace(string(kernel)), Docker: docker,
 		ChecksumFiles: checksums, Images: images, Binaries: binaries,
 	}
 	return result, nil
 }
 
-func readDockerInfo() (dockerInfo, error) {
+func readDockerInfo(command func(string, ...string) (string, error)) (dockerInfo, error) {
 	var result dockerInfo
-	raw, err := commandOutput("docker", "info", "--format", "{{json .}}")
+	raw, err := command("docker", "info", "--format", "{{json .}}")
 	if err != nil {
 		return result, fmt.Errorf("inspect Docker server: %w", err)
 	}
