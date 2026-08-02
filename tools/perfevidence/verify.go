@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,7 +71,7 @@ type resourceSample struct {
 	Node       string    `json:"node"`
 }
 
-func verifyEvidence(path string, requireSoak bool) error {
+func verifyEvidence(path string, requireSoak bool, expectedRevision string) error {
 	var proof evidence
 	if err := decodeFile(path, &proof); err != nil {
 		return fmt.Errorf("decode evidence: %w", err)
@@ -78,8 +79,11 @@ func verifyEvidence(path string, requireSoak bool) error {
 	if proof.Schema != evidenceSchema {
 		return fmt.Errorf("unsupported evidence schema %q", proof.Schema)
 	}
-	if proof.GeneratedAt.IsZero() || len(proof.SourceRevision) != 40 || strings.Trim(proof.SourceRevision, "0123456789abcdef") != "" || !strings.HasPrefix(proof.NATSImageID, "sha256:") || len(proof.Command) == 0 || len(proof.Host) == 0 {
+	if proof.GeneratedAt.IsZero() || len(proof.SourceRevision) != 40 || strings.Trim(proof.SourceRevision, "0123456789abcdef") != "" || len(proof.NATSImageID) != len("sha256:")+64 || !strings.HasPrefix(proof.NATSImageID, "sha256:") || strings.Trim(strings.TrimPrefix(proof.NATSImageID, "sha256:"), "0123456789abcdef") != "" || len(proof.Command) == 0 || len(proof.Host) == 0 {
 		return fmt.Errorf("evidence provenance is incomplete")
+	}
+	if requireSoak && (len(expectedRevision) != 40 || strings.Trim(expectedRevision, "0123456789abcdef") != "" || proof.SourceRevision != expectedRevision) {
+		return fmt.Errorf("release evidence source revision does not match the expected revision")
 	}
 	if proof.SampleIntervalSeconds < 1 || proof.MaxThroughputRegressionPercent < 0 || proof.MaxP99RegressionPercent < 0 {
 		return fmt.Errorf("evidence thresholds are invalid")
@@ -113,22 +117,43 @@ func verifyEvidence(path string, requireSoak bool) error {
 	if err := decodeFile(baselinePath, &baseline); err != nil {
 		return fmt.Errorf("decode baseline report: %w", err)
 	}
-	if candidate.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || candidate.Replicas != 3 || candidate.Published != candidate.RequestedMessages || candidate.Consumed != candidate.RequestedMessages || candidate.Missing != 0 || candidate.Duplicates != 0 || candidate.Corrupt != 0 {
+	if candidate.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || candidate.Replicas != 3 || candidate.RequestedMessages < 1 || candidate.Published != candidate.RequestedMessages || candidate.Consumed != candidate.RequestedMessages || candidate.Missing != 0 || candidate.Duplicates != 0 || candidate.Corrupt != 0 {
 		return fmt.Errorf("candidate integrity or topology gate failed")
+	}
+	wallDuration := candidate.FinishedAt.Sub(candidate.StartedAt).Seconds()
+	allowedClockDifference := candidate.DurationSeconds * 0.01
+	if allowedClockDifference < 5 {
+		allowedClockDifference = 5
+	}
+	if candidate.NATSVersion == "" || candidate.GOOS != "linux" || candidate.GOARCH == "" || candidate.CPUs < 1 || candidate.StartedAt.IsZero() || candidate.FinishedAt.IsZero() || wallDuration <= 0 || abs(wallDuration-candidate.DurationSeconds) > allowedClockDifference || proof.GeneratedAt.Before(candidate.FinishedAt) {
+		return fmt.Errorf("candidate runtime provenance is invalid")
 	}
 	if requireSoak && (candidate.WorkloadMode != "duration" || candidate.ConfiguredDurationSeconds < 24*60*60 || candidate.DurationSeconds < 24*60*60) {
 		return fmt.Errorf("candidate does not prove 24 hours of continuous operation")
 	}
+	if requireSoak && wallDuration < 24*60*60 {
+		return fmt.Errorf("candidate timestamps do not prove 24 hours of continuous operation")
+	}
 	if candidate.Replicas != baseline.Replicas || candidate.PayloadBytes != baseline.PayloadBytes || candidate.Publishers != baseline.Publishers || candidate.Batch != baseline.Batch || candidate.WorkloadMode != baseline.WorkloadMode || candidate.ConfiguredDurationSeconds != baseline.ConfiguredDurationSeconds {
 		return fmt.Errorf("baseline workload shape differs")
+	}
+	if baseline.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || baseline.RequestedMessages < 1 || baseline.Published != baseline.RequestedMessages || baseline.Consumed != baseline.RequestedMessages || baseline.PublishMessagesPerSecond <= 0 || baseline.ConsumeMessagesPerSecond <= 0 || baseline.PublishLatencyP99Millis <= 0 || baseline.Missing != 0 || baseline.Duplicates != 0 || baseline.Corrupt != 0 {
+		return fmt.Errorf("baseline integrity or measurements are invalid")
 	}
 	if candidate.PublishMessagesPerSecond < baseline.PublishMessagesPerSecond*(1-proof.MaxThroughputRegressionPercent/100) || candidate.ConsumeMessagesPerSecond < baseline.ConsumeMessagesPerSecond*(1-proof.MaxThroughputRegressionPercent/100) || candidate.PublishLatencyP99Millis > baseline.PublishLatencyP99Millis*(1+proof.MaxP99RegressionPercent/100) {
 		return fmt.Errorf("candidate performance regression exceeds evidence thresholds")
 	}
-	if err := verifyResourceSamples(resourcesPath, candidate.ConfiguredDurationSeconds, proof.SampleIntervalSeconds); err != nil {
+	if err := verifyResourceSamples(resourcesPath, candidate.ConfiguredDurationSeconds, proof.SampleIntervalSeconds, candidate.StartedAt, candidate.FinishedAt); err != nil {
 		return err
 	}
 	return nil
+}
+
+func abs(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func verifyArtifact(base string, item artifact) (string, error) {
@@ -151,7 +176,7 @@ func verifyArtifact(base string, item artifact) (string, error) {
 	return path, nil
 }
 
-func verifyResourceSamples(path string, duration float64, interval int) error {
+func verifyResourceSamples(path string, duration float64, interval int, workloadStarted, workloadFinished time.Time) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -190,7 +215,12 @@ func verifyResourceSamples(path string, duration float64, interval int) error {
 	for _, count := range nodes {
 		continuous = continuous && count >= minimumSamples
 	}
-	if len(nodes) != 3 || !continuous || first.IsZero() || last.Sub(first).Seconds() < duration-float64(2*interval) {
+	tolerance := time.Duration(2*interval) * time.Second
+	if tolerance < 30*time.Second {
+		tolerance = 30 * time.Second
+	}
+	windowAligned := !workloadStarted.IsZero() && !workloadFinished.IsZero() && !first.Before(workloadStarted.Add(-tolerance)) && !first.After(workloadStarted.Add(tolerance)) && !last.Before(workloadFinished.Add(-tolerance)) && !last.After(workloadFinished.Add(tolerance))
+	if len(nodes) != 3 || !continuous || first.IsZero() || last.Sub(first).Seconds() < duration-float64(2*interval) || !windowAligned {
 		return fmt.Errorf("resource samples do not span the workload across three nodes")
 	}
 	return nil
@@ -204,5 +234,14 @@ func decodeFile(path string, target any) error {
 	defer file.Close()
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON documents are not allowed")
+		}
+		return fmt.Errorf("trailing JSON: %w", err)
+	}
+	return nil
 }

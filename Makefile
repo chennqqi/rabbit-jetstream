@@ -38,7 +38,7 @@ test-soak:
 	pwsh -NoProfile -File tests/performance/jetstream.ps1 -Mode soak -Output performance-soak.json -Baseline performance-baseline.json
 
 verify-soak:
-	go run ./tools/perfevidence -evidence performance-soak.json.evidence.json -require-soak
+	go run ./tools/perfevidence -evidence performance-soak.json.evidence.json -require-soak -source-revision "$$(git rev-parse HEAD)"
 
 test-helm:
 	pwsh -File tests/deployment/helm.ps1

@@ -134,7 +134,7 @@ try {
         }
         $Evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding utf8NoBOM
         $VerifyArguments = @('run','./tools/perfevidence','-evidence',$EvidencePath)
-        if ($Mode -eq 'soak') { $VerifyArguments += '-require-soak' }
+        if ($Mode -eq 'soak') { $VerifyArguments += @('-require-soak','-source-revision',$SourceRevision) }
         & go @VerifyArguments
         if ($LASTEXITCODE -ne 0) { throw 'generated performance evidence failed independent verification' }
     }

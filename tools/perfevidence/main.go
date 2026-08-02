@@ -16,6 +16,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	evidencePath := flags.String("evidence", "", "performance evidence manifest")
 	requireSoak := flags.Bool("require-soak", false, "require release-grade 24-hour soak evidence")
+	sourceRevision := flags.String("source-revision", "", "expected 40-character source revision")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -23,7 +24,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "-evidence is required")
 		return 2
 	}
-	if err := verifyEvidence(*evidencePath, *requireSoak); err != nil {
+	if err := verifyEvidence(*evidencePath, *requireSoak, *sourceRevision); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
