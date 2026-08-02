@@ -80,6 +80,11 @@ controller:
 
 networkPolicy:
   enabled: true
+  natsClients:
+    # Convenient for a local namespace. Production requires false and uses
+    # additionalPeers for explicitly approved application Pods.
+    allowSameNamespace: true
+    additionalPeers: []
   ingress:
     enabled: false
     namespaceSelector: {}

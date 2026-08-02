@@ -25,6 +25,9 @@
 {{- if not .Values.networkPolicy.enabled }}
 {{- fail "production.enabled requires networkPolicy.enabled=true" }}
 {{- end }}
+{{- if .Values.networkPolicy.natsClients.allowSameNamespace }}
+{{- fail "production.enabled forbids networkPolicy.natsClients.allowSameNamespace; use explicit additionalPeers" }}
+{{- end }}
 {{- if not .Values.networkPolicy.egress.enabled }}
 {{- fail "production.enabled requires networkPolicy.egress.enabled=true" }}
 {{- end }}

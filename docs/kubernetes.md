@@ -19,6 +19,7 @@ helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream \
   --set nats.tls.enabled=true \
   --set nats.tls.serverSecret=rjs-nats-server-tls \
   --set nats.tls.clientSecret=rjs-management-nats-tls \
+  --set networkPolicy.natsClients.allowSameNamespace=false \
   --set networkPolicy.egress.enabled=true \
   --set production.enabled=true
 helm test rabbit-jetstream --namespace messaging
@@ -33,6 +34,8 @@ Production clusters should enable mutual TLS for NATS client and route traffic. 
 `production.enabled=true` is the fail-closed deployment profile. Helm then requires three or five NATS replicas, at least two management replicas, a named StorageClass, distinct server/client mTLS Secrets, digest-pinned NATS/management/operator images, ingress and egress NetworkPolicies, PodDisruptionBudgets, a private `ClusterIP` management Service, and secure OIDC/telemetry transport. NATS and management replicas must span distinct hostname domains; insufficient nodes leave Pods pending instead of silently removing fault tolerance. An enabled Ingress must also declare TLS. Keep this switch enabled in GitOps values so an unsafe override fails during rendering rather than reaching the cluster.
 
 Production egress isolation is enabled with `networkPolicy.egress.enabled=true`. The built-in rules permit DNS, NATS route traffic, and management access to NATS client/monitoring ports only. If OIDC or OTLP is configured, add narrowly scoped Kubernetes NetworkPolicy rules under `networkPolicy.egress.additionalRules`; the production profile rejects those endpoints while the list is empty. Adjust the configurable DNS namespace/Pod selectors if the cluster DNS labels differ from the Kubernetes defaults.
+
+Production also requires `networkPolicy.natsClients.allowSameNamespace=false`. Management retains a dedicated NATS client rule; application SDK Pods must be listed with namespace/Pod selectors or an approved CIDR under `networkPolicy.natsClients.additionalPeers`. This avoids granting every Pod in the messaging namespace access to port 4222 while still supporting cross-namespace workloads.
 
 The `operator.image` value records the digest-pinned, on-demand `rjsctl` image shipped with the same release. The chart deliberately does not create a permanent operator Pod; run that image only for an approved administration, backup, restore, diagnostic, or migration operation.
 

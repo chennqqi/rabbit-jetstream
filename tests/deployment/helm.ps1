@@ -143,7 +143,7 @@ try {
     & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set-string operator.image.digest=sha256:bad 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw 'values schema accepted an invalid operator image digest' }
 
-	$ProductionValues = @('template', 'production', $Chart, '--namespace', 'messaging', '--set', 'production.enabled=true', '--set', 'networkPolicy.egress.enabled=true', '--set', 'nats.storage.storageClass=fast-retain', '--set', 'nats.tls.enabled=true', '--set', 'nats.tls.serverSecret=production-nats-server-tls', '--set', 'nats.tls.clientSecret=production-nats-client-tls', '--set-string', "nats.image.digest=$Digest", '--set-string', "management.image.digest=$Digest", '--set-string', "operator.image.digest=$Digest")
+	$ProductionValues = @('template', 'production', $Chart, '--namespace', 'messaging', '--set', 'production.enabled=true', '--set', 'networkPolicy.natsClients.allowSameNamespace=false', '--set', 'networkPolicy.egress.enabled=true', '--set', 'nats.storage.storageClass=fast-retain', '--set', 'nats.tls.enabled=true', '--set', 'nats.tls.serverSecret=production-nats-server-tls', '--set', 'nats.tls.clientSecret=production-nats-client-tls', '--set-string', "nats.image.digest=$Digest", '--set-string', "management.image.digest=$Digest", '--set-string', "operator.image.digest=$Digest")
 	$ProductionRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues) -join "`n"
 	if ($LASTEXITCODE -ne 0 -or -not $ProductionRendered.Contains("rabbit-jetstream/nats-server@$Digest")) { throw 'valid production Helm profile failed' }
 	if ([regex]::Matches($ProductionRendered, '(?m)^\s+- Egress\r?$').Count -ne 2 -or -not $ProductionRendered.Contains('port: 53') -or -not $ProductionRendered.Contains('port: 6222')) {
@@ -152,6 +152,9 @@ try {
 	$ExternalEgressRule = '[{"to":[{"ipBlock":{"cidr":"10.0.0.0/8"}}],"ports":[{"port":443,"protocol":"TCP"}]}]'
 	$FederatedProduction = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues --set-string auth.oidc.issuer=https://id.example.com --set-string auth.oidc.audience=rabbit-jetstream --set-json "networkPolicy.egress.additionalRules=$ExternalEgressRule") -join "`n"
 	if ($LASTEXITCODE -ne 0 -or -not $FederatedProduction.Contains('cidr: 10.0.0.0/8')) { throw 'production profile rejected explicit OIDC egress' }
+	$NATSClientPeers = '[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"orders"}},"podSelector":{"matchLabels":{"app":"orders-worker"}}}]'
+	$ClientProduction = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage @ProductionValues --set-json "networkPolicy.natsClients.additionalPeers=$NATSClientPeers") -join "`n"
+	if ($LASTEXITCODE -ne 0 -or -not $ClientProduction.Contains('kubernetes.io/metadata.name: orders') -or -not $ClientProduction.Contains('app: orders-worker')) { throw 'production profile rejected explicit NATS client peer' }
 	if (-not $ProductionRendered.Contains('minDomains: 2') -or [regex]::Matches($ProductionRendered, '(?m)^\s+whenUnsatisfiable: DoNotSchedule\r?$').Count -ne 2) {
 		throw 'production profile does not require distinct NATS and management nodes'
 	}
@@ -170,6 +173,7 @@ try {
 	Assert-ProductionRejected 'mutable management image' @('--set-string', 'management.image.digest=')
 	Assert-ProductionRejected 'mutable operator image' @('--set-string', 'operator.image.digest=')
 	Assert-ProductionRejected 'disabled NetworkPolicy' @('--set', 'networkPolicy.enabled=false')
+	Assert-ProductionRejected 'whole-namespace NATS client access' @('--set', 'networkPolicy.natsClients.allowSameNamespace=true')
 	Assert-ProductionRejected 'disabled egress isolation' @('--set', 'networkPolicy.egress.enabled=false')
 	Assert-ProductionRejected 'OIDC without explicit egress' @('--set-string', 'auth.oidc.issuer=https://id.example.com', '--set-string', 'auth.oidc.audience=rabbit-jetstream')
 	Assert-ProductionRejected 'empty external egress rule' @('--set-string', 'auth.oidc.issuer=https://id.example.com', '--set-string', 'auth.oidc.audience=rabbit-jetstream', '--set-json', 'networkPolicy.egress.additionalRules=[{}]')

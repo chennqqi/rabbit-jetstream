@@ -93,9 +93,17 @@
     },
     "networkPolicy": {
       "type": "object", "additionalProperties": false,
-      "required": ["enabled", "ingress", "monitoring", "egress"],
+      "required": ["enabled", "natsClients", "ingress", "monitoring", "egress"],
       "properties": {
         "enabled": {"type": "boolean"},
+        "natsClients": {
+          "type": "object", "additionalProperties": false,
+          "required": ["allowSameNamespace", "additionalPeers"],
+          "properties": {
+            "allowSameNamespace": {"type": "boolean"},
+            "additionalPeers": {"type": "array", "items": {"$ref": "#/definitions/networkPolicyPeer"}}
+          }
+        },
         "ingress": {
           "type": "object", "additionalProperties": false,
           "required": ["enabled", "namespaceSelector", "podSelector"],

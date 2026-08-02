@@ -23,10 +23,26 @@ spec:
     - Egress
     {{- end }}
   ingress:
+    {{- if .Values.networkPolicy.natsClients.allowSameNamespace }}
     - from:
         - podSelector: {}
       ports:
         - {port: 4222, protocol: TCP}
+    {{- end }}
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "rabbit-jetstream.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: management
+      ports:
+        - {port: 4222, protocol: TCP}
+    {{- with .Values.networkPolicy.natsClients.additionalPeers }}
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - {port: 4222, protocol: TCP}
+    {{- end }}
     - from:
         - podSelector:
             matchLabels:
