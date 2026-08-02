@@ -209,4 +209,7 @@ spec:
 	if len(plan.PriorityConsumers) != 2 || plan.PriorityConsumers[1].Name != "RJSQC_priority_orders_P2" || !reflect.DeepEqual(plan.PriorityConsumers[1].FilterSubjects, wantSubjects[2:]) {
 		t.Fatalf("priority consumers = %#v", plan.PriorityConsumers)
 	}
+	if plan.MaxPriority == nil || *plan.MaxPriority != 2 || !reflect.DeepEqual(plan.DeclarationSubjects, []string{"orders.created"}) {
+		t.Fatalf("editable declaration fields = maxPriority %v, subjects %v", plan.MaxPriority, plan.DeclarationSubjects)
+	}
 }

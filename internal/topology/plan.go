@@ -17,16 +17,18 @@ const (
 )
 
 type Plan struct {
-	APIVersion        string          `json:"apiVersion"`
-	Queue             string          `json:"queue"`
-	Revision          string          `json:"revision"`
-	Stream            StreamPlan      `json:"stream"`
-	Consumer          ConsumerPlan    `json:"consumer"`
-	PriorityConsumers []ConsumerPlan  `json:"priorityConsumers,omitempty"`
-	DeadLetter        *DeadLetterPlan `json:"deadLetter,omitempty"`
-	Dependencies      []string        `json:"dependencies"`
-	Warnings          []string        `json:"warnings"`
-	Routing           []RoutingPlan   `json:"routing,omitempty"`
+	APIVersion          string          `json:"apiVersion"`
+	Queue               string          `json:"queue"`
+	Revision            string          `json:"revision"`
+	Stream              StreamPlan      `json:"stream"`
+	Consumer            ConsumerPlan    `json:"consumer"`
+	PriorityConsumers   []ConsumerPlan  `json:"priorityConsumers,omitempty"`
+	DeadLetter          *DeadLetterPlan `json:"deadLetter,omitempty"`
+	Dependencies        []string        `json:"dependencies"`
+	Warnings            []string        `json:"warnings"`
+	Routing             []RoutingPlan   `json:"routing,omitempty"`
+	MaxPriority         *int            `json:"maxPriority,omitempty"`
+	DeclarationSubjects []string        `json:"declarationSubjects,omitempty"`
 }
 
 type RoutingPlan struct {
@@ -121,6 +123,7 @@ func BuildPlan(queue Queue) (Plan, error) {
 		Consumer:          consumerPlan(consumerName, streamName, consumerSubjects, queue, metadata),
 		PriorityConsumers: priorityConsumers,
 		Dependencies:      []string{}, Warnings: []string{}, Routing: routing,
+		MaxPriority: cloneInt(queue.Spec.MaxPriority), DeclarationSubjects: append([]string(nil), queue.Spec.Subjects...),
 	}
 	if queue.Spec.DeadLetter != nil {
 		plan.Dependencies = append(plan.Dependencies, queue.Spec.DeadLetter.Queue)
@@ -132,6 +135,14 @@ func BuildPlan(queue Queue) (Plan, error) {
 	}
 	sort.Strings(plan.Dependencies)
 	return plan, nil
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func consumerPlan(name, stream string, subjects []string, queue Queue, metadata map[string]string) ConsumerPlan {

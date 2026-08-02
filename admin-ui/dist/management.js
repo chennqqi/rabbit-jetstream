@@ -6,7 +6,8 @@ function queueFromPlan(declaration){
   const plan=declaration.plan||{},stream=plan.stream||{},consumer=plan.consumer||{},metadata=stream.metadata||{};
   const labels={};Object.entries(metadata).forEach(([key,value])=>{const prefix="rabbit-jetstream.io/label.";if(key.startsWith(prefix))labels[key.slice(prefix.length)]=value});
   const spec={replicas:stream.replicas||3,storage:stream.storage||"file",retention:{maxAge:`${stream.maxAgeNanos||0}ns`,maxBytes:`${stream.maxBytes||0}B`,maxMessages:stream.maxMessages||0},delivery:{ackWait:`${consumer.ackWaitNanos||30000000000}ns`,maxDeliver:consumer.maxDeliver||5}};
-  if((plan.routing||[]).length)spec.bindings=plan.routing.map(item=>({exchange:item.exchange,type:item.type,...(item.keys?.length?{keys:item.keys}:{})}));else spec.subjects=(stream.subjects||[]).filter(subject=>subject!==`rjs.q.${declaration.queue}.ingress`);
+  if((plan.routing||[]).length)spec.bindings=plan.routing.map(item=>({exchange:item.exchange,type:item.type,...(item.keys?.length?{keys:item.keys}:{})}));else spec.subjects=plan.declarationSubjects||(stream.subjects||[]).filter(subject=>subject!==`rjs.q.${declaration.queue}.ingress`);
+  if(plan.maxPriority!==undefined&&plan.maxPriority!==null)spec.maxPriority=plan.maxPriority;
   if(plan.deadLetter)spec.deadLetter={queue:plan.deadLetter.queue};
   return{apiVersion:"rabbit-jetstream.io/v1alpha1",kind:"Queue",metadata:{name:declaration.queue,...(Object.keys(labels).length?{labels}:{})},spec};
 }

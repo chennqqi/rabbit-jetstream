@@ -8,6 +8,8 @@ Replacing RabbitMQ makes correctness and recoverability release requirements, no
 2. **Integration tests** run against the exact vendored NATS Server version in single-node and three-node modes.
 3. **Fault tests** exercise leader loss, rolling restart, network interruption, full/slow disk, process crash, duplicate delivery, and reconnect.
 4. **Compatibility tests** verify documented queue, ack, redelivery, TTL, DLQ, routing, ordering, and priority semantics jointly with every SDK.
+
+Run `pwsh tests/integration/native-sdk.ps1` from a checkout whose `outlink/rabbit-jetstream-go` resolves to the independent SDK repository. The script uses Docker Desktop only: the server control plane creates the managed priority topology, then the Linux SDK test publishes and consumes without calling its standalone provisioning helper.
 5. **Performance and soak tests** compare pinned baselines using declared hardware, persistence, replicas, payload sizes, and workloads.
 
 ## Merge and Release Gates
