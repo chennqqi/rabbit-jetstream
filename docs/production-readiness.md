@@ -10,6 +10,16 @@ Record the clean server and SDK 40-character revisions, `SDKVersion`, `ContractV
 
 Use a dedicated native Linux host matching production architecture, kernel, filesystem, storage class, CPU/memory limits and Docker configuration. Docker Desktop and WSL are invalid evidence.
 
+Before starting a multi-day qualification, copy the frozen bundle to a clean checkout of its server revision and run:
+
+```bash
+make verify-native-bundle \
+  BUNDLE=/srv/rabbit-jetstream/v0.1.0-rc.1 \
+  NATIVE_QUAL_OUTPUT=native-linux-preflight.json
+```
+
+The preflight fails outside native Linux, on WSL or Docker Desktop, on a dirty or mismatched checkout, on any checksum mismatch, when an OCI archive lacks either `linux/amd64` or `linux/arm64`, or when the current-architecture `rjsctl` and management binaries do not report the bundle version. Retain the exclusive-create JSON output with the soak evidence. Run it once on production-matching amd64 hardware and once on production-matching arm64 hardware when both architectures are release targets; metadata-only cross-build inspection does not replace execution.
+
 If no approved matching baseline exists, first run the same workload for 24 hours and review it as the baseline:
 
 ```powershell
@@ -43,4 +53,4 @@ At every stage require: JetStream available; controller active; all expected nod
 
 Stop promotion immediately on message loss/corruption, unbounded duplicates, lost quorum, replicas that do not converge, PubAck failure, sustained SLO/error/backlog breach, DLQ failure, storage above 85%, metadata mismatch or an unapproved compatibility dependency. Disable new routing to the candidate, preserve diagnostics/audit/performance evidence, drain or reconcile confirmed messages, and roll back management then NATS nodes using the rehearsed reverse order. Never overwrite a live divergent cluster with a backup.
 
-Formal `v0.1.0` approval requires sign-off from the service owner, application owner and on-call operator on the paired revisions, local Release evidence, native-Linux soak evidence, canary observations, rollback result and known limitations.
+Formal `v0.1.0` approval requires sign-off from the service owner, application owner and on-call operator on the paired revisions, local Release evidence, native-Linux preflight and soak evidence, canary observations, rollback result and known limitations.

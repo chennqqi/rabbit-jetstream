@@ -27,6 +27,15 @@ func TestReleaseSoakRetainsIndependentlyVerifiableEvidence(t *testing.T) {
 	if !strings.Contains(makefile, "verify-soak:") || !strings.Contains(makefile, "-require-soak") {
 		t.Error("Makefile no longer exposes independent soak evidence verification")
 	}
+	if !strings.Contains(makefile, "verify-native-bundle:") || !strings.Contains(makefile, "./tools/nativequal") {
+		t.Error("Makefile no longer exposes native Linux bundle qualification")
+	}
+	nativeQualification := read("tools/nativequal/main.go")
+	for _, required := range []string{"native-linux-preflight/v1alpha1", "WSL is not accepted", "Docker Desktop is not accepted", "SHA256SUMS", "linux/amd64,linux/arm64", "rjs-management", "--version"} {
+		if !strings.Contains(nativeQualification, required) {
+			t.Errorf("native Linux qualification lost requirement %q", required)
+		}
+	}
 	comparison := read("tests/performance/native-sdk-compare.ps1")
 	for _, required := range []string{"client-performance-comparison/v1alpha1", "rjs-sdk-bench", "publish_throughput", "consume_throughput", "publish_p99", "Assert-Integrity"} {
 		if !strings.Contains(comparison, required) {
