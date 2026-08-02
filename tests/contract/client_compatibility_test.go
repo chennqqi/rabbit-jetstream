@@ -86,3 +86,23 @@ func TestClientCompatibilityContractIsCompleteAndEvidenceBacked(t *testing.T) {
 		}
 	}
 }
+
+func TestFirstReleaseDoesNotRequireAMQPCompatibility(t *testing.T) {
+	root := filepath.Join("..", "..")
+	requirements := map[string][]string{
+		"README.md":            {"首个正式版本", "rabbit-jetstream-go", "不是首版发布门槛"},
+		"docs/architecture.md": {"首版验收目标", "并不要求 SDK 基于 AMQP", "不阻塞首个正式版本发布"},
+		"docs/roadmap.md":      {"## 版本范围", "不要求基于 AMQP", "## M5：AMQP 0-9-1 协议网关（未来研究）", "不属于首个正式版本"},
+	}
+	for relative, expected := range requirements {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, phrase := range expected {
+			if !strings.Contains(string(raw), phrase) {
+				t.Errorf("%s lost first-release boundary %q", relative, phrase)
+			}
+		}
+	}
+}

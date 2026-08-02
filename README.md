@@ -4,7 +4,7 @@
 
 官方 `nats-server` 以 Git subtree 固定在 `upstream/nats-server/`，默认不做源码修改。本仓库主体负责 Server 发行、部署、管理后端、Admin UI、运维工具和生产验证。配套 Go SDK 位于独立仓库；`outlink/rabbit-jetstream-go` 只是开发期符号链接，不参与本仓库构建。
 
-> 当前版本不兼容 AMQP 线协议，现有 RabbitMQ 客户端不能无改动直连。准确边界见[客户端兼容矩阵](docs/client-migration.md)，协议网关属于后续 Roadmap。
+> 首个正式版本以原生 `rabbit-jetstream-go` SDK 提供 RabbitMQ 优先级队列功能，不要求实现 AMQP 线协议。现有 RabbitMQ 客户端不能无改动直连；完整 RabbitMQ/AMQP 协议兼容仅属于未来 Roadmap，不是首版发布门槛。准确边界见[客户端兼容矩阵](docs/client-migration.md)。
 
 ## 快速开始
 

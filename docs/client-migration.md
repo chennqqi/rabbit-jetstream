@@ -1,6 +1,6 @@
 # RabbitMQ Client Migration and Compatibility
 
-This release is not an AMQP 0-9-1 server. Existing RabbitMQ clients cannot point at a new host and continue unchanged. The current repository supplies the JetStream server distribution, Queue control plane, operational tooling, and controlled message-migration utilities. The native SDK is implemented in the independent `rabbit-jetstream-go` repository but has not yet published a versioned release.
+The first production release targets RabbitMQ priority-queue functionality through the independent native `rabbit-jetstream-go` SDK. The SDK is based on NATS JetStream APIs and is not required to implement AMQP. This release is not an AMQP 0-9-1 server, so existing RabbitMQ clients cannot point at a new host and continue unchanged. Full RabbitMQ/AMQP wire compatibility is a future roadmap item and is not a first-release gate.
 
 The authoritative machine-readable matrix is [`api/client-compatibility.json`](../api/client-compatibility.json). The client's resource, header and scheduler boundary is fixed in the [native SDK contract](native-sdk-contract.md); `native-sdk-implemented-unreleased` still means no supported SDK version is released. `supported` means the server behavior exists and is tested; it does not imply AMQP wire compatibility. `partial` means an important semantic or client abstraction differs. `planned` is unavailable in the current release. `not_supported` must block cutover unless the application removes that dependency.
 

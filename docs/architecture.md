@@ -4,11 +4,13 @@
 
 项目目标是提供接近 `rabbitmq-server` 使用体验的 JetStream 队列发行版：统一部署、管理 API/CLI、WebUI、监控诊断，以及与原生 SDK 协作的队列能力。
 
+首个正式版本的数据面客户端是独立的 Native SDK `rabbit-jetstream-go`。首版验收目标是功能上实现 RabbitMQ 优先级队列能力，并不要求 SDK 基于 AMQP，也不要求服务端接受 RabbitMQ/AMQP 客户端连接。完整 RabbitMQ/AMQP 协议兼容是未来独立里程碑。
+
 核心约束：
 
 1. JetStream 是底层消息存储与分发引擎，不修改其源代码；
 2. 首选原生 NATS 协议，服务端不进入正常消息收发链路；
-3. RabbitMQ 的“使用体验兼容”和 AMQP“线协议兼容”分开演进；
+3. RabbitMQ 优先级队列“功能兼容”和 AMQP“线协议兼容”分开演进，前者属于首版，后者不属于首版；
 4. 所有高级语义都要有明确的一致性、故障和降级定义。
 
 ## 2. 逻辑架构
@@ -79,4 +81,4 @@ Controller 使用同一 KV bucket 中的 CAS 租约选出唯一 leader。Leader 
 
 ## 7. 兼容边界
 
-“RabbitMQ 兼容”在当前阶段表示常用队列语义与运维体验兼容，并不表示 RabbitMQ 插件、Erlang API、AMQP 0-9-1 或管理 HTTP API 的逐字段兼容。未来 AMQP 网关需要单独定义兼容矩阵，涵盖协议方法、错误码、事务、confirm、消费取消与流控。
+首个正式版本中的“RabbitMQ 兼容”特指通过 Native SDK 实现 RabbitMQ 优先级队列功能及相应运维体验，并不表示 RabbitMQ 插件、Erlang API、AMQP 0-9-1 或管理 HTTP API 的逐字段兼容。未来 AMQP 网关需要单独定义兼容矩阵，涵盖协议方法、错误码、事务、confirm、消费取消与流控；该网关不阻塞首个正式版本发布。
