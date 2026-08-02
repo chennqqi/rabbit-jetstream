@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Quick', 'Full')]
+    [ValidateSet('Quick', 'Full', 'Release')]
     [string]$Mode = 'Quick',
     [string]$SDKPath = '',
     [string]$Output = 'artifacts/local-rc.json',
@@ -11,6 +11,8 @@ $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if (-not $SDKPath) { $SDKPath = Join-Path $RepositoryRoot 'outlink/rabbit-jetstream-go' }
 $SDKPath = (Resolve-Path $SDKPath).Path
 $Steps = [System.Collections.Generic.List[object]]::new()
+$ArtifactsRoot = Join-Path $RepositoryRoot 'artifacts'
+New-Item -ItemType Directory -Force -Path $ArtifactsRoot | Out-Null
 
 function Invoke-Checked {
     param([string]$Name, [string]$WorkingDirectory, [string]$Command, [string[]]$Arguments)
@@ -59,12 +61,23 @@ Invoke-Checked 'sdk-test' $SDKPath 'go' @('test', './...')
 Invoke-Checked 'sdk-vet' $SDKPath 'go' @('vet', './...')
 Invoke-Checked 'sdk-build' $SDKPath 'go' @('build', './...')
 
-if ($Mode -eq 'Full') {
+if ($Mode -in @('Full', 'Release')) {
     Invoke-Checked 'sdk-docker-integration' $SDKPath 'pwsh' @('-NoProfile', '-File', './scripts/test-integration.ps1')
     Invoke-Checked 'server-sdk-contract' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/native-sdk.ps1')
     foreach ($Scenario in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'auth', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')) {
         Invoke-Checked "server-docker-$Scenario" $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/docker-desktop.ps1', '-Scenario', $Scenario)
     }
+}
+
+$PerformanceReport = $null
+if ($Mode -eq 'Release') {
+    Invoke-Checked 'coverage-gate' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/coverage/check.ps1')
+    Invoke-Checked 'backup-restore' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/backup-restore.ps1')
+    Invoke-Checked 'rolling-upgrade-rollback' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/rolling-upgrade.ps1', '-BuildLocal')
+    Invoke-Checked 'helm-gate' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/deployment/helm.ps1')
+    Invoke-Checked 'security-gate' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/security/scan.ps1')
+    $PerformanceReport = Join-Path $ArtifactsRoot ("performance-ci-{0}.json" -f (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'))
+    Invoke-Checked 'performance-ci' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/performance/jetstream.ps1', '-Mode', 'ci', '-Output', $PerformanceReport)
 }
 
 $Evidence = [ordered]@{
@@ -78,6 +91,9 @@ $Evidence = [ordered]@{
     host = [ordered]@{ os = [System.Environment]::OSVersion.ToString(); architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() }
     steps = $Steps
 }
+$Evidence['performance_report'] = if ($PerformanceReport) {
+    [ordered]@{ path = [IO.Path]::GetRelativePath($RepositoryRoot, $PerformanceReport); sha256 = (Get-FileHash -LiteralPath $PerformanceReport -Algorithm SHA256).Hash.ToLowerInvariant() }
+} else { $null }
 $OutputPath = if ([System.IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $RepositoryRoot $Output }
 New-Item -ItemType Directory -Force -Path (Split-Path $OutputPath) | Out-Null
 $Evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8
