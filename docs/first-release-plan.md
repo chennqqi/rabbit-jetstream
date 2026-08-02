@@ -25,6 +25,8 @@ Run `make test-local-rc` for the paired quick gate. `-Mode Full` adds SDK integr
 
 GitHub Actions and cross-repository automation are deliberately deferred. Local scripts are the source of truth while the release process is being refined collaboratively.
 
+After a clean `make test-local-release`, run `make package-local-rc`. It produces a non-published `dist/v0.1.0-rc.1/` bundle containing Linux amd64/arm64 binaries, multi-platform OCI image archives, the Helm chart, bound evidence, a machine-readable manifest and `SHA256SUMS`. The bundle remains an RC until native-Linux soak and canary approval.
+
 ## Production Evidence
 
 Docker Desktop is suitable for development and Linux-container functional gates. Final production approval additionally requires the existing 24-hour three-node soak on a dedicated native Linux host matching production, followed by `make verify-soak`. WSL and Docker Desktop do not satisfy this evidence requirement.

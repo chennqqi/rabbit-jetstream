@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -57,6 +57,9 @@ test-local-rc:
 
 test-local-release:
 	pwsh -NoProfile -File scripts/release/local-rc.ps1 -Mode Release
+
+package-local-rc:
+	pwsh -NoProfile -File scripts/release/package-local.ps1 -Version v0.1.0-rc.1
 
 coverage:
 	go test -coverprofile=coverage.out ./...

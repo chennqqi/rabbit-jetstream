@@ -1,0 +1,104 @@
+param(
+    [string]$Version = 'v0.1.0-rc.1',
+    [string]$SDKPath = '',
+    [string]$Evidence = 'artifacts/local-rc.json',
+    [string]$OutputRoot = 'dist'
+)
+
+$ErrorActionPreference = 'Stop'
+$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+if ($Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') { throw "invalid version: $Version" }
+if (-not $SDKPath) { $SDKPath = Join-Path $RepositoryRoot 'outlink/rabbit-jetstream-go' }
+$SDKPath = (Resolve-Path -LiteralPath $SDKPath).Path
+$EvidencePath = if ([IO.Path]::IsPathRooted($Evidence)) { $Evidence } else { Join-Path $RepositoryRoot $Evidence }
+$EvidencePath = (Resolve-Path -LiteralPath $EvidencePath).Path
+$OutputRootPath = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $RepositoryRoot $OutputRoot }
+$Destination = Join-Path $OutputRootPath $Version
+if (Test-Path -LiteralPath $Destination) { throw "output already exists: $Destination" }
+
+function Get-GitValue([string]$Directory, [string[]]$Arguments) {
+    Push-Location $Directory
+    try {
+        $Value = & git @Arguments
+        if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed in $Directory" }
+        return ($Value -join "`n").Trim()
+    } finally { Pop-Location }
+}
+
+function Invoke-Checked([string]$Command, [string[]]$Arguments) {
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "command failed: $Command $($Arguments -join ' ')" }
+}
+
+$ServerRevision = Get-GitValue $RepositoryRoot @('rev-parse', 'HEAD')
+$SDKRevision = Get-GitValue $SDKPath @('rev-parse', 'HEAD')
+if ((Get-GitValue $RepositoryRoot @('status', '--porcelain')) -or (Get-GitValue $SDKPath @('status', '--porcelain'))) { throw 'both repositories must be clean' }
+$SDKContract = Get-Content -LiteralPath (Join-Path $SDKPath 'contract.go') -Raw
+$SDKVersion = [regex]::Match($SDKContract, 'SDKVersion\s+=\s+"([^"]+)"').Groups[1].Value
+$ContractVersion = [regex]::Match($SDKContract, 'ContractVersion\s+=\s+"([^"]+)"').Groups[1].Value
+if ($SDKVersion -ne $Version.Substring(1)) { throw "SDK version $SDKVersion does not match $Version" }
+$NATSLock = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'upstream/nats-server.lock.json') -Raw | ConvertFrom-Json
+$LocalEvidence = Get-Content -LiteralPath $EvidencePath -Raw | ConvertFrom-Json
+if ($LocalEvidence.mode -ne 'release' -or $LocalEvidence.server.revision -ne $ServerRevision -or $LocalEvidence.server.dirty -or $LocalEvidence.sdk.revision -ne $SDKRevision -or $LocalEvidence.sdk.dirty) {
+    throw 'local Release evidence does not bind the clean current server and SDK revisions'
+}
+if (@($LocalEvidence.steps | Where-Object status -ne 'passed').Count -ne 0) { throw 'local Release evidence contains failed steps' }
+
+New-Item -ItemType Directory -Force -Path (Join-Path $Destination 'bin/linux-amd64'), (Join-Path $Destination 'bin/linux-arm64'), (Join-Path $Destination 'images'), (Join-Path $Destination 'evidence') | Out-Null
+$PreviousGOOS = $env:GOOS
+$PreviousGOARCH = $env:GOARCH
+$PreviousCGO = $env:CGO_ENABLED
+try {
+    $env:GOOS = 'linux'; $env:CGO_ENABLED = '0'
+    foreach ($Architecture in @('amd64', 'arm64')) {
+        $env:GOARCH = $Architecture
+        $BinaryDirectory = Join-Path $Destination "bin/linux-$Architecture"
+        Invoke-Checked 'go' @('build', '-trimpath', "-ldflags=-s -w -X main.version=$Version", '-o', (Join-Path $BinaryDirectory 'rjs-management'), './management/cmd/rjs-management')
+        Invoke-Checked 'go' @('build', '-trimpath', "-ldflags=-s -w -X main.version=$Version", '-o', (Join-Path $BinaryDirectory 'rjsctl'), './tools/rjsctl')
+    }
+} finally {
+    $env:GOOS = $PreviousGOOS; $env:GOARCH = $PreviousGOARCH; $env:CGO_ENABLED = $PreviousCGO
+}
+
+$Images = @(
+    @{ Name = 'nats'; File = 'packaging/Dockerfile.nats-server'; Tag = "rabbit-jetstream/nats:$Version"; Args = @() },
+    @{ Name = 'management'; File = 'packaging/Dockerfile.management'; Tag = "rabbit-jetstream/management:$Version"; Args = @('--build-arg', "VERSION=$Version") },
+    @{ Name = 'operator'; File = 'packaging/Dockerfile.operator'; Tag = "rabbit-jetstream/operator:$Version"; Args = @('--build-arg', "VERSION=$Version") }
+)
+foreach ($Image in $Images) {
+    $Archive = Join-Path $Destination "images/$($Image.Name).oci.tar"
+    $Arguments = @('buildx', 'build', '--platform', 'linux/amd64,linux/arm64', '--file', $Image.File, '--tag', $Image.Tag) + $Image.Args + @('--output', "type=oci,dest=$Archive", '.')
+    Invoke-Checked 'docker' $Arguments
+}
+
+$HelmImage = 'alpine/helm:3.18.4@sha256:e7ecbf4a200dea73d64bfb8cb0936829164945f2b4d02a0274093073ee8d264f'
+$ChartVersion = $Version.Substring(1)
+Invoke-Checked 'docker' @('run', '--rm', '-v', "${RepositoryRoot}:/src:ro", '-v', "${Destination}:/out", '-w', '/src', $HelmImage, 'package', 'deploy/helm/rabbit-jetstream', '--version', $ChartVersion, '--app-version', $Version, '--destination', '/out')
+Copy-Item -LiteralPath $EvidencePath -Destination (Join-Path $Destination 'evidence/local-rc.json')
+$PerformancePath = Join-Path $RepositoryRoot $LocalEvidence.performance_report.path
+Copy-Item -LiteralPath $PerformancePath -Destination (Join-Path $Destination 'evidence/performance-ci.json')
+
+$Artifacts = Get-ChildItem -LiteralPath $Destination -Recurse -File | Sort-Object FullName | ForEach-Object {
+    [ordered]@{ path = [IO.Path]::GetRelativePath($Destination, $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+}
+$Manifest = [ordered]@{
+    schema = 'rabbit-jetstream.io/release-bundle/v1alpha1'
+    version = $Version
+    generated_at = (Get-Date).ToUniversalTime().ToString('o')
+    server_revision = $ServerRevision
+    sdk = [ordered]@{ version = $SDKVersion; revision = $SDKRevision }
+    contract_version = $ContractVersion
+    nats_version = $NATSLock.tag
+    platforms = @('linux/amd64', 'linux/arm64')
+    qualification = 'local-release-gates-passed; native-linux-soak-and-canary-required'
+    artifacts = $Artifacts
+}
+$ManifestPath = Join-Path $Destination 'release-manifest.json'
+$Manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ManifestPath -Encoding utf8
+$ChecksumFiles = Get-ChildItem -LiteralPath $Destination -Recurse -File | Sort-Object FullName
+$ChecksumLines = foreach ($File in $ChecksumFiles) {
+    $Relative = [IO.Path]::GetRelativePath($Destination, $File.FullName).Replace('\', '/')
+    '{0}  {1}' -f (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $Relative
+}
+$ChecksumLines | Set-Content -LiteralPath (Join-Path $Destination 'SHA256SUMS') -Encoding ascii
+Write-Host "Local release bundle created: $Destination"
