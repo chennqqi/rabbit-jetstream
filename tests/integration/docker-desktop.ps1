@@ -6,6 +6,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $GoToolImage = 'golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58'
+$GoBuildCache = 'rabbit-jetstream-go-build-cache'
+$HostGoModCache = (& go env GOMODCACHE).Trim()
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $HostGoModCache)) { throw 'host Go module cache is unavailable' }
+$GoCacheArgs = @('-e', 'GOPROXY=off', '-v', "${HostGoModCache}:/go/pkg/mod:ro", '-v', "${GoBuildCache}:/root/.cache/go-build")
 $NATSBoxImage = 'natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c'
 $AlpineImage = 'alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40'
 
@@ -115,7 +119,7 @@ try {
             }
             if ($Scenario -eq 'reconcile') {
                 $Network = "${Project}_default"
-                $Result = & docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+                $Result = & docker run --rm @GoCacheArgs --network $Network -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
                 if ($LASTEXITCODE -ne 0) { throw 'Linux rjsctl reconcile failed' }
                 if ($Result.status -ne 'ready' -or $Result.blocked) { throw 'reconcile did not produce a ready plan' }
                 if (@($Result.operations | Where-Object action -eq 'create').Count -ne 2) { throw 'reconcile did not plan two creates' }
@@ -124,12 +128,12 @@ try {
             }
 			if ($Scenario -eq 'apply') {
 				$Network = "${Project}_default"
-				$First = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+				$First = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $First.status -ne 'ready') { throw 'first apply failed' }
-				$Second = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+				$Second = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Second.status -ne 'noop') { throw 'second apply was not idempotent' }
 				$OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
-				$Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
+				$Updated = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready' -or @($Updated.operations | Where-Object action -eq 'update').Count -ne 2) { throw 'safe update apply failed' }
 				$StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='basic'}; spec=@{subjects=@('basic.>'); replicas=1; storage='file'}} | ConvertTo-Json -Depth 8
 				$StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
@@ -137,7 +141,7 @@ try {
 				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
 				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 5
 				if ($Stream.replicas -ne 1 -or $Stream.max_bytes -ne 16777216 -or $Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic' -or $Consumers.items[0].max_deliver -ne 7) { throw 'applied resources are incorrect' }
-				$PriorityApply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-priority.yaml | ConvertFrom-Json
+				$PriorityApply = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-priority.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $PriorityApply.status -ne 'ready') { throw 'priority Queue apply failed' }
 				$PriorityStream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders' -TimeoutSec 5
 				$PriorityConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders/consumers' -TimeoutSec 5
@@ -154,28 +158,28 @@ try {
 			}
 			if ($Scenario -eq 'delete') {
 				$Network = "${Project}_default"
-				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish basic.test retained-message
-				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic 2>$null
+				& docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic 2>$null
 				if ($LASTEXITCODE -eq 0) { throw 'non-empty Queue deletion unexpectedly succeeded without force' }
 				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
 				if ($Stream.messages -ne 1) { throw 'blocked delete changed the Stream' }
-				$Deleted = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic --force basic | ConvertFrom-Json
+				$Deleted = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic --force basic | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Deleted.status -ne 'deleted' -or $Deleted.messages -ne 1) { throw 'forced delete failed' }
-				$Again = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic | ConvertFrom-Json
+				$Again = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Again.status -ne 'noop') { throw 'repeated delete was not idempotent' }
 				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 5
 				if ($Declarations.total -ne 0) { throw 'Queue declaration was not deleted' }
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream add RJSQ_foreign --subjects foreign.serve --storage file --replicas 1 --defaults
-				& docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm foreign --force foreign 2>$null
+				& docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm foreign --force foreign 2>$null
 				if ($LASTEXITCODE -eq 0) { throw 'foreign Stream deletion unexpectedly succeeded' }
 				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -TimeoutSec 5
 				if ($Foreign.name -ne 'RJSQ_foreign') { throw 'foreign Stream ownership protection failed' }
 			}
 			if ($Scenario -eq 'audit') {
 				$Network = "${Project}_default"
-				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
-				$Audit = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl audit list --url http://management:8223 --limit 10 | ConvertFrom-Json
+				Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				$Audit = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl audit list --url http://management:8223 --limit 10 | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Audit.total -ne 2 -or $Audit.items[0].phase -ne 'outcome' -or $Audit.items[1].phase -ne 'intent') { throw 'audit intent/outcome events are incorrect' }
 				if ($Audit.items[0].intentId -ne $Audit.items[1].id -or $Audit.items[0].requestId -ne $Audit.items[1].requestId) { throw 'audit event correlation is incorrect' }
 				$SerializedAudit = $Audit | ConvertTo-Json -Depth 8
@@ -189,7 +193,7 @@ try {
 			}
 			if ($Scenario -eq 'auth') {
 				$Network = "${Project}_default"
-				Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=next-operator -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
+				Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=next-operator -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
 				foreach ($Token in @('legacy-operator', 'next-operator', 'audit-reader')) {
 					$Response = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -SkipHttpErrorCheck
 					if ($Response.StatusCode -ne 200) { throw "$Token could not read audit events" }
@@ -207,7 +211,7 @@ try {
 			if ($Scenario -eq 'routing') {
 				$Network = "${Project}_default"
 				foreach ($Fixture in @('queue-routing-direct.yaml', 'queue-routing-topic.yaml', 'queue-routing-fanout-a.yaml', 'queue-routing-fanout-b.yaml')) {
-					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+					Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
 				}
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.created direct-match
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_direct.x.commerce.direct.orders.deleted direct-miss
@@ -229,7 +233,7 @@ try {
 			if ($Scenario -eq 'dlq') {
 				$Network = "${Project}_default"
 				foreach ($Fixture in @('queue-dlq-target.yaml', 'queue-dlq-source.yaml')) {
-					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+					Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
 				}
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.retry_orders.ingress poison-message
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_orders RJSQC_retry_orders --no-ack --wait 1s
@@ -251,7 +255,7 @@ try {
 				}
 				if (-not $Moved) { throw "DLQ transfer failed: source=$($Source.messages) target=$($Target.messages) moved=$($Controller.dlqMoved) error=$($Controller.lastError)" }
 				foreach ($Fixture in @('queue-priority-dlq-target.yaml', 'queue-priority-dlq-source.yaml')) {
-					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+					Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
 				}
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish --header 'Rjs-Priority:2' rjs.q.retry_priority_orders.p.2 priority-poison
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_priority_orders RJSQC_retry_priority_orders_P2 --no-ack --wait 1s
@@ -292,7 +296,7 @@ try {
 			}
 			if ($Scenario -eq 'diagnostics') {
 				$ContainerOutput = "/src/$([IO.Path]::GetFileName($DiagnosticBundle))"
-				Invoke-Docker run --rm --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
+				Invoke-Docker run --rm @GoCacheArgs --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
 				$Archive = [IO.Compression.ZipFile]::OpenRead($DiagnosticBundle)
 				try {
 					$Names = @($Archive.Entries | ForEach-Object FullName)
@@ -337,10 +341,10 @@ try {
         try {
             Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
             Invoke-Docker run -d --name $Second --network $Network -p 28223:8223 -e 'RJS_NATS_URL=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222' -e 'RJS_NATS_MONITOR_URLS=http://nats-1:8222,http://nats-2:8222,http://nats-3:8222' -e RJS_ADMIN_TOKEN=desktop-test-token -e RJS_METADATA_REPLICAS=3 -e RJS_INSTANCE_ID=management-2 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s rabbit-jetstream/management:local
-            $Apply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
+            $Apply = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Apply.status -ne 'ready') { throw 'cluster Queue apply failed' }
             $OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/cluster' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
-            $Updated = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster-updated.yaml | ConvertFrom-Json
+            $Updated = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster-updated.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready') { throw 'cluster Queue update failed' }
             $StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='cluster'}; spec=@{subjects=@('cluster.>'); replicas=3; storage='file'}} | ConvertTo-Json -Depth 8
             $StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
