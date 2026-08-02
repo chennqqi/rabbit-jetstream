@@ -2,6 +2,7 @@
 /bin/
 /dist/
 /data/
+/artifacts/
 *.log
 /coverage
 /coverage.out

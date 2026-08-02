@@ -21,6 +21,8 @@ Before requesting a release candidate:
 4. Linux container images and Helm artifacts are built from the recorded server commit. Generated manifests include component versions, image IDs and SHA-256 hashes.
 5. Release notes list unsupported RabbitMQ behavior explicitly; AMQP compatibility is not a release blocker and must not be advertised.
 
+Run `make test-local-rc` for the paired quick gate. Run `pwsh -NoProfile -File scripts/release/local-rc.ps1 -Mode Full` for the Docker Desktop gate. Both write `artifacts/local-rc.json`, binding results to the exact server and SDK commits; `-AllowDirty` is development-only and invalid for release evidence.
+
 GitHub Actions and cross-repository automation are deliberately deferred. Local scripts are the source of truth while the release process is being refined collaboratively.
 
 ## Production Evidence
