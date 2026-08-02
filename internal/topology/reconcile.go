@@ -6,8 +6,9 @@ import (
 )
 
 type ObservedTopology struct {
-	Stream   *ObservedStream   `json:"stream,omitempty"`
-	Consumer *ObservedConsumer `json:"consumer,omitempty"`
+	Stream            *ObservedStream              `json:"stream,omitempty"`
+	Consumer          *ObservedConsumer            `json:"consumer,omitempty"`
+	PriorityConsumers map[string]*ObservedConsumer `json:"priority_consumers,omitempty"`
 }
 
 type ObservedStream struct {
@@ -62,6 +63,9 @@ func Reconcile(desired Plan, observed ObservedTopology) ReconcileResult {
 	result.Operations = append(result.Operations, streamOperation)
 	consumerOperation := reconcileConsumer(desired.Consumer, observed.Consumer, streamOperation.Action == "recreate")
 	result.Operations = append(result.Operations, consumerOperation)
+	for _, consumer := range desired.PriorityConsumers {
+		result.Operations = append(result.Operations, reconcileConsumer(consumer, observed.PriorityConsumers[consumer.Name], streamOperation.Action == "recreate"))
+	}
 	if desired.DeadLetter != nil {
 		result.Operations = append(result.Operations, Operation{
 			Resource: "dead-letter-worker", Name: desired.DeadLetter.Worker, Action: "ensure",

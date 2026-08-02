@@ -156,3 +156,24 @@ func TestQueueRejectsSubjectsAndBindingsTogether(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestQueuePriorityValidation(t *testing.T) {
+	for _, test := range []struct {
+		name, value, want string
+	}{
+		{"too high", "256", "between 0 and 255"},
+		{"negative", "-1", "between 0 and 255"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := strings.Replace(validQueueYAML, "  replicas: 3", "  replicas: 3\n  maxPriority: "+test.value, 1)
+			_, err := ParseQueue(strings.NewReader(input))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v want=%q", err, test.want)
+			}
+		})
+	}
+	input := strings.Replace(validQueueYAML, "  replicas: 3", "  replicas: 3\n  maxPriority: 9", 1)
+	if _, err := ParseQueue(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("priority plus DLQ error=%v", err)
+	}
+}

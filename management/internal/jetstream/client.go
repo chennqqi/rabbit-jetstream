@@ -266,15 +266,18 @@ func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topolog
 	if _, err := c.js.CreateOrUpdateStream(ctx, streamConfig); err != nil {
 		return result, fmt.Errorf("apply stream %s: %w", plan.Stream.Name, err)
 	}
-	consumerConfig := jsapi.ConsumerConfig{
-		Name: plan.Consumer.Name, Durable: plan.Consumer.Name,
-		FilterSubjects: plan.Consumer.FilterSubjects, DeliverPolicy: jsapi.DeliverAllPolicy,
-		AckPolicy: jsapi.AckExplicitPolicy, AckWait: time.Duration(plan.Consumer.AckWaitNanos),
-		MaxDeliver: plan.Consumer.MaxDeliver, ReplayPolicy: jsapi.ReplayInstantPolicy,
-		Metadata: cloneMetadata(plan.Consumer.Metadata),
-	}
-	if _, err := c.js.CreateOrUpdateConsumer(ctx, plan.Stream.Name, consumerConfig); err != nil {
-		return result, fmt.Errorf("apply consumer %s: %w", plan.Consumer.Name, err)
+	consumers := append([]topology.ConsumerPlan{plan.Consumer}, plan.PriorityConsumers...)
+	for _, consumer := range consumers {
+		consumerConfig := jsapi.ConsumerConfig{
+			Name: consumer.Name, Durable: consumer.Name,
+			FilterSubjects: consumer.FilterSubjects, DeliverPolicy: jsapi.DeliverAllPolicy,
+			AckPolicy: jsapi.AckExplicitPolicy, AckWait: time.Duration(consumer.AckWaitNanos),
+			MaxDeliver: consumer.MaxDeliver, ReplayPolicy: jsapi.ReplayInstantPolicy,
+			Metadata: cloneMetadata(consumer.Metadata),
+		}
+		if _, err := c.js.CreateOrUpdateConsumer(ctx, plan.Stream.Name, consumerConfig); err != nil {
+			return result, fmt.Errorf("apply consumer %s: %w", consumer.Name, err)
+		}
 	}
 	return result, c.persistDeclaration(ctx, plan)
 }
@@ -520,7 +523,7 @@ func (c *Client) deleteDeclaration(ctx context.Context, name string) (bool, erro
 }
 
 func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topology.ObservedTopology, error) {
-	var observed topology.ObservedTopology
+	observed := topology.ObservedTopology{PriorityConsumers: map[string]*topology.ObservedConsumer{}}
 	stream, err := c.Stream(ctx, plan.Stream.Name)
 	if errors.Is(err, ErrNotFound) {
 		return observed, nil
@@ -533,10 +536,16 @@ func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topo
 	if err != nil {
 		return observed, err
 	}
+	priorityNames := make(map[string]struct{}, len(plan.PriorityConsumers))
+	for _, consumer := range plan.PriorityConsumers {
+		priorityNames[consumer.Name] = struct{}{}
+	}
 	for _, consumer := range consumers {
+		item := &topology.ObservedConsumer{Stream: consumer.Stream, Name: consumer.Name, Durable: consumer.Durable, FilterSubject: consumer.FilterSubject, FilterSubjects: consumer.FilterSubjects, Mode: consumer.Mode, DeliverPolicy: consumer.DeliverPolicy, AckPolicy: consumer.AckPolicy, AckWaitNanos: consumer.AckWaitNanos, MaxDeliver: consumer.MaxDeliver, ReplayPolicy: consumer.ReplayPolicy, Metadata: consumer.Metadata}
 		if consumer.Name == plan.Consumer.Name {
-			observed.Consumer = &topology.ObservedConsumer{Stream: consumer.Stream, Name: consumer.Name, Durable: consumer.Durable, FilterSubject: consumer.FilterSubject, FilterSubjects: consumer.FilterSubjects, Mode: consumer.Mode, DeliverPolicy: consumer.DeliverPolicy, AckPolicy: consumer.AckPolicy, AckWaitNanos: consumer.AckWaitNanos, MaxDeliver: consumer.MaxDeliver, ReplayPolicy: consumer.ReplayPolicy, Metadata: consumer.Metadata}
-			break
+			observed.Consumer = item
+		} else if _, ok := priorityNames[consumer.Name]; ok {
+			observed.PriorityConsumers[consumer.Name] = item
 		}
 	}
 	return observed, nil

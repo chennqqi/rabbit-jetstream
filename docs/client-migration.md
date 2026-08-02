@@ -1,8 +1,8 @@
 # RabbitMQ Client Migration and Compatibility
 
-This release is not an AMQP 0-9-1 server. Existing RabbitMQ clients cannot point at a new host and continue unchanged. The current repository supplies the JetStream server distribution, Queue control plane, operational tooling, and controlled message-migration utilities. The native SDK is a separate future deliverable under `outlink/rabbit-jetstream-go`; the link currently contains no released implementation.
+This release is not an AMQP 0-9-1 server. Existing RabbitMQ clients cannot point at a new host and continue unchanged. The current repository supplies the JetStream server distribution, Queue control plane, operational tooling, and controlled message-migration utilities. The native SDK is implemented in the independent `rabbit-jetstream-go` repository but has not yet published a versioned release.
 
-The authoritative machine-readable matrix is [`api/client-compatibility.json`](../api/client-compatibility.json). The future client's resource, header and scheduler boundary is separately fixed in the [native SDK contract](native-sdk-contract.md), but its `server-contract-only` availability still means no SDK is released. `supported` means the server behavior exists and is tested; it does not imply AMQP wire compatibility. `partial` means an important semantic or client abstraction differs. `planned` is unavailable in the current release. `not_supported` must block cutover unless the application removes that dependency.
+The authoritative machine-readable matrix is [`api/client-compatibility.json`](../api/client-compatibility.json). The client's resource, header and scheduler boundary is fixed in the [native SDK contract](native-sdk-contract.md); `native-sdk-implemented-unreleased` still means no supported SDK version is released. `supported` means the server behavior exists and is tested; it does not imply AMQP wire compatibility. `partial` means an important semantic or client abstraction differs. `planned` is unavailable in the current release. `not_supported` must block cutover unless the application removes that dependency.
 
 ## Client decision
 
@@ -13,7 +13,7 @@ The authoritative machine-readable matrix is [`api/client-compatibility.json`](.
 | Python Pika / aio-pika / Celery AMQP | Cannot connect; no AMQP or Celery transport exists. |
 | .NET RabbitMQ.Client / MassTransit | Cannot connect; no AMQP or MassTransit transport exists. |
 | Official NATS clients | Usable for expert integration, but the application must implement routing resolution, idempotency, pull-consumer flow control, and future priority policy. |
-| Native `rabbit-jetstream-go` SDK | Planned in its independent repository; do not treat the outlink as a released dependency. |
+| Native `rabbit-jetstream-go` SDK | Implemented and tested in its independent repository; wait for a versioned release before production adoption. |
 
 ## Semantic checklist
 
@@ -27,7 +27,7 @@ The authoritative machine-readable matrix is [`api/client-compatibility.json`](.
 | `stable-message-id` | supported | Preserve one logical ID in `message_id` and `Nats-Msg-Id`; consumers must be idempotent. |
 | `manual-ack`, `redelivery` | partial | Use explicit Ack and size `AckWait`/`MaxDeliver`; RabbitMQ reject/requeue APIs are not reproduced. |
 | `prefetch-backpressure` | planned | Do not translate prefetch numerically; benchmark pull batch, concurrency and pending limits in the SDK. |
-| `priority-queue` | planned | Cutover is blocked for priority workloads until the external SDK passes starvation and fairness tests. |
+| `priority-queue` | partial | Control-plane provisioning and SDK scheduling are tested; cutover remains blocked until a versioned SDK release and priority-DLQ policy are available. |
 | `queue-ttl`, `length-limit` | partial | Revalidate expiration and overflow behavior; JetStream MaxAge is not per-message TTL. |
 | `dead-letter` | partial | Only one declared Queue target is supported; verify advisory mover lag and provenance headers. |
 | `ordering` | partial | Concurrent delivery and retry can reorder; key and serialize workloads that require strict ordering. |

@@ -1,6 +1,6 @@
 # Native SDK Contract
 
-`api/native-sdk-contract.json` is the machine-readable boundary between this server distribution and the future `rabbit-jetstream-go` client. It is currently marked `server-contract-only`: the independent SDK repository is empty, so this document does not claim that a native client is available.
+`api/native-sdk-contract.json` is the machine-readable boundary between this server distribution and the independent `rabbit-jetstream-go` client. It is marked `native-sdk-implemented-unreleased`: the SDK implementation and production-oriented tests exist, but applications must not depend on it until the independent repository publishes a versioned release.
 
 Running management instances expose the identical document at `GET /api/v1/native-sdk-contract.json`; clients may use it for startup compatibility checks. The response is public metadata, contains no credentials and is cached for five minutes.
 
@@ -9,3 +9,5 @@ The contract fixes queue-scoped Stream, Consumer and subject names plus required
 Each priority level has a non-overlapping pull Consumer. Higher numbers are preferred, but already delivered messages are never preempted. Implementations must use the specified bounded strict-priority loop: after a configurable high-priority burst, probe lower levels so sustained high traffic cannot permanently starve them. A Go `select` across subscriptions is not a priority algorithm.
 
 The contract promises at-least-once delivery and JetStream PubAck publisher confirmation. SDK implementations must bound outstanding fetch count and bytes, preserve message IDs across redelivery, and pass repeatable ordering, starvation, backpressure and broker-failure tests before changing `availability` or the compatibility matrix.
+
+Declare a managed priority Queue with `spec.maxPriority`. The control plane creates exact `p.0 ... p.N` Stream subjects and one explicit-ack durable pull Consumer per level. `maxPriority` plus `deadLetter` is rejected in `v1alpha1`; DLQ republishing for priority subjects remains a follow-up compatibility item.

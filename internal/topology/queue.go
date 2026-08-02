@@ -36,13 +36,14 @@ type Metadata struct {
 }
 
 type QueueSpec struct {
-	Subjects   []string          `yaml:"subjects" json:"subjects"`
-	Bindings   []Binding         `yaml:"bindings,omitempty" json:"bindings,omitempty"`
-	Replicas   int               `yaml:"replicas" json:"replicas"`
-	Storage    string            `yaml:"storage" json:"storage"`
-	Retention  RetentionPolicy   `yaml:"retention,omitempty" json:"retention,omitempty"`
-	Delivery   DeliveryPolicy    `yaml:"delivery,omitempty" json:"delivery,omitempty"`
-	DeadLetter *DeadLetterPolicy `yaml:"deadLetter,omitempty" json:"deadLetter,omitempty"`
+	Subjects    []string          `yaml:"subjects" json:"subjects"`
+	Bindings    []Binding         `yaml:"bindings,omitempty" json:"bindings,omitempty"`
+	MaxPriority *int              `yaml:"maxPriority,omitempty" json:"maxPriority,omitempty"`
+	Replicas    int               `yaml:"replicas" json:"replicas"`
+	Storage     string            `yaml:"storage" json:"storage"`
+	Retention   RetentionPolicy   `yaml:"retention,omitempty" json:"retention,omitempty"`
+	Delivery    DeliveryPolicy    `yaml:"delivery,omitempty" json:"delivery,omitempty"`
+	DeadLetter  *DeadLetterPolicy `yaml:"deadLetter,omitempty" json:"deadLetter,omitempty"`
 }
 
 type Binding struct {
@@ -215,6 +216,12 @@ func (q Queue) Validate() error {
 	}
 	if q.Spec.Retention.MaxAge < 0 || q.Spec.Retention.MaxBytes < 0 || q.Spec.Retention.MaxMessages < 0 {
 		problems = append(problems, "spec.retention limits cannot be negative")
+	}
+	if q.Spec.MaxPriority != nil && (*q.Spec.MaxPriority < MinimumPriority || *q.Spec.MaxPriority > MaximumPriority) {
+		problems = append(problems, fmt.Sprintf("spec.maxPriority must be between %d and %d", MinimumPriority, MaximumPriority))
+	}
+	if q.Spec.MaxPriority != nil && q.Spec.DeadLetter != nil {
+		problems = append(problems, "spec.maxPriority and spec.deadLetter cannot be combined in v1alpha1")
 	}
 	if q.Spec.Delivery.AckWait == nil || *q.Spec.Delivery.AckWait <= 0 {
 		problems = append(problems, "spec.delivery.ackWait must be positive")

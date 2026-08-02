@@ -181,3 +181,32 @@ func TestPriorityResourceNames(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildPlanProvisionsPrioritySubjectsAndConsumers(t *testing.T) {
+	input := `apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata: {name: priority_orders}
+spec:
+  replicas: 1
+  subjects: [orders.created]
+  maxPriority: 2
+`
+	queue, err := ParseQueue(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildPlan(*queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSubjects := []string{"rjs.q.priority_orders.p.0", "rjs.q.priority_orders.p.1", "rjs.q.priority_orders.p.2"}
+	if !reflect.DeepEqual(plan.Stream.Subjects, wantSubjects) {
+		t.Fatalf("priority subjects = %v, want %v", plan.Stream.Subjects, wantSubjects)
+	}
+	if plan.Consumer.Name != "RJSQC_priority_orders_P0" || !reflect.DeepEqual(plan.Consumer.FilterSubjects, wantSubjects[:1]) {
+		t.Fatalf("priority zero consumer = %#v", plan.Consumer)
+	}
+	if len(plan.PriorityConsumers) != 2 || plan.PriorityConsumers[1].Name != "RJSQC_priority_orders_P2" || !reflect.DeepEqual(plan.PriorityConsumers[1].FilterSubjects, wantSubjects[2:]) {
+		t.Fatalf("priority consumers = %#v", plan.PriorityConsumers)
+	}
+}

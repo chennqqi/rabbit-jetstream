@@ -15,6 +15,7 @@ Parsing is strict: unknown fields, multiple YAML documents, malformed durations,
 - `metadata.name`: letters, digits, `_`, and `-`; maps to logical resource identity.
 - `spec.subjects`: one or more raw NATS subjects; `*` must occupy a whole token and `>` must be final.
 - `spec.bindings`: exchange bindings used by the native SDK/gateway. Each binding has an `exchange`, a `type` (`direct`, `topic`, or `fanout`), and keys where applicable. It is mutually exclusive with `subjects`.
+- `spec.maxPriority`: optional integer from `0` through `255`. It replaces normal Stream subjects with `rjs.q.{queue}.p.0 ... p.N` and provisions one non-overlapping pull Consumer per level. It cannot be combined with `deadLetter` in `v1alpha1`.
 - `spec.replicas`: `1`, `3`, or `5`. Production clusters normally use `3`.
 - `spec.storage`: `file` by default, or `memory`.
 - `retention`: optional `maxAge`, `maxBytes`, and `maxMessages`; zero means unlimited.

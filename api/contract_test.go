@@ -66,7 +66,7 @@ func TestNativeSDKContractIsStrictAndMatchesTopology(t *testing.T) {
 	if decoder.Decode(&struct{}{}) == nil {
 		t.Fatal("native SDK contract accepted trailing JSON")
 	}
-	if document.Schema != "rabbit-jetstream.io/native-sdk-contract/v1alpha1" || document.Availability != "server-contract-only" {
+	if document.Schema != "rabbit-jetstream.io/native-sdk-contract/v1alpha1" || document.Availability != "native-sdk-implemented-unreleased" {
 		t.Fatalf("unsafe native SDK contract identity: %q %q", document.Schema, document.Availability)
 	}
 	prioritySubject, _ := topology.QueuePrioritySubject("orders", 7)

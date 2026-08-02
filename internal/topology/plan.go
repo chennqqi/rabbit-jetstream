@@ -17,15 +17,16 @@ const (
 )
 
 type Plan struct {
-	APIVersion   string          `json:"apiVersion"`
-	Queue        string          `json:"queue"`
-	Revision     string          `json:"revision"`
-	Stream       StreamPlan      `json:"stream"`
-	Consumer     ConsumerPlan    `json:"consumer"`
-	DeadLetter   *DeadLetterPlan `json:"deadLetter,omitempty"`
-	Dependencies []string        `json:"dependencies"`
-	Warnings     []string        `json:"warnings"`
-	Routing      []RoutingPlan   `json:"routing,omitempty"`
+	APIVersion        string          `json:"apiVersion"`
+	Queue             string          `json:"queue"`
+	Revision          string          `json:"revision"`
+	Stream            StreamPlan      `json:"stream"`
+	Consumer          ConsumerPlan    `json:"consumer"`
+	PriorityConsumers []ConsumerPlan  `json:"priorityConsumers,omitempty"`
+	DeadLetter        *DeadLetterPlan `json:"deadLetter,omitempty"`
+	Dependencies      []string        `json:"dependencies"`
+	Warnings          []string        `json:"warnings"`
+	Routing           []RoutingPlan   `json:"routing,omitempty"`
 }
 
 type RoutingPlan struct {
@@ -91,6 +92,23 @@ func BuildPlan(queue Queue) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
+	consumerSubjects := subjects
+	var priorityConsumers []ConsumerPlan
+	if queue.Spec.MaxPriority != nil {
+		subjects = make([]string, 0, *queue.Spec.MaxPriority+1)
+		for priority := MinimumPriority; priority <= *queue.Spec.MaxPriority; priority++ {
+			subject, _ := QueuePrioritySubject(queue.Metadata.Name, priority)
+			subjects = append(subjects, subject)
+			name, _ := PriorityConsumerName(queue.Metadata.Name, priority)
+			consumer := consumerPlan(name, streamName, []string{subject}, queue, metadata)
+			if priority == MinimumPriority {
+				consumerName = name
+				consumerSubjects = []string{subject}
+			} else {
+				priorityConsumers = append(priorityConsumers, consumer)
+			}
+		}
+	}
 	plan := Plan{
 		APIVersion: PlanAPIVersion, Queue: queue.Metadata.Name, Revision: revision,
 		Stream: StreamPlan{
@@ -100,13 +118,9 @@ func BuildPlan(queue Queue) (Plan, error) {
 			MaxAgeNanos: int64(queue.Spec.Retention.MaxAge), MaxBytes: int64(queue.Spec.Retention.MaxBytes),
 			MaxMessages: queue.Spec.Retention.MaxMessages, Metadata: cloneMap(metadata),
 		},
-		Consumer: ConsumerPlan{
-			Name: consumerName, Stream: streamName, Mode: "pull", FilterSubjects: append([]string(nil), subjects...),
-			DeliverPolicy: "all",
-			AckPolicy:     "explicit", AckWaitNanos: int64(durationValue(queue.Spec.Delivery.AckWait)),
-			MaxDeliver: intValue(queue.Spec.Delivery.MaxDeliver), ReplayPolicy: "instant", Metadata: cloneMap(metadata),
-		},
-		Dependencies: []string{}, Warnings: []string{}, Routing: routing,
+		Consumer:          consumerPlan(consumerName, streamName, consumerSubjects, queue, metadata),
+		PriorityConsumers: priorityConsumers,
+		Dependencies:      []string{}, Warnings: []string{}, Routing: routing,
 	}
 	if queue.Spec.DeadLetter != nil {
 		plan.Dependencies = append(plan.Dependencies, queue.Spec.DeadLetter.Queue)
@@ -118,6 +132,14 @@ func BuildPlan(queue Queue) (Plan, error) {
 	}
 	sort.Strings(plan.Dependencies)
 	return plan, nil
+}
+
+func consumerPlan(name, stream string, subjects []string, queue Queue, metadata map[string]string) ConsumerPlan {
+	return ConsumerPlan{
+		Name: name, Stream: stream, Mode: "pull", FilterSubjects: append([]string(nil), subjects...),
+		DeliverPolicy: "all", AckPolicy: "explicit", AckWaitNanos: int64(durationValue(queue.Spec.Delivery.AckWait)),
+		MaxDeliver: intValue(queue.Spec.Delivery.MaxDeliver), ReplayPolicy: "instant", Metadata: cloneMap(metadata),
+	}
 }
 
 func routingPlan(queue Queue) ([]string, []RoutingPlan, error) {
@@ -227,7 +249,7 @@ func QueuePublishSubject(queueName, exchange, exchangeType, routingKey string) (
 func QueueIngressSubject(queueName string) string { return "rjs.q." + queueName + ".ingress" }
 
 // QueuePrioritySubject is the native SDK publish target for one priority
-// level. Stream and Consumer provisioning is introduced separately in M2.
+// level.
 func QueuePrioritySubject(queueName string, priority int) (string, error) {
 	if !queueNamePattern.MatchString(queueName) {
 		return "", fmt.Errorf("invalid queue name")

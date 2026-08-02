@@ -1,6 +1,6 @@
 {
   "schema": "rabbit-jetstream.io/native-sdk-contract/v1alpha1",
-  "availability": "server-contract-only",
+  "availability": "native-sdk-implemented-unreleased",
   "resource_names": {
     "queue_name_pattern": "^[A-Za-z0-9_-]+$",
     "stream_template": "RJSQ_{queue}",

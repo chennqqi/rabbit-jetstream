@@ -1,0 +1,13 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: priority_orders
+spec:
+  subjects:
+    - orders.created
+  maxPriority: 2
+  replicas: 1
+  storage: file
+  delivery:
+    ackWait: 30s
+    maxDeliver: 5

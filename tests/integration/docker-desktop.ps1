@@ -95,7 +95,7 @@ try {
 				$SDKContractResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/native-sdk-contract.json' -TimeoutSec 5
 				$SDKContractContent = if ($SDKContractResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($SDKContractResponse.Content) } else { [string]$SDKContractResponse.Content }
 				$SDKContract = $SDKContractContent | ConvertFrom-Json
-				if ($SDKContract.schema -ne 'rabbit-jetstream.io/native-sdk-contract/v1alpha1' -or $SDKContract.availability -ne 'server-contract-only' -or $SDKContract.priority.scheduler.select_is_sufficient -ne $false) { throw 'native SDK contract is unavailable or unsafe' }
+				if ($SDKContract.schema -ne 'rabbit-jetstream.io/native-sdk-contract/v1alpha1' -or $SDKContract.availability -ne 'native-sdk-implemented-unreleased' -or $SDKContract.priority.scheduler.select_is_sufficient -ne $false) { throw 'native SDK contract is unavailable or unsafe' }
 				if ([string]($SDKContractResponse.Headers['Cache-Control'] | Select-Object -First 1) -ne 'public, max-age=300') { throw 'native SDK contract cache policy is incorrect' }
 				$InfoResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/info' -TimeoutSec 5
 				if ([string]($InfoResponse.Headers['Cache-Control'] | Select-Object -First 1) -ne 'no-store' -or [string]($InfoResponse.Headers['X-Content-Type-Options'] | Select-Object -First 1) -ne 'nosniff') { throw 'management API security headers are incomplete' }
@@ -137,12 +137,20 @@ try {
 				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
 				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 5
 				if ($Stream.replicas -ne 1 -or $Stream.max_bytes -ne 16777216 -or $Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic' -or $Consumers.items[0].max_deliver -ne 7) { throw 'applied resources are incorrect' }
+				$PriorityApply = & docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-priority.yaml | ConvertFrom-Json
+				if ($LASTEXITCODE -ne 0 -or $PriorityApply.status -ne 'ready') { throw 'priority Queue apply failed' }
+				$PriorityStream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders' -TimeoutSec 5
+				$PriorityConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders/consumers' -TimeoutSec 5
+				$PriorityNames = @($PriorityConsumers.items | ForEach-Object name | Sort-Object)
+				if ($PriorityStream.subjects.Count -ne 3 -or $PriorityConsumers.total -ne 3 -or ($PriorityNames -join ',') -ne 'RJSQC_priority_orders_P0,RJSQC_priority_orders_P1,RJSQC_priority_orders_P2') { throw 'priority resources are incorrect' }
 				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 5
-				if ($Declarations.total -ne 1 -or $Declarations.items[0].queue -ne 'basic' -or $Declarations.items[0].revision -ne $Updated.revision) { throw 'Queue declaration was not persisted' }
+				$BasicDeclaration = $Declarations.items | Where-Object queue -eq 'basic' | Select-Object -First 1
+				$PriorityDeclaration = $Declarations.items | Where-Object queue -eq 'priority_orders' | Select-Object -First 1
+				if ($Declarations.total -ne 2 -or $null -eq $BasicDeclaration -or $BasicDeclaration.revision -ne $Updated.revision -or $null -eq $PriorityDeclaration) { throw 'Queue declarations were not persisted' }
 				Invoke-Docker compose -p $Project -f $Compose restart management
 				Wait-Healthy "${Project}-management-1"
 				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 10
-				if ($Declarations.total -ne 1 -or $Declarations.items[0].queue -ne 'basic') { throw 'Queue declaration did not survive management restart' }
+				if ($Declarations.total -ne 2 -or $null -eq ($Declarations.items | Where-Object queue -eq 'basic') -or $null -eq ($Declarations.items | Where-Object queue -eq 'priority_orders')) { throw 'Queue declarations did not survive management restart' }
 			}
 			if ($Scenario -eq 'delete') {
 				$Network = "${Project}_default"
