@@ -62,7 +62,9 @@ Invoke-Checked 'sdk-build' $SDKPath 'go' @('build', './...')
 if ($Mode -eq 'Full') {
     Invoke-Checked 'sdk-docker-integration' $SDKPath 'pwsh' @('-NoProfile', '-File', './scripts/test-integration.ps1')
     Invoke-Checked 'server-sdk-contract' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/native-sdk.ps1')
-    Invoke-Checked 'server-docker-integration' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/docker-desktop.ps1')
+    foreach ($Scenario in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'auth', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')) {
+        Invoke-Checked "server-docker-$Scenario" $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/docker-desktop.ps1', '-Scenario', $Scenario)
+    }
 }
 
 $Evidence = [ordered]@{
