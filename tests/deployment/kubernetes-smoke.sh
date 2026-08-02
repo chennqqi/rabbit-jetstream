@@ -7,6 +7,7 @@ cluster="${cluster,,}"
 cluster="${cluster//_/-}"
 kind_bin="$(go env GOPATH)/bin/kind"
 helm_image='alpine/helm:3.18.4@sha256:e7ecbf4a200dea73d64bfb8cb0936829164945f2b4d02a0274093073ee8d264f'
+busybox_image='busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
 node_image='kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f'
 namespace='rjs-kubernetes-smoke'
 release='rjs-smoke'
@@ -56,6 +57,22 @@ auth_before="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.
 helm_upgrade
 auth_after="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.data}')"
 test "$auth_before" = "$auth_after"
+
+management_ip="$(kubectl -n "$namespace" get service "${release}-rabbit-jetstream-management" -o jsonpath='{.spec.clusterIP}')"
+kubectl -n "$namespace" run network-allowed --image="$busybox_image" --restart=Never --attach --rm --command -- \
+  wget -T 10 -qO- "http://${management_ip}:8223/readyz" | grep -q '"status":"ready"'
+denied_namespace="${namespace}-denied"
+kubectl create namespace "$denied_namespace"
+denied_result="$(kubectl -n "$denied_namespace" run network-denied --image="$busybox_image" --restart=Never --attach --rm --command -- \
+  sh -c "if wget -T 5 -qO- http://${management_ip}:8223/readyz; then echo 'management NetworkPolicy allowed an unauthorized cross-namespace Pod' >&2; exit 42; fi; echo network-policy-denied")"
+printf '%s\n' "$denied_result" | grep -q '^network-policy-denied$'
+
+nats_ip="$(kubectl -n "$namespace" get service "${release}-rabbit-jetstream-nats" -o jsonpath='{.spec.clusterIP}')"
+kubectl -n "$namespace" run nats-network-allowed --image="$busybox_image" --restart=Never --attach --rm --command -- \
+  nc -z -w 10 "$nats_ip" 4222
+nats_denied_result="$(kubectl -n "$denied_namespace" run nats-network-denied --image="$busybox_image" --restart=Never --attach --rm --command -- \
+  sh -c "if nc -z -w 5 ${nats_ip} 4222; then echo 'NATS NetworkPolicy allowed an unauthorized cross-namespace Pod' >&2; exit 42; fi; echo nats-network-policy-denied")"
+printf '%s\n' "$nats_denied_result" | grep -q '^nats-network-policy-denied$'
 
 docker run --rm --network host -v "$HOME/.kube:/root/.kube:ro" \
   "$helm_image" test "$release" --namespace "$namespace" --logs --timeout 3m
