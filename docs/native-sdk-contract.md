@@ -10,4 +10,4 @@ Each priority level has a non-overlapping pull Consumer. Higher numbers are pref
 
 The contract promises at-least-once delivery and JetStream PubAck publisher confirmation. SDK implementations must bound outstanding fetch count and bytes, preserve message IDs across redelivery, and pass repeatable ordering, starvation, backpressure and broker-failure tests before changing `availability` or the compatibility matrix.
 
-Declare a managed priority Queue with `spec.maxPriority`. The control plane creates exact `p.0 ... p.N` Stream subjects and one explicit-ack durable pull Consumer per level. `maxPriority` plus `deadLetter` is rejected in `v1alpha1`; DLQ republishing for priority subjects remains a follow-up compatibility item.
+Declare a managed priority Queue with `spec.maxPriority`. The control plane creates exact `p.0 ... p.N` Stream subjects and one explicit-ack durable pull Consumer per level. DLQ transfer preserves `Rjs-Priority`: a priority target receives the corresponding `p.N` subject and must support the source priority range; an ordinary target receives the message through its ingress subject with the priority header retained for diagnostics.

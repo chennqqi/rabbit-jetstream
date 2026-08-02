@@ -57,10 +57,15 @@ func (c *Client) ProcessDeadLetters(ctx context.Context, declarations []topology
 		return result, nil
 	}
 	bySource := make(map[string]topology.Declaration)
+	byQueue := make(map[string]topology.Declaration, len(declarations))
 	for _, declaration := range declarations {
+		byQueue[declaration.Queue] = declaration
 		if declaration.Plan.DeadLetter != nil {
-			key := declaration.Plan.Stream.Name + "\x00" + declaration.Plan.Consumer.Name
-			bySource[key] = declaration
+			consumers := append([]topology.ConsumerPlan{declaration.Plan.Consumer}, declaration.Plan.PriorityConsumers...)
+			for _, consumer := range consumers {
+				key := declaration.Plan.Stream.Name + "\x00" + consumer.Name
+				bySource[key] = declaration
+			}
 		}
 	}
 	if len(bySource) == 0 {
@@ -91,7 +96,13 @@ func (c *Client) ProcessDeadLetters(ctx context.Context, declarations []topology
 			_ = event.Ack()
 			continue
 		}
-		if err := c.moveDeadLetter(ctx, declaration, advisory); err != nil {
+		target, targetOK := byQueue[declaration.Plan.DeadLetter.Queue]
+		if !targetOK {
+			result.Failed++
+			_ = event.NakWithDelay(time.Second)
+			continue
+		}
+		if err := c.moveDeadLetter(ctx, declaration, target, advisory); err != nil {
 			result.Failed++
 			_ = event.NakWithDelay(time.Second)
 			continue
@@ -107,7 +118,7 @@ func (c *Client) ProcessDeadLetters(ctx context.Context, declarations []topology
 	return result, nil
 }
 
-func (c *Client) moveDeadLetter(ctx context.Context, declaration topology.Declaration, advisory MaxDeliverAdvisory) error {
+func (c *Client) moveDeadLetter(ctx context.Context, declaration, targetDeclaration topology.Declaration, advisory MaxDeliverAdvisory) error {
 	source, err := c.js.Stream(ctx, advisory.Stream)
 	if err != nil {
 		return fmt.Errorf("open source stream %s: %w", advisory.Stream, err)
@@ -120,7 +131,18 @@ func (c *Client) moveDeadLetter(ctx context.Context, declaration topology.Declar
 		return fmt.Errorf("read source message %s/%d: %w", advisory.Stream, advisory.StreamSeq, err)
 	}
 	target := declaration.Plan.DeadLetter.Queue
-	message := &nats.Msg{Subject: topology.QueueIngressSubject(target), Data: append([]byte(nil), raw.Data...), Header: cloneHeader(raw.Header)}
+	targetSubject := topology.QueueIngressSubject(target)
+	if targetDeclaration.Plan.MaxPriority != nil {
+		priority, priorityErr := messagePriority(raw.Header)
+		if priorityErr != nil {
+			return fmt.Errorf("resolve DLQ priority for %s/%d: %w", advisory.Stream, advisory.StreamSeq, priorityErr)
+		}
+		if priority > *targetDeclaration.Plan.MaxPriority {
+			return fmt.Errorf("DLQ target %s maxPriority %d cannot accept priority %d", target, *targetDeclaration.Plan.MaxPriority, priority)
+		}
+		targetSubject, _ = topology.QueuePrioritySubject(target, priority)
+	}
+	message := &nats.Msg{Subject: targetSubject, Data: append([]byte(nil), raw.Data...), Header: cloneHeader(raw.Header)}
 	message.Header.Set("Rjs-Dead-Letter-Source-Queue", declaration.Queue)
 	message.Header.Set("Rjs-Dead-Letter-Source-Subject", raw.Subject)
 	message.Header.Set("Rjs-Dead-Letter-Source-Stream", advisory.Stream)
@@ -134,6 +156,21 @@ func (c *Client) moveDeadLetter(ctx context.Context, declaration topology.Declar
 		return fmt.Errorf("delete source message %s/%d: %w", advisory.Stream, advisory.StreamSeq, err)
 	}
 	return nil
+}
+
+func messagePriority(header nats.Header) (int, error) {
+	value := header.Get("Rjs-Priority")
+	if value == "" {
+		return 0, errors.New("Rjs-Priority header is required for a priority DLQ target")
+	}
+	var priority int
+	if _, err := fmt.Sscanf(value, "%d", &priority); err != nil || fmt.Sprint(priority) != value {
+		return 0, fmt.Errorf("invalid Rjs-Priority header %q", value)
+	}
+	if priority < topology.MinimumPriority || priority > topology.MaximumPriority {
+		return 0, fmt.Errorf("priority %d is outside [%d,%d]", priority, topology.MinimumPriority, topology.MaximumPriority)
+	}
+	return priority, nil
 }
 
 func cloneHeader(source nats.Header) nats.Header {

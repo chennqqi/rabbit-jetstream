@@ -250,6 +250,9 @@ func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topolog
 		if target.Plan.DeadLetter != nil && target.Plan.DeadLetter.Queue == plan.Queue {
 			return result, fmt.Errorf("DLQ dependency cycle between %s and %s", plan.Queue, plan.DeadLetter.Queue)
 		}
+		if err := validateDeadLetterPriority(plan, target.Plan); err != nil {
+			return result, err
+		}
 		if err := c.ensureDeadLetterInfrastructure(ctx); err != nil {
 			return result, err
 		}
@@ -280,6 +283,13 @@ func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topolog
 		}
 	}
 	return result, c.persistDeclaration(ctx, plan)
+}
+
+func validateDeadLetterPriority(source, target topology.Plan) error {
+	if source.MaxPriority != nil && target.MaxPriority != nil && *target.MaxPriority < *source.MaxPriority {
+		return fmt.Errorf("DLQ dependency %s maxPriority %d is lower than source Queue %s maxPriority %d", target.Queue, *target.MaxPriority, source.Queue, *source.MaxPriority)
+	}
+	return nil
 }
 
 type resourceLock struct {

@@ -25,9 +25,9 @@ The authoritative machine-readable matrix is [`api/client-compatibility.json`](.
 | `fanout-routing` | partial | Publish once per matched Queue; one NATS publish is not fanout persistence. |
 | `publisher-confirm` | partial | Require JetStream PubAck; the provided dual-write adapter also enforces RabbitMQ confirm/mandatory return. |
 | `stable-message-id` | supported | Preserve one logical ID in `message_id` and `Nats-Msg-Id`; consumers must be idempotent. |
-| `manual-ack`, `redelivery` | partial | Use explicit Ack and size `AckWait`/`MaxDeliver`; RabbitMQ reject/requeue APIs are not reproduced. |
+| `manual-ack`, `redelivery` | supported / partial | The native SDK exposes Ack, Nak, Term and InProgress. Size `AckWait`/`MaxDeliver` explicitly; delivery remains at least once and is not an AMQP method-level emulation. |
 | `prefetch-backpressure` | partial | The SDK bounds in-flight messages and bytes; size these limits from slow-consumer and backlog-recovery benchmarks rather than translating prefetch numerically. |
-| `priority-queue` | partial | Control-plane provisioning and SDK scheduling are tested; cutover remains blocked until a versioned SDK release and priority-DLQ policy are available. |
+| `priority-queue` | partial | Control-plane provisioning, SDK scheduling and priority-preserving DLQ transfer are tested; cutover remains blocked until a versioned SDK release is available. |
 | `queue-ttl`, `length-limit` | partial | Revalidate expiration and overflow behavior; JetStream MaxAge is not per-message TTL. |
 | `dead-letter` | partial | Only one declared Queue target is supported; verify advisory mover lag and provenance headers. |
 | `ordering` | partial | Concurrent delivery and retry can reorder; key and serialize workloads that require strict ordering. |

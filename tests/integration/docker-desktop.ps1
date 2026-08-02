@@ -250,6 +250,26 @@ try {
 					Start-Sleep -Seconds 1
 				}
 				if (-not $Moved) { throw "DLQ transfer failed: source=$($Source.messages) target=$($Target.messages) moved=$($Controller.dlqMoved) error=$($Controller.lastError)" }
+				foreach ($Fixture in @('queue-priority-dlq-target.yaml', 'queue-priority-dlq-source.yaml')) {
+					Invoke-Docker run --rm --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 "tests/fixtures/$Fixture"
+				}
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish --header 'Rjs-Priority:2' rjs.q.retry_priority_orders.p.2 priority-poison
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_priority_orders RJSQC_retry_priority_orders_P2 --no-ack --wait 1s
+				Start-Sleep -Seconds 2
+				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_priority_orders RJSQC_retry_priority_orders_P2 --no-ack --wait 1s
+				Start-Sleep -Seconds 2
+				& docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer next RJSQ_retry_priority_orders RJSQC_retry_priority_orders_P2 --no-ack --wait 2s
+				if ($LASTEXITCODE -notin @(0, 1)) { throw "priority DLQ exhaustion probe failed with exit code $LASTEXITCODE" }
+				$PriorityMoved = $false
+				for ($Attempt = 0; $Attempt -lt 15; $Attempt++) {
+					$PrioritySource = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_priority_orders' -TimeoutSec 5
+					$PriorityTarget = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_priority_orders' -TimeoutSec 5
+					$PriorityTargetConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_priority_orders/consumers' -TimeoutSec 5
+					$PriorityTwo = $PriorityTargetConsumers.items | Where-Object name -eq 'RJSQC_failed_priority_orders_P2' | Select-Object -First 1
+					if ($PrioritySource.messages -eq 0 -and $PriorityTarget.messages -eq 1 -and $PriorityTwo.pending -eq 1) { $PriorityMoved = $true; break }
+					Start-Sleep -Seconds 1
+				}
+				if (-not $PriorityMoved) { throw 'priority DLQ did not preserve priority level 2' }
 			}
 			if ($Scenario -eq 'metrics') {
 				$Metrics = (Invoke-WebRequest -Uri 'http://127.0.0.1:8223/metrics' -TimeoutSec 5).Content

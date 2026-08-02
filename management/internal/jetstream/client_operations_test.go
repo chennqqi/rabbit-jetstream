@@ -488,7 +488,8 @@ func TestClientProcessesDeadLetterAdvisories(t *testing.T) {
 	unrelated, _ := json.Marshal(MaxDeliverAdvisory{Stream: "OTHER", Consumer: "OTHER", StreamSeq: 1})
 	good, bad, other := &fakeMessage{data: valid}, &fakeMessage{data: []byte("{")}, &fakeMessage{data: unrelated}
 	backend.worker = &fakeConsumer{batch: &fakeBatch{messages: []jsapi.Msg{bad, other, good}}}
-	result, err := client.ProcessDeadLetters(context.Background(), []topology.Declaration{{Queue: "source", Plan: plan}}, 10)
+	target := testQueuePlan(t, "target")
+	result, err := client.ProcessDeadLetters(context.Background(), []topology.Declaration{{Queue: "source", Plan: plan}, {Queue: "target", Plan: target}}, 10)
 	if err != nil || result.Processed != 3 || result.Moved != 1 || result.Ignored != 2 || result.Failed != 0 {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
@@ -516,9 +517,60 @@ func TestClientRetriesFailedDeadLetterPublish(t *testing.T) {
 	event := &fakeMessage{data: payload}
 	backend.worker = &fakeConsumer{batch: &fakeBatch{messages: []jsapi.Msg{event}}}
 	backend.publishErr = errors.New("publish unavailable")
-	result, err := client.ProcessDeadLetters(context.Background(), []topology.Declaration{{Queue: "source", Plan: plan}}, 1)
+	target := testQueuePlan(t, "target")
+	result, err := client.ProcessDeadLetters(context.Background(), []topology.Declaration{{Queue: "source", Plan: plan}, {Queue: "target", Plan: target}}, 1)
 	if err != nil || result.Failed != 1 || !event.nakd || backend.streams[plan.Stream.Name].messages[1] == nil {
 		t.Fatalf("result=%#v event=%#v err=%v", result, event, err)
+	}
+}
+
+func TestClientMovesPriorityDeadLetterToMatchingTargetLevel(t *testing.T) {
+	client, backend := testClient()
+	source := testQueuePlan(t, "source")
+	sourcePriority, targetPriority := 2, 3
+	source.MaxPriority = &sourcePriority
+	source.DeadLetter = &topology.DeadLetterPlan{Queue: "target", Stream: topology.StreamName("target")}
+	consumerName, _ := topology.PriorityConsumerName("source", 2)
+	source.PriorityConsumers = []topology.ConsumerPlan{{Name: consumerName, Stream: source.Stream.Name}}
+	target := testQueuePlan(t, "target")
+	target.MaxPriority = &targetPriority
+	backend.streams[source.Stream.Name] = &fakeStream{
+		info: &jsapi.StreamInfo{Config: jsapi.StreamConfig{Name: source.Stream.Name}}, consumers: make(map[string]*jsapi.ConsumerInfo),
+		messages: map[uint64]*jsapi.RawStreamMsg{9: {Subject: "rjs.q.source.p.2", Sequence: 9, Header: nats.Header{"Rjs-Priority": {"2"}}, Data: []byte("poison")}},
+	}
+	payload, _ := json.Marshal(MaxDeliverAdvisory{Stream: source.Stream.Name, Consumer: consumerName, StreamSeq: 9, Deliveries: 5})
+	event := &fakeMessage{data: payload}
+	backend.worker = &fakeConsumer{batch: &fakeBatch{messages: []jsapi.Msg{event}}}
+	result, err := client.ProcessDeadLetters(context.Background(), []topology.Declaration{{Queue: "source", Plan: source}, {Queue: "target", Plan: target}}, 1)
+	if err != nil || result.Moved != 1 || !event.acked || len(backend.published) != 1 {
+		t.Fatalf("result=%#v event=%#v err=%v", result, event, err)
+	}
+	if got := backend.published[0].Subject; got != "rjs.q.target.p.2" {
+		t.Fatalf("DLQ subject=%q", got)
+	}
+	if got := backend.published[0].Header.Get("Rjs-Priority"); got != "2" {
+		t.Fatalf("Rjs-Priority=%q", got)
+	}
+}
+
+func TestDeadLetterPriorityCompatibility(t *testing.T) {
+	value := func(priority int) *int { return &priority }
+	for _, test := range []struct {
+		name           string
+		source, target *int
+		wantError      bool
+	}{
+		{name: "ordinary target accepts priority source", source: value(9)},
+		{name: "equal priority target", source: value(9), target: value(9)},
+		{name: "larger priority target", source: value(9), target: value(12)},
+		{name: "smaller priority target rejected", source: value(9), target: value(8), wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDeadLetterPriority(topology.Plan{Queue: "source", MaxPriority: test.source}, topology.Plan{Queue: "target", MaxPriority: test.target})
+			if (err != nil) != test.wantError {
+				t.Fatalf("error=%v wantError=%v", err, test.wantError)
+			}
+		})
 	}
 }
 

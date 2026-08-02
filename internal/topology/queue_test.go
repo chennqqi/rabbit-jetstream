@@ -173,7 +173,8 @@ func TestQueuePriorityValidation(t *testing.T) {
 		})
 	}
 	input := strings.Replace(validQueueYAML, "  replicas: 3", "  replicas: 3\n  maxPriority: 9", 1)
-	if _, err := ParseQueue(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
-		t.Fatalf("priority plus DLQ error=%v", err)
+	queue, err := ParseQueue(strings.NewReader(input))
+	if err != nil || queue.Spec.MaxPriority == nil || *queue.Spec.MaxPriority != 9 || queue.Spec.DeadLetter == nil {
+		t.Fatalf("priority plus DLQ queue=%#v error=%v", queue, err)
 	}
 }

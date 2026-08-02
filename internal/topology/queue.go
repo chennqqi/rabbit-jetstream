@@ -220,9 +220,6 @@ func (q Queue) Validate() error {
 	if q.Spec.MaxPriority != nil && (*q.Spec.MaxPriority < MinimumPriority || *q.Spec.MaxPriority > MaximumPriority) {
 		problems = append(problems, fmt.Sprintf("spec.maxPriority must be between %d and %d", MinimumPriority, MaximumPriority))
 	}
-	if q.Spec.MaxPriority != nil && q.Spec.DeadLetter != nil {
-		problems = append(problems, "spec.maxPriority and spec.deadLetter cannot be combined in v1alpha1")
-	}
 	if q.Spec.Delivery.AckWait == nil || *q.Spec.Delivery.AckWait <= 0 {
 		problems = append(problems, "spec.delivery.ackWait must be positive")
 	}

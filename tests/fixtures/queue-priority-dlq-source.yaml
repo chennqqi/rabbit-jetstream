@@ -1,0 +1,14 @@
+apiVersion: rabbit-jetstream.io/v1alpha1
+kind: Queue
+metadata:
+  name: retry_priority_orders
+spec:
+  subjects: [retry.priority.orders]
+  maxPriority: 2
+  replicas: 1
+  storage: file
+  delivery:
+    ackWait: 1s
+    maxDeliver: 2
+  deadLetter:
+    queue: failed_priority_orders
