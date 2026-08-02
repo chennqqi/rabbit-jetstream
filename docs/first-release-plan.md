@@ -35,4 +35,4 @@ After the soak, follow the staged [Production Readiness and Canary Runbook](prod
 
 ## Exit Criteria
 
-Tag `v0.1.0` only when the paired commits, local gate output, native-Linux soak evidence, upgrade/rollback evidence, backup/restore evidence, known limitations and operator runbook have been reviewed together. Remote CI, signing, attestations and registry publication are the final delivery phase, not a substitute for these gates.
+Tag `v0.1.0` only when the paired commits, local gate output, native-Linux soak evidence, upgrade/rollback evidence, backup/restore evidence, known limitations and operator runbook have been reviewed together and `make verify-release-approval` passes. Remote CI, signing, attestations and registry publication are the final delivery phase, not a substitute for these gates.

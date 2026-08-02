@@ -1,7 +1,8 @@
-.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak verify-native-bundle test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak verify-native-bundle verify-release-approval test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
 
 BUNDLE ?= dist/v0.1.0-rc.1
 NATIVE_QUAL_OUTPUT ?= native-linux-preflight.json
+RELEASE_APPROVAL ?= release-approval.json
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -45,6 +46,9 @@ verify-soak:
 
 verify-native-bundle:
 	go run ./tools/nativequal -bundle "$(BUNDLE)" -output "$(NATIVE_QUAL_OUTPUT)" -source-revision "$$(git rev-parse HEAD)"
+
+verify-release-approval:
+	go run ./tools/releaseapproval -evidence "$(RELEASE_APPROVAL)" -source-revision "$$(git rev-parse HEAD)"
 
 test-helm:
 	pwsh -File tests/deployment/helm.ps1

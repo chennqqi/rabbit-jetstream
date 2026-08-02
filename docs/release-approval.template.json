@@ -1,0 +1,31 @@
+{
+  "schema": "rabbit-jetstream.io/release-approval/v1alpha1",
+  "release_version": "v0.1.0-rc.1",
+  "server_revision": "<40-character-server-revision>",
+  "sdk_version": "0.1.0-rc.1",
+  "sdk_revision": "<40-character-sdk-revision>",
+  "local_release_evidence": {"file": "evidence/local-rc.json", "sha256": "<sha256>"},
+  "native_preflights": [
+    {"runtime": "linux/amd64", "evidence": {"file": "evidence/native-linux-amd64.json", "sha256": "<sha256>"}},
+    {"runtime": "linux/arm64", "evidence": {"file": "evidence/native-linux-arm64.json", "sha256": "<sha256>"}}
+  ],
+  "soak_evidence": {"file": "evidence/performance-soak.json.evidence.json", "sha256": "<sha256>"},
+  "canary_stages": [
+    {"traffic_percent": 1, "started_at": "<RFC3339>", "ended_at": "<RFC3339>", "jetstream_available": true, "controller_active": true, "expected_nodes": 3, "current_nodes": 3, "missing_messages": 0, "corrupt_messages": 0, "dlq_transfer_failures": 0, "management_5xx_percent": 0, "storage_percent": 0, "backlog_messages": 0, "backlog_limit_messages": 1, "publish_p99_millis": 1, "publish_p99_slo_millis": 1, "baseline_publish_p99_millis": 1, "throughput_per_second": 1, "baseline_throughput_per_second": 1, "duplicate_rate_percent": 0, "duplicate_budget_percent": 0, "evidence": {"file": "evidence/canary-001.json", "sha256": "<sha256>"}},
+    {"traffic_percent": 10, "started_at": "<RFC3339>", "ended_at": "<RFC3339>", "jetstream_available": true, "controller_active": true, "expected_nodes": 3, "current_nodes": 3, "missing_messages": 0, "corrupt_messages": 0, "dlq_transfer_failures": 0, "management_5xx_percent": 0, "storage_percent": 0, "backlog_messages": 0, "backlog_limit_messages": 1, "publish_p99_millis": 1, "publish_p99_slo_millis": 1, "baseline_publish_p99_millis": 1, "throughput_per_second": 1, "baseline_throughput_per_second": 1, "duplicate_rate_percent": 0, "duplicate_budget_percent": 0, "evidence": {"file": "evidence/canary-010.json", "sha256": "<sha256>"}},
+    {"traffic_percent": 25, "started_at": "<RFC3339>", "ended_at": "<RFC3339>", "jetstream_available": true, "controller_active": true, "expected_nodes": 3, "current_nodes": 3, "missing_messages": 0, "corrupt_messages": 0, "dlq_transfer_failures": 0, "management_5xx_percent": 0, "storage_percent": 0, "backlog_messages": 0, "backlog_limit_messages": 1, "publish_p99_millis": 1, "publish_p99_slo_millis": 1, "baseline_publish_p99_millis": 1, "throughput_per_second": 1, "baseline_throughput_per_second": 1, "duplicate_rate_percent": 0, "duplicate_budget_percent": 0, "evidence": {"file": "evidence/canary-025.json", "sha256": "<sha256>"}},
+    {"traffic_percent": 50, "started_at": "<RFC3339>", "ended_at": "<RFC3339>", "jetstream_available": true, "controller_active": true, "expected_nodes": 3, "current_nodes": 3, "missing_messages": 0, "corrupt_messages": 0, "dlq_transfer_failures": 0, "management_5xx_percent": 0, "storage_percent": 0, "backlog_messages": 0, "backlog_limit_messages": 1, "publish_p99_millis": 1, "publish_p99_slo_millis": 1, "baseline_publish_p99_millis": 1, "throughput_per_second": 1, "baseline_throughput_per_second": 1, "duplicate_rate_percent": 0, "duplicate_budget_percent": 0, "evidence": {"file": "evidence/canary-050.json", "sha256": "<sha256>"}},
+    {"traffic_percent": 100, "started_at": "<RFC3339>", "ended_at": "<RFC3339>", "jetstream_available": true, "controller_active": true, "expected_nodes": 3, "current_nodes": 3, "missing_messages": 0, "corrupt_messages": 0, "dlq_transfer_failures": 0, "management_5xx_percent": 0, "storage_percent": 0, "backlog_messages": 0, "backlog_limit_messages": 1, "publish_p99_millis": 1, "publish_p99_slo_millis": 1, "baseline_publish_p99_millis": 1, "throughput_per_second": 1, "baseline_throughput_per_second": 1, "duplicate_rate_percent": 0, "duplicate_budget_percent": 0, "evidence": {"file": "evidence/canary-100.json", "sha256": "<sha256>"}}
+  ],
+  "node_failure": {"traffic_percent": 10, "passed": true, "puback_continued": true, "consume_continued": true, "replicas_converged": true, "recovery_seconds": 1, "recovery_slo_seconds": 1, "evidence": {"file": "evidence/node-failure.json", "sha256": "<sha256>"}},
+  "rollback": {"passed": true, "messages_reconciled": true, "service_restored": true, "duration_seconds": 1, "slo_seconds": 1, "evidence": {"file": "evidence/rollback.json", "sha256": "<sha256>"}},
+  "partial_dependencies": [
+    {"id": "priority-queue", "approved": true, "owner": "<application-owner>", "rationale": "<accepted semantic differences and mitigations>"}
+  ],
+  "known_limitations": ["no-amqp-wire-compatibility", "at-least-once-delivery"],
+  "signoffs": [
+    {"role": "service_owner", "name": "<name>", "approved": true, "approved_at": "<RFC3339-after-final-canary>"},
+    {"role": "application_owner", "name": "<name>", "approved": true, "approved_at": "<RFC3339-after-final-canary>"},
+    {"role": "on_call_operator", "name": "<name>", "approved": true, "approved_at": "<RFC3339-after-final-canary>"}
+  ]
+}

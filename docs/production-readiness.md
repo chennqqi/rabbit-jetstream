@@ -54,3 +54,11 @@ At every stage require: JetStream available; controller active; all expected nod
 Stop promotion immediately on message loss/corruption, unbounded duplicates, lost quorum, replicas that do not converge, PubAck failure, sustained SLO/error/backlog breach, DLQ failure, storage above 85%, metadata mismatch or an unapproved compatibility dependency. Disable new routing to the candidate, preserve diagnostics/audit/performance evidence, drain or reconcile confirmed messages, and roll back management then NATS nodes using the rehearsed reverse order. Never overwrite a live divergent cluster with a backup.
 
 Formal `v0.1.0` approval requires sign-off from the service owner, application owner and on-call operator on the paired revisions, local Release evidence, native-Linux preflight and soak evidence, canary observations, rollback result and known limitations.
+
+Copy [`release-approval.template.json`](release-approval.template.json), replace every placeholder, export one immutable observation file per canary stage plus node-failure and rollback evidence, and calculate each SHA-256. The template must list every `partial` compatibility dependency used by the application; `priority-queue` is mandatory for this release. After the 100% observation window and all three sign-offs, run:
+
+```bash
+make verify-release-approval RELEASE_APPROVAL=/srv/rabbit-jetstream/release-approval.json
+```
+
+The verifier binds local Release, amd64 and arm64 preflight, soak, canary, fault and rollback artifacts to the paired revisions; enforces the documented thresholds and exact promotion sequence; records the AMQP and at-least-once limitations; and rejects early, duplicate or missing sign-offs. It validates evidence completeness and integrity, not the truthfulness of manually exported metrics, so reviewers must still inspect the referenced observability exports.
