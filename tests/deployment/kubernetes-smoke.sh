@@ -14,6 +14,16 @@ local_port="${RJS_KUBERNETES_SMOKE_PORT:-18223}"
 temporary="$(mktemp -d)"
 port_forward_pid=''
 
+helm_upgrade() {
+  docker run --rm --network host \
+    -v "$HOME/.kube:/root/.kube:ro" -v "$repo_root:/src:ro" \
+    "$helm_image" upgrade --install "$release" /src/deploy/helm/rabbit-jetstream \
+    --namespace "$namespace" --create-namespace \
+    --set nats.image.tag=kubernetes-smoke --set nats.image.pullPolicy=Never \
+    --set management.image.tag=kubernetes-smoke --set management.image.pullPolicy=Never \
+    --set nats.storage.storageClass=standard --wait --timeout 8m
+}
+
 cleanup() {
   if [[ -n "$port_forward_pid" ]]; then kill "$port_forward_pid" 2>/dev/null || true; fi
   "$kind_bin" delete cluster --name "$cluster" >/dev/null 2>&1 || true
@@ -34,31 +44,42 @@ docker build -f "$repo_root/packaging/Dockerfile.nats-server" -t rabbit-jetstrea
 docker build -f "$repo_root/packaging/Dockerfile.management" -t rabbit-jetstream/management:kubernetes-smoke "$repo_root"
 "$kind_bin" load docker-image --name "$cluster" rabbit-jetstream/nats-server:kubernetes-smoke rabbit-jetstream/management:kubernetes-smoke
 
-docker run --rm --network host \
-  -v "$HOME/.kube:/root/.kube:ro" -v "$repo_root:/src:ro" \
-  "$helm_image" upgrade --install "$release" /src/deploy/helm/rabbit-jetstream \
-  --namespace "$namespace" --create-namespace \
-  --set nats.image.tag=kubernetes-smoke --set nats.image.pullPolicy=Never \
-  --set management.image.tag=kubernetes-smoke --set management.image.pullPolicy=Never \
-  --set nats.storage.storageClass=standard --wait --timeout 8m
+helm_upgrade
 
 kubectl -n "$namespace" rollout status "statefulset/${release}-rabbit-jetstream-nats" --timeout=5m
 kubectl -n "$namespace" rollout status "deployment/${release}-rabbit-jetstream-management" --timeout=5m
 test "$(kubectl -n "$namespace" get pod -l app.kubernetes.io/component=nats -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u | grep -c .)" -eq 3
 test "$(kubectl -n "$namespace" get pvc -l app.kubernetes.io/instance="$release" -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -c '^Bound$')" -eq 3
 
+auth_secret="${release}-rabbit-jetstream-auth"
+auth_before="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.data}')"
+helm_upgrade
+auth_after="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.data}')"
+test "$auth_before" = "$auth_after"
+
 docker run --rm --network host -v "$HOME/.kube:/root/.kube:ro" \
   "$helm_image" test "$release" --namespace "$namespace" --logs --timeout 3m
 
 kubectl -n "$namespace" port-forward --address 127.0.0.1 "service/${release}-rabbit-jetstream-management" "$local_port:8223" >"$temporary/port-forward.log" 2>&1 &
 port_forward_pid=$!
+ready='false'
 for _ in $(seq 1 30); do
   if curl --fail --silent --show-error "http://127.0.0.1:$local_port/readyz" | grep -q '"status":"ready"'; then
     curl --fail --silent --show-error "http://127.0.0.1:$local_port/admin/" | grep -q '<title>Rabbit JetStream · Operations</title>'
-    exit 0
+    ready='true'
+    break
   fi
   sleep 1
 done
-cat "$temporary/port-forward.log" >&2
-kubectl -n "$namespace" get pods -o wide >&2
-exit 1
+if [[ "$ready" != 'true' ]]; then
+  cat "$temporary/port-forward.log" >&2
+  kubectl -n "$namespace" get pods -o wide >&2
+  exit 1
+fi
+
+kill "$port_forward_pid" 2>/dev/null || true
+wait "$port_forward_pid" 2>/dev/null || true
+port_forward_pid=''
+docker run --rm --network host -v "$HOME/.kube:/root/.kube:ro" \
+  "$helm_image" uninstall "$release" --namespace "$namespace" --wait --timeout 3m
+test "$(kubectl -n "$namespace" get pvc -l app.kubernetes.io/instance="$release" -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -c '^Bound$')" -eq 3

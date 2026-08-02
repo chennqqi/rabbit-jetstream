@@ -51,7 +51,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		t.Error("CI no longer installs the chart in a real Kubernetes cluster")
 	}
 	kubernetesSmoke := read("tests/deployment/kubernetes-smoke.sh")
-	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", " test ", "/readyz", "/admin/"} {
+	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", "auth_before", "auth_after", " test ", "/readyz", "/admin/", " uninstall "} {
 		if !strings.Contains(kubernetesSmoke, requirement) {
 			t.Errorf("Kubernetes smoke gate lost requirement %q", requirement)
 		}
