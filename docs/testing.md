@@ -10,6 +10,8 @@ Replacing RabbitMQ makes correctness and recoverability release requirements, no
 4. **Compatibility tests** verify documented queue, ack, redelivery, TTL, DLQ, routing, ordering, and priority semantics jointly with every SDK.
 
 Run `pwsh tests/integration/native-sdk.ps1` from a checkout whose `outlink/rabbit-jetstream-go` resolves to the independent SDK repository. The script uses Docker Desktop only: the server control plane creates the managed priority topology, then the Linux SDK test publishes and consumes without calling its standalone provisioning helper.
+
+The SDK repository's isolated `test/fault` module uses an embedded persistent NATS server and a real TCP forwarding proxy. Linux `go test -race` verifies recovery from broker restart, bidirectional latency, and forced client disconnect without adding a proxy product to the deployment architecture.
 5. **Performance and soak tests** compare pinned baselines using declared hardware, persistence, replicas, payload sizes, and workloads.
 
 ## Merge and Release Gates

@@ -26,7 +26,7 @@ The authoritative machine-readable matrix is [`api/client-compatibility.json`](.
 | `publisher-confirm` | partial | Require JetStream PubAck; the provided dual-write adapter also enforces RabbitMQ confirm/mandatory return. |
 | `stable-message-id` | supported | Preserve one logical ID in `message_id` and `Nats-Msg-Id`; consumers must be idempotent. |
 | `manual-ack`, `redelivery` | partial | Use explicit Ack and size `AckWait`/`MaxDeliver`; RabbitMQ reject/requeue APIs are not reproduced. |
-| `prefetch-backpressure` | planned | Do not translate prefetch numerically; benchmark pull batch, concurrency and pending limits in the SDK. |
+| `prefetch-backpressure` | partial | The SDK bounds in-flight messages and bytes; size these limits from slow-consumer and backlog-recovery benchmarks rather than translating prefetch numerically. |
 | `priority-queue` | partial | Control-plane provisioning and SDK scheduling are tested; cutover remains blocked until a versioned SDK release and priority-DLQ policy are available. |
 | `queue-ttl`, `length-limit` | partial | Revalidate expiration and overflow behavior; JetStream MaxAge is not per-message TTL. |
 | `dead-letter` | partial | Only one declared Queue target is supported; verify advisory mover lag and provenance headers. |
