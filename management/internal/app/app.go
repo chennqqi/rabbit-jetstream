@@ -22,10 +22,24 @@ import (
 type App struct {
 	cfg               config.Config
 	logger            *slog.Logger
-	client            *jetstream.Client
-	server            *http.Server
-	controller        *controller.Controller
+	client            appClient
+	server            httpServer
+	controller        controllerRunner
 	shutdownTelemetry func(context.Context) error
+}
+
+type appClient interface {
+	Close()
+	ServerURL() string
+}
+
+type httpServer interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+}
+
+type controllerRunner interface {
+	Run(context.Context)
 }
 
 func New(cfg config.Config, logger *slog.Logger, version string) (*App, error) {
