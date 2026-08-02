@@ -35,7 +35,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 ## M2：原生 SDK 与优先级队列
 
-- 与 `rabbit-jetstream-go` 固化资源命名和消息头协议；
+- [x] 服务端发布机器可读的资源命名、消息头、优先级调度和投递语义 `v1alpha1` 契约；
+- `rabbit-jetstream-go` 实现并通过兼容测试后共同固化该契约；
 - 多 subject/pull consumer 优先级调度；
 - 公平性、饥饿保护、动态优先级数和降级策略；
 - publisher confirm、消费并发和背压；

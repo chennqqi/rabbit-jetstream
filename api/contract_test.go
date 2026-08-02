@@ -1,17 +1,113 @@
 package contract
 
 import (
+	"encoding/json"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"gopkg.in/yaml.v3"
 )
 
 func TestOpenAPIIsEmbedded(t *testing.T) {
 	if len(OpenAPI) < 100 || !strings.HasPrefix(string(OpenAPI), "openapi:") {
 		t.Fatal("OpenAPI contract was not embedded")
+	}
+}
+
+func TestNativeSDKContractIsStrictAndMatchesTopology(t *testing.T) {
+	type header struct {
+		Name      string `json:"name"`
+		Required  bool   `json:"required"`
+		Semantics string `json:"semantics"`
+	}
+	var document struct {
+		Schema        string `json:"schema"`
+		Availability  string `json:"availability"`
+		ResourceNames struct {
+			QueuePattern     string `json:"queue_name_pattern"`
+			Stream           string `json:"stream_template"`
+			Consumer         string `json:"consumer_template"`
+			Ingress          string `json:"ingress_subject_template"`
+			PrioritySubject  string `json:"priority_subject_template"`
+			PriorityConsumer string `json:"priority_consumer_template"`
+		} `json:"resource_names"`
+		MessageHeaders []header `json:"message_headers"`
+		Priority       struct {
+			Minimum                    int    `json:"minimum"`
+			Maximum                    int    `json:"maximum"`
+			HigherValueFirst           bool   `json:"higher_value_first"`
+			InvalidPublish             string `json:"invalid_publish"`
+			AlreadyDeliveredPreemption bool   `json:"already_delivered_preemption"`
+			ConsumerMode               string `json:"consumer_mode"`
+			OneDurablePerLevel         bool   `json:"one_durable_consumer_per_level"`
+			Scheduler                  struct {
+				Algorithm         string `json:"algorithm"`
+				HighPriorityBurst int    `json:"default_high_priority_burst"`
+				LowPriorityProbe  int    `json:"default_low_priority_probe"`
+				SelectSufficient  bool   `json:"select_is_sufficient"`
+				Guarantee         string `json:"guarantee"`
+			} `json:"scheduler"`
+		} `json:"priority"`
+		Delivery struct {
+			PublisherConfirm  string `json:"publisher_confirm"`
+			DeliveryGuarantee string `json:"delivery_guarantee"`
+			AckPolicy         string `json:"ack_policy"`
+			Backpressure      string `json:"backpressure"`
+		} `json:"delivery"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(NativeSDK)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&document); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.Decode(&struct{}{}) == nil {
+		t.Fatal("native SDK contract accepted trailing JSON")
+	}
+	if document.Schema != "rabbit-jetstream.io/native-sdk-contract/v1alpha1" || document.Availability != "server-contract-only" {
+		t.Fatalf("unsafe native SDK contract identity: %q %q", document.Schema, document.Availability)
+	}
+	prioritySubject, _ := topology.QueuePrioritySubject("orders", 7)
+	priorityConsumer, _ := topology.PriorityConsumerName("orders", 7)
+	replacements := strings.NewReplacer("{queue}", "orders", "{priority}", "7")
+	checks := map[string]string{
+		document.ResourceNames.Stream:           topology.StreamName("orders"),
+		document.ResourceNames.Consumer:         topology.ConsumerName("orders"),
+		document.ResourceNames.Ingress:          topology.QueueIngressSubject("orders"),
+		document.ResourceNames.PrioritySubject:  prioritySubject,
+		document.ResourceNames.PriorityConsumer: priorityConsumer,
+	}
+	for template, want := range checks {
+		if got := replacements.Replace(template); got != want {
+			t.Errorf("resource template %q produced %q, want %q", template, got, want)
+		}
+	}
+	if document.ResourceNames.QueuePattern != "^[A-Za-z0-9_-]+$" || document.Priority.Minimum != topology.MinimumPriority || document.Priority.Maximum != topology.MaximumPriority || !document.Priority.HigherValueFirst || document.Priority.InvalidPublish != "reject" || document.Priority.AlreadyDeliveredPreemption || document.Priority.ConsumerMode != "pull" || !document.Priority.OneDurablePerLevel {
+		t.Fatalf("unsafe priority contract: %+v", document.Priority)
+	}
+	if document.Priority.Scheduler.Algorithm != "bounded-strict-priority" || document.Priority.Scheduler.HighPriorityBurst < 1 || document.Priority.Scheduler.LowPriorityProbe < 1 || document.Priority.Scheduler.SelectSufficient || document.Priority.Scheduler.Guarantee == "" {
+		t.Fatalf("incomplete starvation protection: %+v", document.Priority.Scheduler)
+	}
+	requiredHeaders := map[string]bool{"Nats-Msg-Id": false, "Rjs-Contract-Version": false, "Rjs-Queue": false, "Rjs-Policy-Revision": false}
+	seen := map[string]bool{}
+	for _, value := range document.MessageHeaders {
+		if value.Name == "" || value.Semantics == "" || seen[value.Name] {
+			t.Fatalf("invalid message header: %+v", value)
+		}
+		seen[value.Name] = true
+		if _, required := requiredHeaders[value.Name]; required {
+			requiredHeaders[value.Name] = value.Required
+		}
+	}
+	for name, required := range requiredHeaders {
+		if !required {
+			t.Errorf("required message header %s is missing or optional", name)
+		}
+	}
+	if document.Delivery.PublisherConfirm != "JetStream PubAck" || document.Delivery.DeliveryGuarantee != "at-least-once" || document.Delivery.AckPolicy != "explicit" || document.Delivery.Backpressure == "" {
+		t.Fatalf("incomplete delivery contract: %+v", document.Delivery)
 	}
 }
 

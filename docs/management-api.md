@@ -17,6 +17,7 @@ Reported NATS and monitoring URLs never include URL user information. `rjsctl di
 | `GET /healthz` | Process liveness; does not imply JetStream availability |
 | `GET /readyz` | JetStream account readiness |
 | `GET /api/v1/openapi.yaml` | Embedded OpenAPI 3.1 contract for this v1 server build |
+| `GET /api/v1/native-sdk-contract.json` | Cacheable native SDK resource, message, priority and delivery contract |
 | `GET /metrics` | Prometheus service, JetStream, Queue, node, controller, DLQ, and HTTP metrics |
 | `GET /api/v1/info` | Distribution and account usage summary |
 | `GET /api/v1/cluster` | Connected server and JetStream account/API usage |

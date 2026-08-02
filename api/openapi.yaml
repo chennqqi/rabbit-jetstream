@@ -16,6 +16,8 @@ paths:
         '503': {$ref: '#/components/responses/Error'}
   /api/v1/openapi.yaml:
     get: {operationId: openapiV1, responses: {'200': {description: OpenAPI contract, content: {application/yaml: {schema: {type: string}}}}}}
+  /api/v1/native-sdk-contract.json:
+    get: {operationId: nativeSDKContractV1Alpha1, responses: {'200': {description: Native SDK resource and message contract, content: {application/json: {schema: {type: object}}}}}}
   /api/v1/info:
     get: {operationId: info, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
   /api/v1/cluster:

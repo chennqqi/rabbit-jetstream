@@ -105,6 +105,11 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		w.Header().Set("Cache-Control", "public, max-age=300")
 		_, _ = w.Write(contract.OpenAPI)
 	})
+	mux.HandleFunc("GET /api/v1/native-sdk-contract.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		_, _ = w.Write(contract.NativeSDK)
+	})
 	mux.HandleFunc("GET /api/v1/info", h.info)
 	mux.HandleFunc("GET /api/v1/cluster", h.cluster)
 	mux.HandleFunc("GET /api/v1/nodes", h.nodes)
@@ -140,7 +145,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
-		if r.URL.Path != "/api/v1/openapi.yaml" && !strings.HasPrefix(r.URL.Path, "/admin/") {
+		if r.URL.Path != "/api/v1/openapi.yaml" && r.URL.Path != "/api/v1/native-sdk-contract.json" && !strings.HasPrefix(r.URL.Path, "/admin/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)

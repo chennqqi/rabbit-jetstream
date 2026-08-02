@@ -148,6 +148,14 @@ func TestOpenAPIContractIsServed(t *testing.T) {
 	}
 }
 
+func TestNativeSDKContractIsServed(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	newTestHandler(&fakeBackend{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/native-sdk-contract.json", nil))
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "application/json" || !strings.Contains(recorder.Body.String(), `"schema": "rabbit-jetstream.io/native-sdk-contract/v1alpha1"`) {
+		t.Fatalf("status=%d headers=%v body=%s", recorder.Code, recorder.Header(), recorder.Body.String())
+	}
+}
+
 func TestManagementResponsesSetBrowserSecurityHeaders(t *testing.T) {
 	handler := newTestHandler(&fakeBackend{})
 	for _, test := range []struct {
@@ -157,6 +165,7 @@ func TestManagementResponsesSetBrowserSecurityHeaders(t *testing.T) {
 		{path: "/api/v1/info", cache: "no-store"},
 		{path: "/healthz", cache: "no-store"},
 		{path: "/api/v1/openapi.yaml", cache: "public, max-age=300"},
+		{path: "/api/v1/native-sdk-contract.json", cache: "public, max-age=300"},
 		{path: "/admin/", cache: "no-cache"},
 	} {
 		t.Run(test.path, func(t *testing.T) {

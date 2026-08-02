@@ -11,6 +11,11 @@ import (
 
 const PlanAPIVersion = "rabbit-jetstream.io/plan/v1alpha1"
 
+const (
+	MinimumPriority = 0
+	MaximumPriority = 255
+)
+
 type Plan struct {
 	APIVersion   string          `json:"apiVersion"`
 	Queue        string          `json:"queue"`
@@ -221,9 +226,31 @@ func QueuePublishSubject(queueName, exchange, exchangeType, routingKey string) (
 // It is also used by the server-side DLQ mover.
 func QueueIngressSubject(queueName string) string { return "rjs.q." + queueName + ".ingress" }
 
+// QueuePrioritySubject is the native SDK publish target for one priority
+// level. Stream and Consumer provisioning is introduced separately in M2.
+func QueuePrioritySubject(queueName string, priority int) (string, error) {
+	if !queueNamePattern.MatchString(queueName) {
+		return "", fmt.Errorf("invalid queue name")
+	}
+	if priority < MinimumPriority || priority > MaximumPriority {
+		return "", fmt.Errorf("priority must be between %d and %d", MinimumPriority, MaximumPriority)
+	}
+	return fmt.Sprintf("rjs.q.%s.p.%d", queueName, priority), nil
+}
+
 func StreamName(queueName string) string { return "RJSQ_" + queueName }
 
 func ConsumerName(queueName string) string { return "RJSQC_" + queueName }
+
+func PriorityConsumerName(queueName string, priority int) (string, error) {
+	if !queueNamePattern.MatchString(queueName) {
+		return "", fmt.Errorf("invalid queue name")
+	}
+	if priority < MinimumPriority || priority > MaximumPriority {
+		return "", fmt.Errorf("priority must be between %d and %d", MinimumPriority, MaximumPriority)
+	}
+	return fmt.Sprintf("RJSQC_%s_P%d", queueName, priority), nil
+}
 
 func DeadLetterWorkerName(queueName string) string { return "RJSDLQ_" + queueName }
 

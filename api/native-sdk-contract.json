@@ -1,0 +1,61 @@
+{
+  "schema": "rabbit-jetstream.io/native-sdk-contract/v1alpha1",
+  "availability": "server-contract-only",
+  "resource_names": {
+    "queue_name_pattern": "^[A-Za-z0-9_-]+$",
+    "stream_template": "RJSQ_{queue}",
+    "consumer_template": "RJSQC_{queue}",
+    "ingress_subject_template": "rjs.q.{queue}.ingress",
+    "priority_subject_template": "rjs.q.{queue}.p.{priority}",
+    "priority_consumer_template": "RJSQC_{queue}_P{priority}"
+  },
+  "message_headers": [
+    {
+      "name": "Nats-Msg-Id",
+      "required": true,
+      "semantics": "Stable application message ID used for JetStream publish deduplication and redelivery correlation."
+    },
+    {
+      "name": "Rjs-Contract-Version",
+      "required": true,
+      "semantics": "Native SDK contract version; this document requires v1alpha1."
+    },
+    {
+      "name": "Rjs-Queue",
+      "required": true,
+      "semantics": "Logical Queue name after exchange or direct-target resolution."
+    },
+    {
+      "name": "Rjs-Policy-Revision",
+      "required": true,
+      "semantics": "Queue plan revision used to resolve the publish target."
+    },
+    {
+      "name": "Rjs-Priority",
+      "required": false,
+      "semantics": "Canonical base-10 priority with no sign or leading zeroes; omitted for non-priority Queues."
+    }
+  ],
+  "priority": {
+    "minimum": 0,
+    "maximum": 255,
+    "higher_value_first": true,
+    "invalid_publish": "reject",
+    "already_delivered_preemption": false,
+    "consumer_mode": "pull",
+    "one_durable_consumer_per_level": true,
+    "scheduler": {
+      "algorithm": "bounded-strict-priority",
+      "default_high_priority_burst": 64,
+      "default_low_priority_probe": 1,
+      "select_is_sufficient": false,
+      "guarantee": "After each high-priority burst, probe lower non-empty levels from highest to lowest before starting another burst."
+    }
+  },
+  "delivery": {
+    "publisher_confirm": "JetStream PubAck",
+    "delivery_guarantee": "at-least-once",
+    "ack_policy": "explicit",
+    "backpressure": "Bound outstanding fetches and bytes; do not issue an unbounded pull."
+  }
+}

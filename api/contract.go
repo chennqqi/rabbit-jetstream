@@ -6,3 +6,9 @@ import _ "embed"
 //
 //go:embed openapi.yaml
 var OpenAPI []byte
+
+// NativeSDK is the versioned resource, header, priority and delivery contract
+// shared with native clients. Availability is explicit in the document.
+//
+//go:embed native-sdk-contract.json
+var NativeSDK []byte

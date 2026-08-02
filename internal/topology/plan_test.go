@@ -155,3 +155,29 @@ func TestQueuePublishSubjectRejectsInvalidProtocolValues(t *testing.T) {
 		}
 	}
 }
+
+func TestPriorityResourceNames(t *testing.T) {
+	subject, err := QueuePrioritySubject("orders", 255)
+	if err != nil || subject != "rjs.q.orders.p.255" {
+		t.Fatalf("QueuePrioritySubject() = %q, %v", subject, err)
+	}
+	consumer, err := PriorityConsumerName("orders", 0)
+	if err != nil || consumer != "RJSQC_orders_P0" {
+		t.Fatalf("PriorityConsumerName() = %q, %v", consumer, err)
+	}
+	for _, test := range []struct {
+		queue    string
+		priority int
+	}{
+		{"bad.name", 0},
+		{"orders", -1},
+		{"orders", 256},
+	} {
+		if _, err := QueuePrioritySubject(test.queue, test.priority); err == nil {
+			t.Fatalf("QueuePrioritySubject(%q, %d) succeeded", test.queue, test.priority)
+		}
+		if _, err := PriorityConsumerName(test.queue, test.priority); err == nil {
+			t.Fatalf("PriorityConsumerName(%q, %d) succeeded", test.queue, test.priority)
+		}
+	}
+}
