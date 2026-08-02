@@ -10,19 +10,24 @@ helm_image='alpine/helm:3.18.4@sha256:e7ecbf4a200dea73d64bfb8cb0936829164945f2b4
 busybox_image='busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
 node_image='kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f'
 namespace='rjs-kubernetes-smoke'
-release='rjs-smoke'
+release='production'
 local_port="${RJS_KUBERNETES_SMOKE_PORT:-18223}"
 temporary="$(mktemp -d)"
 port_forward_pid=''
+nats_digest=''
+management_digest=''
+operator_digest=''
 
 helm_upgrade() {
   docker run --rm --network host \
     -v "$HOME/.kube:/root/.kube:ro" -v "$repo_root:/src:ro" \
     "$helm_image" upgrade --install "$release" /src/deploy/helm/rabbit-jetstream \
     --namespace "$namespace" --create-namespace \
-    --set nats.image.tag=kubernetes-smoke --set nats.image.pullPolicy=Never \
-    --set management.image.tag=kubernetes-smoke --set management.image.pullPolicy=Never \
-    --set nats.storage.storageClass=standard --wait --timeout 8m
+    --values /src/tests/deployment/production-smoke-values.yaml \
+    --set-string "nats.image.digest=$nats_digest" \
+    --set-string "management.image.digest=$management_digest" \
+    --set-string "operator.image.digest=$operator_digest" \
+    --wait --timeout 8m
 }
 
 cleanup() {
@@ -43,7 +48,30 @@ fi
 "$kind_bin" create cluster --name "$cluster" --image "$node_image" --config "$repo_root/tests/deployment/kind.yaml" --wait 5m
 docker build -f "$repo_root/packaging/Dockerfile.nats-server" -t rabbit-jetstream/nats-server:kubernetes-smoke "$repo_root"
 docker build -f "$repo_root/packaging/Dockerfile.management" -t rabbit-jetstream/management:kubernetes-smoke "$repo_root"
-"$kind_bin" load docker-image --name "$cluster" rabbit-jetstream/nats-server:kubernetes-smoke rabbit-jetstream/management:kubernetes-smoke
+docker build -f "$repo_root/packaging/Dockerfile.operator" -t rabbit-jetstream/operator:kubernetes-smoke "$repo_root"
+nats_digest="$(docker image inspect rabbit-jetstream/nats-server:kubernetes-smoke --format '{{index .RepoDigests 0}}')"
+nats_digest="${nats_digest##*@}"
+management_digest="$(docker image inspect rabbit-jetstream/management:kubernetes-smoke --format '{{index .RepoDigests 0}}')"
+management_digest="${management_digest##*@}"
+operator_digest="$(docker image inspect rabbit-jetstream/operator:kubernetes-smoke --format '{{index .RepoDigests 0}}')"
+operator_digest="${operator_digest##*@}"
+for digest in "$nats_digest" "$management_digest" "$operator_digest"; do
+  printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+done
+"$kind_bin" load docker-image --name "$cluster" rabbit-jetstream/nats-server:kubernetes-smoke rabbit-jetstream/management:kubernetes-smoke rabbit-jetstream/operator:kubernetes-smoke
+for node in $("$kind_bin" get nodes --name "$cluster"); do
+  docker exec "$node" ctr -n k8s.io images tag docker.io/rabbit-jetstream/nats-server:kubernetes-smoke "docker.io/rabbit-jetstream/nats-server@$nats_digest"
+  docker exec "$node" ctr -n k8s.io images tag docker.io/rabbit-jetstream/management:kubernetes-smoke "docker.io/rabbit-jetstream/management@$management_digest"
+  docker exec "$node" ctr -n k8s.io images tag docker.io/rabbit-jetstream/operator:kubernetes-smoke "docker.io/rabbit-jetstream/operator@$operator_digest"
+done
+
+go run "$repo_root/tests/helpers/tls-fixture" --output "$temporary/tls"
+test "$(sha256sum "$temporary/tls/server/tls.key" | cut -d' ' -f1)" != "$(sha256sum "$temporary/tls/client/tls.key" | cut -d' ' -f1)"
+kubectl create namespace "$namespace"
+kubectl -n "$namespace" create secret generic rjs-nats-server-tls \
+  --from-file=ca.crt="$temporary/tls/server/ca.crt" --from-file=tls.crt="$temporary/tls/server/tls.crt" --from-file=tls.key="$temporary/tls/server/tls.key"
+kubectl -n "$namespace" create secret generic rjs-nats-client-tls \
+  --from-file=ca.crt="$temporary/tls/client/ca.crt" --from-file=tls.crt="$temporary/tls/client/tls.crt" --from-file=tls.key="$temporary/tls/client/tls.key"
 
 helm_upgrade
 
@@ -68,7 +96,7 @@ denied_result="$(kubectl -n "$denied_namespace" run network-denied --image="$bus
 printf '%s\n' "$denied_result" | grep -q '^network-policy-denied$'
 
 nats_ip="$(kubectl -n "$namespace" get service "${release}-rabbit-jetstream-nats" -o jsonpath='{.spec.clusterIP}')"
-kubectl -n "$namespace" run nats-network-allowed --image="$busybox_image" --restart=Never --attach --rm --command -- \
+kubectl -n "$namespace" run nats-network-allowed --labels='rabbit-jetstream.io/nats-client=true' --image="$busybox_image" --restart=Never --attach --rm --command -- \
   nc -z -w 10 "$nats_ip" 4222
 nats_denied_result="$(kubectl -n "$denied_namespace" run nats-network-denied --image="$busybox_image" --restart=Never --attach --rm --command -- \
   sh -c "if nc -z -w 5 ${nats_ip} 4222; then echo 'NATS NetworkPolicy allowed an unauthorized cross-namespace Pod' >&2; exit 42; fi; echo nats-network-policy-denied")"

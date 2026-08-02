@@ -1,0 +1,31 @@
+production:
+  enabled: true
+
+nats:
+  image:
+    pullPolicy: Never
+  storage:
+    storageClass: standard
+  tls:
+    enabled: true
+    serverSecret: rjs-nats-server-tls
+    clientSecret: rjs-nats-client-tls
+    serverName: production-rabbit-jetstream-nats
+
+management:
+  image:
+    pullPolicy: Never
+
+operator:
+  image:
+    pullPolicy: Never
+
+networkPolicy:
+  natsClients:
+    allowSameNamespace: false
+    additionalPeers:
+      - podSelector:
+          matchLabels:
+            rabbit-jetstream.io/nats-client: "true"
+  egress:
+    enabled: true

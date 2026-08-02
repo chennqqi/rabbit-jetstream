@@ -29,16 +29,28 @@ func main() {
 	now := time.Now().UTC()
 	ca := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "rabbit-jetstream test CA"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
 	caDER := certificate(ca, ca, &caKey.PublicKey, caKey)
-	leafKey := key()
-	leaf := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "production-rabbit-jetstream-nats"}, DNSNames: []string{"production-rabbit-jetstream-nats", "production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless", "production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless", "production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}}
-	leafDER := certificate(leaf, ca, &leafKey.PublicKey, caKey)
-	write(filepath.Join(*output, "ca.crt"), "CERTIFICATE", caDER)
-	write(filepath.Join(*output, "tls.crt"), "CERTIFICATE", leafDER)
+	serverKey := key()
+	server := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "production-rabbit-jetstream-nats"}, DNSNames: []string{"production-rabbit-jetstream-nats", "production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless", "production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless", "production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}}
+	serverDER := certificate(server, ca, &serverKey.PublicKey, caKey)
+	clientKey := key()
+	client := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "production-rabbit-jetstream-management"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	clientDER := certificate(client, ca, &clientKey.PublicKey, caKey)
+	writeMaterial(*output, caDER, serverDER, serverKey)
+	writeMaterial(filepath.Join(*output, "server"), caDER, serverDER, serverKey)
+	writeMaterial(filepath.Join(*output, "client"), caDER, clientDER, clientKey)
+}
+
+func writeMaterial(directory string, caDER, leafDER []byte, leafKey *ecdsa.PrivateKey) {
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		log.Fatal(err)
+	}
+	write(filepath.Join(directory, "ca.crt"), "CERTIFICATE", caDER)
+	write(filepath.Join(directory, "tls.crt"), "CERTIFICATE", leafDER)
 	encodedKey, err := x509.MarshalECPrivateKey(leafKey)
 	if err != nil {
 		log.Fatal(err)
 	}
-	write(filepath.Join(*output, "tls.key"), "EC PRIVATE KEY", encodedKey)
+	write(filepath.Join(directory, "tls.key"), "EC PRIVATE KEY", encodedKey)
 }
 
 func key() *ecdsa.PrivateKey {

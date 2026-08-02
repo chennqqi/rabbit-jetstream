@@ -51,7 +51,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		t.Error("CI no longer installs the chart in a real Kubernetes cluster")
 	}
 	kubernetesSmoke := read("tests/deployment/kubernetes-smoke.sh")
-	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", "busybox:1.37.0@sha256:", "auth_before", "auth_after", "network-allowed", "network-denied", "management NetworkPolicy allowed", "nats-network-allowed", "nats-network-denied", "NATS NetworkPolicy allowed", " test ", "/readyz", "/admin/", " uninstall "} {
+	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "ctr -n k8s.io images tag", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", "busybox:1.37.0@sha256:", "auth_before", "auth_after", "network-allowed", "network-denied", "management NetworkPolicy allowed", "nats-network-allowed", "nats-network-denied", "NATS NetworkPolicy allowed", " test ", "/readyz", "/admin/", " uninstall "} {
 		if !strings.Contains(kubernetesSmoke, requirement) {
 			t.Errorf("Kubernetes smoke gate lost requirement %q", requirement)
 		}
@@ -59,6 +59,16 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	kindConfig := read("tests/deployment/kind.yaml")
 	if strings.Count(kindConfig, "role: worker") != 3 {
 		t.Error("Kubernetes smoke gate must create exactly three worker nodes")
+	}
+	productionSmokeValues := read("tests/deployment/production-smoke-values.yaml")
+	for _, requirement := range []string{"production:\n  enabled: true", "allowSameNamespace: false", "egress:\n    enabled: true", "rjs-nats-server-tls", "rjs-nats-client-tls", "rabbit-jetstream.io/nats-client"} {
+		if !strings.Contains(productionSmokeValues, requirement) {
+			t.Errorf("Kubernetes production smoke values lost requirement %q", requirement)
+		}
+	}
+	tlsFixture := read("tests/helpers/tls-fixture/main.go")
+	if !strings.Contains(tlsFixture, `filepath.Join(*output, "server")`) || !strings.Contains(tlsFixture, `filepath.Join(*output, "client")`) || !strings.Contains(kubernetesSmoke, "server/tls.key") || !strings.Contains(kubernetesSmoke, "client/tls.key") {
+		t.Error("Kubernetes production smoke gate no longer proves distinct server and client TLS keys")
 	}
 	if !strings.Contains(workflow, "make verify-upstream-online") || !strings.Contains(read("Makefile"), "go run ./tools/upstreamcheck -online") {
 		t.Error("CI no longer verifies the official NATS subtree provenance")
