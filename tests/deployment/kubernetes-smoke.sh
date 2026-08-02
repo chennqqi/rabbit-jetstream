@@ -30,6 +30,34 @@ helm_upgrade() {
     --wait --timeout 8m
 }
 
+evict_pod() {
+  local pod="$1"
+  printf '{"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"%s","namespace":"%s"}}\n' "$pod" "$namespace" | \
+    kubectl create --raw "/api/v1/namespaces/$namespace/pods/$pod/eviction" -f -
+}
+
+wait_for_zero_disruptions() {
+  local pdb="$1"
+  for _ in $(seq 1 60); do
+    if [[ "$(kubectl -n "$namespace" get pdb "$pdb" -o jsonpath='{.status.disruptionsAllowed}')" == '0' ]]; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+assert_second_eviction_denied() {
+  local pdb="$1" first="$2" second="$3" workload="$4"
+  evict_pod "$first"
+  wait_for_zero_disruptions "$pdb"
+  if evict_pod "$second" >"$temporary/${workload}-eviction.out" 2>"$temporary/${workload}-eviction.err"; then
+    echo "$workload PDB allowed two simultaneous voluntary disruptions" >&2
+    exit 1
+  fi
+  grep -qi 'disruption budget' "$temporary/${workload}-eviction.err"
+}
+
 cleanup() {
   if [[ -n "$port_forward_pid" ]]; then kill "$port_forward_pid" 2>/dev/null || true; fi
   "$kind_bin" delete cluster --name "$cluster" >/dev/null 2>&1 || true
@@ -101,6 +129,14 @@ kubectl -n "$namespace" run nats-network-allowed --labels='rabbit-jetstream.io/n
 nats_denied_result="$(kubectl -n "$denied_namespace" run nats-network-denied --image="$busybox_image" --restart=Never --attach --rm --command -- \
   sh -c "if nc -z -w 5 ${nats_ip} 4222; then echo 'NATS NetworkPolicy allowed an unauthorized cross-namespace Pod' >&2; exit 42; fi; echo nats-network-policy-denied")"
 printf '%s\n' "$nats_denied_result" | grep -q '^nats-network-policy-denied$'
+
+assert_second_eviction_denied "${release}-rabbit-jetstream-nats" "${release}-rabbit-jetstream-nats-0" "${release}-rabbit-jetstream-nats-1" nats
+kubectl -n "$namespace" rollout status "statefulset/${release}-rabbit-jetstream-nats" --timeout=5m
+management_first="$(kubectl -n "$namespace" get pod -l app.kubernetes.io/component=management -o name | sort | sed -n '1p' | cut -d/ -f2)"
+management_second="$(kubectl -n "$namespace" get pod -l app.kubernetes.io/component=management -o name | sort | sed -n '2p' | cut -d/ -f2)"
+test -n "$management_first" && test -n "$management_second"
+assert_second_eviction_denied "${release}-rabbit-jetstream-management" "$management_first" "$management_second" management
+kubectl -n "$namespace" rollout status "deployment/${release}-rabbit-jetstream-management" --timeout=5m
 
 docker run --rm --network host -v "$HOME/.kube:/root/.kube:ro" \
   "$helm_image" test "$release" --namespace "$namespace" --logs --timeout 3m
