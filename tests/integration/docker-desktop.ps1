@@ -92,6 +92,8 @@ try {
 				$OpenAPIResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/openapi.yaml' -TimeoutSec 5
 				$OpenAPI = if ($OpenAPIResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($OpenAPIResponse.Content) } else { [string]$OpenAPIResponse.Content }
 				if (-not $OpenAPI.StartsWith('openapi: 3.1.0') -or -not $OpenAPI.Contains('/api/v1/queues/{queue}:')) { throw 'embedded OpenAPI contract is unavailable or incomplete' }
+				$InfoResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/info' -TimeoutSec 5
+				if ([string]($InfoResponse.Headers['Cache-Control'] | Select-Object -First 1) -ne 'no-store' -or [string]($InfoResponse.Headers['X-Content-Type-Options'] | Select-Object -First 1) -ne 'nosniff') { throw 'management API security headers are incomplete' }
                 Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
                 Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
                 $Cluster = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/cluster' -TimeoutSec 5

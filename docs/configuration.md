@@ -38,4 +38,4 @@
 | `RJS_CONNECT_TIMEOUT` | `5s` | 初次连接超时 |
 | `RJS_SHUTDOWN_TIMEOUT` | `10s` | HTTP 优雅退出超时 |
 
-命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。HTTP 服务固定限制为 15 秒完整请求读取、30 秒响应写入、60 秒空闲连接和 64 KiB 请求头；上传 Queue 声明仍额外限制为 1 MiB。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。TLS 客户端最低使用 TLS 1.2；证书或私钥缺失、CA 无效时服务拒绝启动。上述 `RJS_NATS_*` 认证与 TLS 变量也适用于 `rjsctl` 的 JetStream 迁移命令、影子数据工具和性能测试工具。
+命令行 `--http`、`--nats`、`--name` 会覆盖相应环境变量。HTTP 服务固定限制为 15 秒完整请求读取、30 秒响应写入、60 秒空闲连接和 64 KiB 请求头；上传 Queue 声明仍额外限制为 1 MiB。管理 API、健康检查及错误响应统一使用 `Cache-Control: no-store` 和浏览器安全头，OpenAPI 契约保留 5 分钟公共缓存，Admin UI 静态资源使用自身的严格 CSP 与缓存策略。Monitoring 地址可以包含 HTTP Basic Auth，但管理 API 会移除 URL 中的凭据后再返回；生产环境应使用独立监控网络或 HTTPS。NATS 客户端连接应使用 credentials/NKeys 与 TLS；Compose 配置只用于本地开发和架构演示。TLS 客户端最低使用 TLS 1.2；证书或私钥缺失、CA 无效时服务拒绝启动。上述 `RJS_NATS_*` 认证与 TLS 变量也适用于 `rjsctl` 的 JetStream 迁移命令、影子数据工具和性能测试工具。

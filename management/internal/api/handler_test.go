@@ -148,6 +148,41 @@ func TestOpenAPIContractIsServed(t *testing.T) {
 	}
 }
 
+func TestManagementResponsesSetBrowserSecurityHeaders(t *testing.T) {
+	handler := newTestHandler(&fakeBackend{})
+	for _, test := range []struct {
+		path  string
+		cache string
+	}{
+		{path: "/api/v1/info", cache: "no-store"},
+		{path: "/healthz", cache: "no-store"},
+		{path: "/api/v1/openapi.yaml", cache: "public, max-age=300"},
+		{path: "/admin/", cache: "no-cache"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+			for name, expected := range map[string]string{
+				"Cross-Origin-Resource-Policy": "same-origin",
+				"Permissions-Policy":           "camera=(), microphone=(), geolocation=()",
+				"Referrer-Policy":              "no-referrer",
+				"X-Content-Type-Options":       "nosniff",
+				"X-Frame-Options":              "DENY",
+			} {
+				if actual := recorder.Header().Get(name); actual != expected {
+					t.Errorf("%s=%q, want %q", name, actual, expected)
+				}
+			}
+			if actual := recorder.Header().Get("Cache-Control"); actual != test.cache {
+				t.Errorf("Cache-Control=%q, want %q", actual, test.cache)
+			}
+			if csp := recorder.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+				t.Errorf("Content-Security-Policy=%q", csp)
+			}
+		})
+	}
+}
+
 func TestReadyAndInfoEndpoints(t *testing.T) {
 	backend := &fakeBackend{account: jetstream.Account{MemoryUsed: 10, StorageUsed: 20, Streams: 2, Consumers: 3}}
 	h := newTestHandler(backend)

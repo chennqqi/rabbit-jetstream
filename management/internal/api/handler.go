@@ -129,7 +129,22 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		}
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
-	return otelhttp.NewHandler(h.logging(h.instrument(mux)), "rabbit-jetstream.management.http")
+	return otelhttp.NewHandler(securityHeaders(h.logging(h.instrument(mux))), "rabbit-jetstream.management.http")
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		if r.URL.Path != "/api/v1/openapi.yaml" && !strings.HasPrefix(r.URL.Path, "/admin/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
