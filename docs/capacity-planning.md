@@ -23,4 +23,6 @@ Measure P50/P95/P99 publish acknowledgement latency, consume throughput, redeliv
 
 Use `tests/performance/jetstream.ps1 -ConsumerStartDelay 00:00:30 -ConsumerDelay 00:00:00.001` to create a controlled slow-consumer backlog. The report records `peak_backlog_messages`, `backlog_at_publish_end`, `drain_seconds`, and `drain_messages_per_second`; retain these workload parameters in baseline evidence so recovery measurements are comparable.
 
+Run `tests/performance/native-sdk-compare.ps1` with the independent SDK checkout available through `outlink/rabbit-jetstream-go`. It executes direct `nats.go` and priority SDK workloads sequentially against the same three-node cluster and gates SDK/direct publish throughput, consume throughput, and PubAck P99 ratios. The direct path uses batch 1 so both clients acknowledge one message at a time.
+
 Alert before exhaustion. The shipped backlog alert is only a placeholder; tune it from the declared outage budget and drain test. Add storage alerts at 70% warning and 85% critical, and require capacity review before changing retention, replicas, priority levels, or DLQ policy. Re-run benchmarks after NATS, filesystem, kernel, instance type, or storage-class changes.
