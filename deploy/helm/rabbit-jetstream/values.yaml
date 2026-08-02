@@ -84,6 +84,10 @@ networkPolicy:
     enabled: false
     namespaceSelector: {}
     podSelector: {}
+  monitoring:
+    enabled: false
+    namespaceSelector: {}
+    podSelector: {}
   egress:
     enabled: false
     dns:

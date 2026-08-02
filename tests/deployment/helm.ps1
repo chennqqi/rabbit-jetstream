@@ -116,15 +116,17 @@ try {
 	}
 
     $Optional = Join-Path $Temporary 'optional.yaml'
-    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set serviceMonitor.enabled=true --set ingress.enabled=true --set networkPolicy.ingress.enabled=true --set-string networkPolicy.ingress.namespaceSelector.name=ingress-system --set-string networkPolicy.ingress.podSelector.app=ingress-controller | Set-Content -LiteralPath $Optional -Encoding utf8NoBOM
+    & docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set serviceMonitor.enabled=true --set networkPolicy.monitoring.enabled=true --set-string networkPolicy.monitoring.namespaceSelector.name=monitoring --set-string networkPolicy.monitoring.podSelector.app=prometheus --set ingress.enabled=true --set networkPolicy.ingress.enabled=true --set-string networkPolicy.ingress.namespaceSelector.name=ingress-system --set-string networkPolicy.ingress.podSelector.app=ingress-controller | Set-Content -LiteralPath $Optional -Encoding utf8NoBOM
     if ($LASTEXITCODE -ne 0) { throw 'optional Helm render failed' }
     Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -ignore-missing-schemas -summary /work/optional.yaml
 	$OptionalRendered = Get-Content -LiteralPath $Optional -Raw
-	foreach ($Required in @('namespaceSelector:', 'name: ingress-system', 'podSelector:', 'app: ingress-controller')) {
-		if (-not $OptionalRendered.Contains($Required)) { throw "restricted Ingress NetworkPolicy is missing $Required" }
+	foreach ($Required in @('namespaceSelector:', 'name: ingress-system', 'podSelector:', 'app: ingress-controller', 'name: monitoring', 'app: prometheus')) {
+		if (-not $OptionalRendered.Contains($Required)) { throw "optional NetworkPolicy is missing $Required" }
 	}
 	& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set ingress.enabled=true 2>$null | Out-Null
 	if ($LASTEXITCODE -eq 0) { throw 'chart accepted an Ingress without an explicit NetworkPolicy peer' }
+	& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set serviceMonitor.enabled=true 2>$null | Out-Null
+	if ($LASTEXITCODE -eq 0) { throw 'chart accepted a ServiceMonitor without an explicit Prometheus NetworkPolicy peer' }
 	& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template invalid $Chart --set networkPolicy.ingress.enabled=true --set networkPolicy.ingress.namespaceSelector.name=1 --set-string networkPolicy.ingress.podSelector.app=ingress-controller 2>$null | Out-Null
 	if ($LASTEXITCODE -eq 0) { throw 'values schema accepted a non-string NetworkPolicy label' }
 

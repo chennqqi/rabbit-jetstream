@@ -20,3 +20,5 @@ promtool check rules deploy/observability/alerts.yml
 The default alerts cover JetStream loss, a stalled elected controller, unavailable NATS nodes, DLQ transfer failures, sustained Queue backlog above 100,000 messages, and management API 5xx rates above 5%. Backlog thresholds must be tuned using workload capacity and drain-rate tests.
 
 `/metrics` is intentionally unauthenticated for cluster-local scraping. Bind the management service to a private network or protect it with an ingress/network policy; never expose operational endpoints directly to an untrusted network.
+
+For Helm and a Prometheus Operator in another namespace, enable `serviceMonitor.enabled` together with `networkPolicy.monitoring.enabled`, then set `networkPolicy.monitoring.namespaceSelector` and `networkPolicy.monitoring.podSelector` to the exact labels of the Prometheus namespace and Pods. The chart fails rendering when ServiceMonitor is enabled without this explicit peer, preventing a silently unreachable scrape target.

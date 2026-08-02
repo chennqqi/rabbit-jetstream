@@ -42,6 +42,7 @@ The `operator.image` value records the digest-pinned, on-demand `rjsctl` image s
 - Keep `nats.replicaCount` at 3 or 5 and provide at least that many schedulable nodes with distinct `kubernetes.io/hostname` values. The chart uses `minDomains` plus `DoNotSchedule`, so it fails closed instead of co-locating durable replicas. A one-node chart is allowed only for development/recovery.
 - Keep management and NATS client services private. If Ingress is enabled, add authentication at the ingress and TLS; read-only management endpoints are otherwise unauthenticated.
 - With both Ingress and NetworkPolicy enabled, also set `networkPolicy.ingress.enabled=true` and provide non-empty `namespaceSelector` and `podSelector` maps matching only the ingress controller. The chart rejects an unrestricted cross-namespace path instead of opening port 8223 globally.
+- With ServiceMonitor enabled, set `networkPolicy.monitoring.enabled=true` and provide namespace/Pod selectors matching only the Prometheus scraper. The chart rejects a ServiceMonitor that would be unreachable through the management NetworkPolicy.
 - Keep `networkPolicy.egress.enabled=true`; explicitly allow only approved IdP and telemetry Collector peers in `networkPolicy.egress.additionalRules`.
 - Enable `nats.tls` before crossing untrusted networks. The profile requires verified client certificates on both client and cluster-route ports; distribute dedicated client certificates to external publishers and consumers.
 - Enable `serviceMonitor` only when the Prometheus Operator CRD is installed.

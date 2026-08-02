@@ -93,10 +93,23 @@
     },
     "networkPolicy": {
       "type": "object", "additionalProperties": false,
-      "required": ["enabled", "ingress", "egress"],
+      "required": ["enabled", "ingress", "monitoring", "egress"],
       "properties": {
         "enabled": {"type": "boolean"},
         "ingress": {
+          "type": "object", "additionalProperties": false,
+          "required": ["enabled", "namespaceSelector", "podSelector"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "namespaceSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+            "podSelector": {"type": "object", "additionalProperties": {"type": "string"}}
+          },
+          "allOf": [{
+            "if": {"properties": {"enabled": {"const": true}}},
+            "then": {"properties": {"namespaceSelector": {"minProperties": 1}, "podSelector": {"minProperties": 1}}}
+          }]
+        },
+        "monitoring": {
           "type": "object", "additionalProperties": false,
           "required": ["enabled", "namespaceSelector", "podSelector"],
           "properties": {

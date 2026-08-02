@@ -130,6 +130,12 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(managementTemplate, "minDomains: {{ .Values.management.replicaCount }}") || !strings.Contains(managementTemplate, "DoNotSchedule") {
 		t.Error("production management replicas no longer require distinct nodes")
 	}
+	networkPolicyTemplate := read("deploy/helm/rabbit-jetstream/templates/networkpolicy.yaml")
+	for _, requirement := range []string{"serviceMonitor.enabled", "networkPolicy.monitoring.enabled", "networkPolicy.monitoring.namespaceSelector", "networkPolicy.monitoring.podSelector"} {
+		if !strings.Contains(networkPolicyTemplate, requirement) {
+			t.Errorf("ServiceMonitor NetworkPolicy integration lost requirement %q", requirement)
+		}
+	}
 	secretTemplate := read("deploy/helm/rabbit-jetstream/templates/secret.yaml")
 	for _, requirement := range []string{`hasKey $current.data "nats-password"`, `hasKey $current.data "nats-password-bcrypt"`, `$passwordHash = (index $current.data "nats-password-bcrypt" | b64dec)`, `hasKey $current.data "admin-token"`} {
 		if !strings.Contains(secretTemplate, requirement) {
