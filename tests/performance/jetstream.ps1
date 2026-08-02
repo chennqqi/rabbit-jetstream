@@ -5,6 +5,8 @@ param(
     [int]$PayloadBytes = 1024,
     [int]$Publishers = 4,
     [int]$Batch = 256,
+    [TimeSpan]$ConsumerStartDelay = [TimeSpan]::Zero,
+    [TimeSpan]$ConsumerDelay = [TimeSpan]::Zero,
     [string]$Output = '',
     [string]$Baseline = '',
     [double]$MaxThroughputRegressionPercent = 20,
@@ -28,12 +30,12 @@ function Assert-Report([string]$Path) {
     if ($Report.workload_mode -notin @('count','duration')) { throw 'unknown performance workload mode' }
     if ($Report.replicas -ne 3 -or $Report.requested_messages -lt 1 -or $Report.published -ne $Report.requested_messages -or $Report.consumed -ne $Report.requested_messages) { throw 'incomplete performance workload' }
     if ($Report.missing -ne 0 -or $Report.duplicates -ne 0 -or $Report.corrupt -ne 0) { throw 'message integrity gate failed' }
-    if ($Report.publish_messages_per_second -le 0 -or $Report.consume_messages_per_second -le 0 -or $Report.publish_latency_p99_millis -le 0) { throw 'invalid performance measurements' }
+    if ($Report.publish_messages_per_second -le 0 -or $Report.consume_messages_per_second -le 0 -or $Report.publish_latency_p99_millis -le 0 -or $Report.peak_backlog_messages -lt 0 -or $Report.drain_seconds -lt 0) { throw 'invalid performance measurements' }
     return $Report
 }
 function Compare-Baseline($Candidate, [string]$Path) {
     $Reference = Assert-Report $Path
-    foreach ($Field in @('replicas','payload_bytes','publishers','batch','workload_mode')) { if ($Candidate.$Field -ne $Reference.$Field) { throw "baseline workload differs at $Field" } }
+    foreach ($Field in @('replicas','payload_bytes','publishers','batch','workload_mode','consumer_start_delay_millis','consumer_delay_millis')) { if ($Candidate.$Field -ne $Reference.$Field) { throw "baseline workload differs at $Field" } }
     if ($Candidate.workload_mode -eq 'count' -and $Candidate.requested_messages -ne $Reference.requested_messages) { throw 'baseline message count differs' }
     if ($Candidate.workload_mode -eq 'duration' -and $Candidate.configured_duration_seconds -ne $Reference.configured_duration_seconds) { throw 'baseline duration differs' }
     $MinimumPublish = $Reference.publish_messages_per_second * (1 - $MaxThroughputRegressionPercent / 100)
@@ -44,7 +46,7 @@ function Compare-Baseline($Candidate, [string]$Path) {
     if ($Candidate.publish_latency_p99_millis -gt $MaximumP99) { throw 'publish P99 regression exceeded limit' }
 }
 
-if ($PayloadBytes -lt 16 -or $Publishers -lt 1 -or $Batch -lt 1 -or $SampleIntervalSeconds -lt 1) { throw 'invalid workload parameters' }
+if ($PayloadBytes -lt 16 -or $Publishers -lt 1 -or $Batch -lt 1 -or $SampleIntervalSeconds -lt 1 -or $ConsumerStartDelay -lt [TimeSpan]::Zero -or $ConsumerDelay -lt [TimeSpan]::Zero) { throw 'invalid workload parameters' }
 switch ($Mode) {
     'ci' { if ($Messages -eq 0) { $Messages = 20000 }; if ($Duration -ne [TimeSpan]::Zero) { throw 'ci mode uses a fixed message count' } }
     'scale' { if ($Messages -eq 0) { $Messages = 1000000 }; if ($Duration -ne [TimeSpan]::Zero) { throw 'scale mode uses a fixed message count' } }
@@ -78,6 +80,8 @@ try {
     }
     if ($Attempt -eq 90) { throw 'three-node JetStream cluster did not become ready' }
     $Arguments = @('run','-d','--name',$Bench,'--network',$Network,'-v',"${RepositoryRoot}:/src",'-w','/src','golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58','go','run','./tests/helpers/jetstream-bench','--server','nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222','--output',"$ContainerTemporary/report.json",'--payload-bytes',"$PayloadBytes",'--publishers',"$Publishers",'--batch',"$Batch",'--replicas','3')
+    if ($ConsumerStartDelay -gt [TimeSpan]::Zero) { $Arguments += @('--consumer-start-delay',"$([int64]$ConsumerStartDelay.TotalMilliseconds)ms") }
+    if ($ConsumerDelay -gt [TimeSpan]::Zero) { $Arguments += @('--consumer-delay',"$([int64]$ConsumerDelay.TotalMilliseconds)ms") }
     if ($Mode -in @('duration','soak')) { $Arguments += @('--messages','0','--duration',"$([int64]$Duration.TotalSeconds)s",'--timeout','30m') } else { $Arguments += @('--messages',"$Messages",'--timeout','10m') }
     Invoke-Docker @Arguments
     $ResourcePath = Join-Path $Temporary 'docker-stats.ndjson'
@@ -123,7 +127,7 @@ try {
             generated_at = [DateTime]::UtcNow.ToString('o')
             source_revision = $SourceRevision
             nats_image_id = $ImageID.Trim()
-            command = @('tests/performance/jetstream.ps1','-Mode',$Mode,'-Duration',$Duration.ToString(),'-PayloadBytes',"$PayloadBytes",'-Publishers',"$Publishers",'-Batch',"$Batch",'-SampleIntervalSeconds',"$SampleIntervalSeconds",'-Baseline',[IO.Path]::GetFileName($BaselineCopy),'-Output',[IO.Path]::GetFileName($CandidatePath))
+            command = @('tests/performance/jetstream.ps1','-Mode',$Mode,'-Duration',$Duration.ToString(),'-PayloadBytes',"$PayloadBytes",'-Publishers',"$Publishers",'-Batch',"$Batch",'-ConsumerStartDelay',$ConsumerStartDelay.ToString(),'-ConsumerDelay',$ConsumerDelay.ToString(),'-SampleIntervalSeconds',"$SampleIntervalSeconds",'-Baseline',[IO.Path]::GetFileName($BaselineCopy),'-Output',[IO.Path]::GetFileName($CandidatePath))
             sample_interval_seconds = $SampleIntervalSeconds
             max_throughput_regression_percent = $MaxThroughputRegressionPercent
             max_p99_regression_percent = $MaxP99RegressionPercent
@@ -138,7 +142,7 @@ try {
         & go @VerifyArguments
         if ($LASTEXITCODE -ne 0) { throw 'generated performance evidence failed independent verification' }
     }
-    Write-Output ("performance verified: messages={0} publish={1:N0}/s consume={2:N0}/s p99={3:N2}ms" -f $Report.published,$Report.publish_messages_per_second,$Report.consume_messages_per_second,$Report.publish_latency_p99_millis)
+    Write-Output ("performance verified: messages={0} publish={1:N0}/s consume={2:N0}/s p99={3:N2}ms peak-backlog={4} drain={5:N0}/s" -f $Report.published,$Report.publish_messages_per_second,$Report.consume_messages_per_second,$Report.publish_latency_p99_millis,$Report.peak_backlog_messages,$Report.drain_messages_per_second)
 } finally {
     & docker rm -f -v $Bench @Nodes 2>$null | Out-Null
     & docker network rm $Network 2>$null | Out-Null

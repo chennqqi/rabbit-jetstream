@@ -45,6 +45,12 @@ type report struct {
 	PublishLatencyP95Millis   float64   `json:"publish_latency_p95_millis"`
 	PublishLatencyP99Millis   float64   `json:"publish_latency_p99_millis"`
 	PublishLatencyMaxMillis   float64   `json:"publish_latency_max_millis"`
+	ConsumerStartDelayMillis  float64   `json:"consumer_start_delay_millis"`
+	ConsumerDelayMillis       float64   `json:"consumer_delay_millis"`
+	PeakBacklogMessages       int64     `json:"peak_backlog_messages"`
+	BacklogAtPublishEnd       int64     `json:"backlog_at_publish_end"`
+	DrainSeconds              float64   `json:"drain_seconds"`
+	DrainMessagesPerSecond    float64   `json:"drain_messages_per_second"`
 }
 
 type latencySamples struct {
@@ -104,8 +110,10 @@ func run() error {
 	batch := flag.Int("batch", 256, "consumer fetch batch")
 	replicas := flag.Int("replicas", 3, "Stream replicas")
 	timeout := flag.Duration("timeout", 10*time.Minute, "drain timeout after publishing")
+	consumerStartDelay := flag.Duration("consumer-start-delay", 0, "delay before consuming to create backlog")
+	consumerDelay := flag.Duration("consumer-delay", 0, "per-message processing delay before acknowledgement")
 	flag.Parse()
-	if *output == "" || *messages < 0 || (*messages == 0 && *duration <= 0) || *payloadBytes < 16 || *publishers < 1 || *batch < 1 || (*replicas != 1 && *replicas != 3 && *replicas != 5) || *timeout <= 0 {
+	if *output == "" || *messages < 0 || (*messages == 0 && *duration <= 0) || *payloadBytes < 16 || *publishers < 1 || *batch < 1 || (*replicas != 1 && *replicas != 3 && *replicas != 5) || *timeout <= 0 || *consumerStartDelay < 0 || *consumerDelay < 0 {
 		return errors.New("invalid benchmark arguments")
 	}
 	connectionOptions, err := natsclient.Options(natsclient.FromEnv())
@@ -182,10 +190,18 @@ func run() error {
 	seen := make([]uint64, 0)
 	var consumed, duplicates, corrupt int64
 	consumeStarted := time.Now()
+	if *consumerStartDelay > 0 {
+		time.Sleep(*consumerStartDelay)
+	}
 	publishFinished := time.Time{}
 	publishingDone := false
 	drainDeadline := time.Time{}
+	var peakBacklog, backlogAtPublishEnd int64
 	for {
+		backlog := published.Load() - consumed
+		if backlog > peakBacklog {
+			peakBacklog = backlog
+		}
 		if publishingDone && consumed >= published.Load() && published.Load() == generated.Load() {
 			break
 		}
@@ -221,6 +237,9 @@ func run() error {
 					seen[word] |= mask
 				}
 			}
+			if *consumerDelay > 0 {
+				time.Sleep(*consumerDelay)
+			}
 			if err := msg.Ack(); err != nil {
 				return err
 			}
@@ -231,6 +250,7 @@ func run() error {
 			case <-publishDone:
 				workers.Wait()
 				publishFinished = time.Now().UTC()
+				backlogAtPublishEnd = published.Load() - consumed
 				drainDeadline = time.Now().Add(*timeout)
 				publishingDone = true
 			default:
@@ -253,11 +273,16 @@ func run() error {
 	elapsed := finished.Sub(started).Seconds()
 	publishElapsed := publishFinished.Sub(started).Seconds()
 	consumeElapsed := finished.Sub(consumeStarted).Seconds()
+	drainSeconds := finished.Sub(publishFinished).Seconds()
+	drainRate := float64(0)
+	if backlogAtPublishEnd > 0 && drainSeconds > 0 {
+		drainRate = float64(backlogAtPublishEnd) / drainSeconds
+	}
 	mode := "count"
 	if *messages == 0 {
 		mode = "duration"
 	}
-	value := report{Schema: "rabbit-jetstream.io/performance-report/v1alpha1", NATSVersion: nc.ConnectedServerVersion(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, CPUs: runtime.NumCPU(), Replicas: *replicas, PayloadBytes: *payloadBytes, Publishers: *publishers, Batch: *batch, WorkloadMode: mode, ConfiguredDurationSeconds: duration.Seconds(), RequestedMessages: expected, Published: published.Load(), Consumed: consumed, Missing: missing, Duplicates: duplicates, Corrupt: corrupt, StartedAt: started, FinishedAt: finished, DurationSeconds: elapsed, PublishMessagesPerSecond: float64(published.Load()) / publishElapsed, ConsumeMessagesPerSecond: float64(consumed) / consumeElapsed, PublishLatencyP50Millis: p50, PublishLatencyP95Millis: p95, PublishLatencyP99Millis: p99, PublishLatencyMaxMillis: max}
+	value := report{Schema: "rabbit-jetstream.io/performance-report/v1alpha1", NATSVersion: nc.ConnectedServerVersion(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, CPUs: runtime.NumCPU(), Replicas: *replicas, PayloadBytes: *payloadBytes, Publishers: *publishers, Batch: *batch, WorkloadMode: mode, ConfiguredDurationSeconds: duration.Seconds(), RequestedMessages: expected, Published: published.Load(), Consumed: consumed, Missing: missing, Duplicates: duplicates, Corrupt: corrupt, StartedAt: started, FinishedAt: finished, DurationSeconds: elapsed, PublishMessagesPerSecond: float64(published.Load()) / publishElapsed, ConsumeMessagesPerSecond: float64(consumed) / consumeElapsed, PublishLatencyP50Millis: p50, PublishLatencyP95Millis: p95, PublishLatencyP99Millis: p99, PublishLatencyMaxMillis: max, ConsumerStartDelayMillis: float64(*consumerStartDelay) / float64(time.Millisecond), ConsumerDelayMillis: float64(*consumerDelay) / float64(time.Millisecond), PeakBacklogMessages: peakBacklog, BacklogAtPublishEnd: backlogAtPublishEnd, DrainSeconds: drainSeconds, DrainMessagesPerSecond: drainRate}
 	if value.Published != expected || value.Consumed != expected || missing != 0 || duplicates != 0 || corrupt != 0 {
 		return fmt.Errorf("integrity failed: generated=%d published=%d consumed=%d missing=%d duplicates=%d corrupt=%d", expected, value.Published, value.Consumed, missing, duplicates, corrupt)
 	}
