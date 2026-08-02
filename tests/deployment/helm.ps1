@@ -35,6 +35,7 @@ try {
     foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'persistentVolumeClaimRetentionPolicy:', 'whenDeleted: Retain', 'whenScaled: Retain', 'minDomains: 3', 'whenUnsatisfiable: DoNotSchedule', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
         if (-not $Rendered.Contains($Required)) { throw "default Helm output is missing $Required" }
     }
+	if ([regex]::Matches($Rendered, '(?m)^\s+app\.kubernetes\.io/component: nats\r?$').Count -lt 5) { throw 'NATS PVC template is missing operational labels' }
 	if ([regex]::Matches($Rendered, '(?m)^\s+automountServiceAccountToken: false\r?$').Count -ne 2) {
 		throw 'NATS and management Pods must not mount Kubernetes API credentials'
 	}

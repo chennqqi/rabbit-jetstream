@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-rolling test-security coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak test-helm test-kubernetes test-rolling test-security coverage coverage-check fmt run
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -42,6 +42,9 @@ verify-soak:
 
 test-helm:
 	pwsh -File tests/deployment/helm.ps1
+
+test-kubernetes:
+	tests/deployment/kubernetes-smoke.sh
 
 test-rolling:
 	pwsh -File tests/integration/rolling-upgrade.ps1 -BuildLocal

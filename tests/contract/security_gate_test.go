@@ -47,6 +47,19 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "scenario: [api, reconcile, apply, delete, audit, auth, routing, dlq, metrics, diagnostics, controller]") {
 		t.Error("CI management scenario matrix is incomplete")
 	}
+	if !strings.Contains(workflow, "tests/deployment/kubernetes-smoke.sh") {
+		t.Error("CI no longer installs the chart in a real Kubernetes cluster")
+	}
+	kubernetesSmoke := read("tests/deployment/kubernetes-smoke.sh")
+	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", " test ", "/readyz", "/admin/"} {
+		if !strings.Contains(kubernetesSmoke, requirement) {
+			t.Errorf("Kubernetes smoke gate lost requirement %q", requirement)
+		}
+	}
+	kindConfig := read("tests/deployment/kind.yaml")
+	if strings.Count(kindConfig, "role: worker") != 3 {
+		t.Error("Kubernetes smoke gate must create exactly three worker nodes")
+	}
 	if !strings.Contains(workflow, "make verify-upstream-online") || !strings.Contains(read("Makefile"), "go run ./tools/upstreamcheck -online") {
 		t.Error("CI no longer verifies the official NATS subtree provenance")
 	}
@@ -96,8 +109,12 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 			t.Errorf("%s uses a mutable Prometheus image", file)
 		}
 	}
-	if !strings.Contains(read("deploy/helm/rabbit-jetstream/templates/tests/health.yaml"), "busybox:1.37.0@sha256:") {
+	healthHook := read("deploy/helm/rabbit-jetstream/templates/tests/health.yaml")
+	if !strings.Contains(healthHook, "busybox:1.37.0@sha256:") {
 		t.Error("Helm health hook uses a mutable image")
+	}
+	if !strings.Contains(healthHook, "hook-delete-policy: before-hook-creation") || strings.Contains(healthHook, "hook-succeeded") {
+		t.Error("Helm health hook must retain successful Pod logs until the next test")
 	}
 	helmTest := read("tests/deployment/helm.ps1")
 	for _, image := range []string{"alpine/helm:3.18.4@sha256:", "ghcr.io/yannh/kubeconform:v0.6.7@sha256:", "busybox:1.37.0@sha256:"} {
@@ -148,7 +165,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if releaseGateStart < 0 || releaseGateEnd <= releaseGateStart || !strings.Contains(release[releaseGateStart:releaseGateEnd], "fetch-depth: 0") {
 		t.Error("release provenance gate must fetch the historical subtree commit")
 	}
-	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "alpine/helm:3.18.4@sha256:", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
+	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "tests/deployment/kubernetes-smoke.sh", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", ".source_revision", "platforms: linux/amd64,linux/arm64", "alpine/helm:3.18.4@sha256:", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {
 			t.Errorf("release workflow lost requirement %q", requirement)
 		}

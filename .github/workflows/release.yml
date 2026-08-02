@@ -41,6 +41,8 @@ jobs:
         run: |
           ./tests/security/scan.ps1
           ./tests/deployment/helm.ps1
+      - name: Kubernetes installation gate
+        run: tests/deployment/kubernetes-smoke.sh
       - name: Linux standalone and cluster failure gates
         run: |
           tests/integration/linux-smoke.sh

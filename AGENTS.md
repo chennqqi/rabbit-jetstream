@@ -17,6 +17,7 @@ Deployment assets live in `deploy/compose/` and `deploy/nats/`. Architecture, co
 - `go vet ./...`: run static checks before submitting changes.
 - `make test-linux-smoke`: build and test the Linux standalone distribution.
 - `make test-linux-fault`: verify writes and recovery during a one-node outage.
+- `make test-kubernetes`: on native Linux, install the chart into a pinned three-worker kind cluster and verify Pods, PVCs, Helm tests, readiness, and Admin UI.
 
 ## Coding Style & Naming Conventions
 

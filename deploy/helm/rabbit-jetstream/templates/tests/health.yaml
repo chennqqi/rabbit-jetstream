@@ -6,7 +6,9 @@ metadata:
     {{- include "rabbit-jetstream.labels" . | nindent 4 }}
   annotations:
     helm.sh/hook: test
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    # Retain the completed Pod so `helm test --logs` can collect evidence. The
+    # next invocation deletes it before creating a fresh test Pod.
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   restartPolicy: Never
   securityContext:

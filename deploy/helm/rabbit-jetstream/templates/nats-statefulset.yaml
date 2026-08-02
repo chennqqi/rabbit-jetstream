@@ -104,7 +104,11 @@ spec:
       affinity:
         {{- toYaml .Values.affinity | nindent 8 }}
   volumeClaimTemplates:
-    - metadata: {name: data}
+    - metadata:
+        name: data
+        labels:
+          {{- include "rabbit-jetstream.labels" . | nindent 10 }}
+          app.kubernetes.io/component: nats
       spec:
         accessModes: ["ReadWriteOnce"]
         {{- if .Values.nats.storage.storageClass }}

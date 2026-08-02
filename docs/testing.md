@@ -51,6 +51,8 @@ Helm changes run `tests/deployment/helm.ps1`: chart lint, values-schema rejectio
 
 CI also executes every management black-box scenario independently: API/OpenAPI, read-only reconcile, idempotent apply, protected delete, durable audit, RBAC rotation, direct/topic/fanout routing, DLQ transfer, metrics/alerts, diagnostic bundles, and multi-instance controller failover. Adding a scenario to `docker-desktop.ps1` requires adding it to the workflow matrix unless another mandatory job proves the same behavior.
 
+The mandatory Kubernetes smoke gate creates a pinned three-worker kind cluster on native Linux, loads locally built NATS and management images, installs the Helm chart, waits for the StatefulSet and Deployment, verifies three Bound PVCs and three distinct NATS nodes, runs the chart test hook, and checks management readiness plus the embedded Admin UI through a Service port-forward. This is stronger than template validation but still does not replace a production StorageClass, CNI, ingress, or 24-hour soak drill.
+
 Test helper containers are referenced by immutable registry digests, and GitHub Actions by full commit SHA. Update these deliberately when upgrading tool behavior; floating tags such as `latest` are rejected by contract tests.
 
 Run the same checks through Docker Desktop's Linux engine:
