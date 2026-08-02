@@ -71,6 +71,7 @@ if ($Mode -in @('Full', 'Release')) {
 
 $PerformanceReport = $null
 if ($Mode -eq 'Release') {
+    Invoke-Checked 'linux-race' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/race/docker.ps1')
     Invoke-Checked 'coverage-gate' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/coverage/check.ps1')
     Invoke-Checked 'backup-restore' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/backup-restore.ps1')
     Invoke-Checked 'rolling-upgrade-rollback' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/rolling-upgrade.ps1', '-BuildLocal')
