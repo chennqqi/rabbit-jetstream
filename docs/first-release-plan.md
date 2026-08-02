@@ -29,7 +29,7 @@ GitHub Actions and cross-repository automation are deliberately deferred. Local 
 
 Docker Desktop is suitable for development and Linux-container functional gates. Final production approval additionally requires the existing 24-hour three-node soak on a dedicated native Linux host matching production, followed by `make verify-soak`. WSL and Docker Desktop do not satisfy this evidence requirement.
 
-After the soak, perform a staged canary with rollback rehearsed: deploy by immutable digest, validate publish/consume/DLQ and observability, introduce one node failure, then expand traffic only while error rate, redelivery, backlog, latency and storage remain within the documented thresholds.
+After the soak, follow the staged [Production Readiness and Canary Runbook](production-readiness.md): deploy by immutable digest, validate publish/consume/DLQ and observability, introduce one node failure, then expand traffic only while error rate, redelivery, backlog, latency and storage remain within the documented thresholds.
 
 ## Exit Criteria
 

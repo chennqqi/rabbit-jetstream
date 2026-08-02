@@ -1,6 +1,6 @@
 # Release Process
 
-The scope, paired server/SDK version set and release exit criteria are defined in [First Release Plan](first-release-plan.md). During current development, run and refine the local gates first; cross-repository GitHub Actions are intentionally deferred until the local process is stable.
+The scope, paired server/SDK version set and release exit criteria are defined in [First Release Plan](first-release-plan.md). Native-Linux qualification and staged promotion follow the [Production Readiness and Canary Runbook](production-readiness.md). During current development, run and refine the local gates first; cross-repository GitHub Actions are intentionally deferred until the local process is stable.
 
 A production release is a two-stage process because GitHub Actions jobs cannot run the required 24-hour soak.
 
