@@ -6,6 +6,8 @@ Roadmap 以能力验收为准，不绑定未经评估的日期。
 
 首个正式版本使用独立 Native SDK `rabbit-jetstream-go`，目标是在功能层实现 RabbitMQ 优先级队列及配套管理、运维和部署能力。Native SDK 基于 NATS JetStream 客户端，不要求基于 AMQP。RabbitMQ/AMQP 线协议完全兼容不属于首版验收范围，统一记录在 M5 未来计划中。
 
+首版候选版本的双仓库版本集、发布门禁与生产证据要求见 [First Release Plan](first-release-plan.md)。
+
 ## M0：可运行骨架（当前）
 
 - [x] 固定版本的官方 NATS Server Git subtree；
