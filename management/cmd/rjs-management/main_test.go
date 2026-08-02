@@ -27,3 +27,16 @@ func TestHealthcheckRejectsUnhealthyResponse(t *testing.T) {
 		t.Fatal("healthcheck succeeded for an unhealthy response")
 	}
 }
+
+func TestVersionRequested(t *testing.T) {
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		if !versionRequested(args) {
+			t.Fatalf("versionRequested(%q) = false", args)
+		}
+	}
+	for _, args := range [][]string{nil, {"-version"}, {"version", "extra"}} {
+		if versionRequested(args) {
+			t.Fatalf("versionRequested(%q) = true", args)
+		}
+	}
+}

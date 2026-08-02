@@ -18,6 +18,10 @@ import (
 var version = "dev"
 
 func main() {
+	if versionRequested(os.Args[1:]) {
+		fmt.Fprintln(os.Stdout, version)
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		if err := healthcheck(); err != nil {
 			fatal(err)
@@ -41,6 +45,10 @@ func main() {
 	if err := service.Run(ctx); err != nil {
 		fatal(err)
 	}
+}
+
+func versionRequested(args []string) bool {
+	return len(args) == 1 && (args[0] == "version" || args[0] == "--version")
 }
 
 func healthcheck() error {
