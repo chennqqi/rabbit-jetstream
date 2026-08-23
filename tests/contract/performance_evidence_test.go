@@ -18,7 +18,7 @@ func TestReleaseSoakRetainsIndependentlyVerifiableEvidence(t *testing.T) {
 		return string(value)
 	}
 	harness := read("tests/performance/jetstream.ps1")
-	for _, required := range []string{"performance-evidence/v1alpha1", "Get-SHA256", "docker info", "git diff --quiet HEAD", "./tools/perfevidence", "-require-soak", "ConsumerStartDelay", "ConsumerDelay", "peak_backlog_messages", "drain_messages_per_second"} {
+	for _, required := range []string{"performance-evidence/v1alpha1", "Get-SHA256", "docker info", "git diff --quiet HEAD", "./tools/perfevidence", "-require-soak", "InauguralBaseline", "min_publish_messages_per_second", "max_publish_latency_p99_millis", "ConsumerStartDelay", "ConsumerDelay", "peak_backlog_messages", "drain_messages_per_second"} {
 		if !strings.Contains(harness, required) {
 			t.Errorf("performance harness lost release evidence requirement %q", required)
 		}

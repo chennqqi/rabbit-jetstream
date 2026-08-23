@@ -8,7 +8,7 @@ Record the clean server and SDK 40-character revisions, `SDKVersion`, `ContractV
 
 ## Native Linux Soak
 
-Use a dedicated native Linux host matching production architecture, kernel, filesystem, storage class, CPU/memory limits and Docker configuration. Docker Desktop and WSL are invalid evidence.
+Use a dedicated native Linux host matching production architecture, kernel, filesystem, storage class, CPU/memory limits and container-runtime configuration. Docker Desktop and WSL are invalid evidence.
 
 Before starting a multi-day qualification, copy only the frozen bundle to the native Linux host. Do not copy the source tree. Run the bundled verifier as the unprivileged qualification user:
 
@@ -21,14 +21,16 @@ Before starting a multi-day qualification, copy only the frozen bundle to the na
 
 The preflight fails outside native Linux, on WSL or Docker Desktop, on a mismatched revision, on any checksum mismatch, when an OCI archive lacks its declared platforms, or when the current-architecture `rjsctl` and management binaries do not report the bundle version. Retain the exclusive-create JSON output with the soak evidence. The first release is qualified for native execution on `linux/amd64` only. Arm64 artifacts remain cross-built but unqualified until an arm64 host is available.
 
-If no approved matching baseline exists, first run the same workload for 24 hours and review it as the baseline:
+For the first release, when no approved matching baseline can exist, run one inaugural soak with explicit absolute service limits:
 
 ```powershell
-pwsh tests/performance/jetstream.ps1 -Mode duration -Duration 24:00:00 `
-  -Output performance-baseline.json
+pwsh tests/performance/jetstream.ps1 -Mode soak -Duration 24:00:00 `
+  -InauguralBaseline -MinPublishMessagesPerSecond 4900 `
+  -MinConsumeMessagesPerSecond 4900 -MaxPublishLatencyP99Millis 10 `
+  -Output performance-soak.json
 ```
 
-Then run and verify the candidate from the frozen server revision:
+Preserve that report as the approved baseline. Every subsequent candidate must run and verify against it from the frozen server revision:
 
 ```powershell
 pwsh tests/performance/jetstream.ps1 -Mode soak -Duration 24:00:00 `

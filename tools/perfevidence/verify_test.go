@@ -28,6 +28,52 @@ func TestVerifyReleaseEvidence(t *testing.T) {
 	}
 }
 
+func TestVerifyInauguralReleaseEvidence(t *testing.T) {
+	dir := t.TempDir()
+	reportValue := validReport()
+	writeJSON(t, filepath.Join(dir, "candidate.json"), reportValue)
+	writeJSON(t, filepath.Join(dir, "baseline.json"), reportValue)
+	writeSamples(t, filepath.Join(dir, "resources.ndjson"), 24*time.Hour, time.Hour)
+	proof := validEvidence(t, dir)
+	proof.BaselineMode = "inaugural"
+	proof.Baseline = artifact{}
+	proof.MinPublishMessagesPerSecond = 900
+	proof.MinConsumeMessagesPerSecond = 900
+	proof.MaxPublishLatencyP99Millis = 10
+	writeJSON(t, filepath.Join(dir, "evidence.json"), proof)
+	if err := verifyEvidence(filepath.Join(dir, "evidence.json"), true, testRevision); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyInauguralReleaseEvidenceRejectsMissingAndFailedAbsoluteGates(t *testing.T) {
+	for _, mutate := range []func(*evidence){
+		func(proof *evidence) { proof.MinPublishMessagesPerSecond = 0 },
+		func(proof *evidence) { proof.MinConsumeMessagesPerSecond = 2000 },
+		func(proof *evidence) { proof.MaxPublishLatencyP99Millis = 1 },
+		func(proof *evidence) {
+			proof.Baseline = artifact{File: "baseline.json", SHA256: strings.Repeat("a", 64)}
+		},
+	} {
+		dir := t.TempDir()
+		value := validReport()
+		writeJSON(t, filepath.Join(dir, "candidate.json"), value)
+		writeJSON(t, filepath.Join(dir, "baseline.json"), value)
+		writeSamples(t, filepath.Join(dir, "resources.ndjson"), 24*time.Hour, time.Hour)
+		proof := validEvidence(t, dir)
+		proof.BaselineMode = "inaugural"
+		proof.Baseline = artifact{}
+		proof.MinPublishMessagesPerSecond = 900
+		proof.MinConsumeMessagesPerSecond = 900
+		proof.MaxPublishLatencyP99Millis = 10
+		mutate(&proof)
+		writeJSON(t, filepath.Join(dir, "evidence.json"), proof)
+		if err := verifyEvidence(filepath.Join(dir, "evidence.json"), true, testRevision); err == nil {
+			t.Fatal("invalid inaugural evidence was accepted")
+		}
+	}
+}
+
 func TestVerifyReleaseEvidenceRejectsTamperingAndShortRuns(t *testing.T) {
 	for _, test := range []struct {
 		name   string

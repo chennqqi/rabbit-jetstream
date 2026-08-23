@@ -31,6 +31,10 @@ type evidence struct {
 	SampleIntervalSeconds          int            `json:"sample_interval_seconds"`
 	MaxThroughputRegressionPercent float64        `json:"max_throughput_regression_percent"`
 	MaxP99RegressionPercent        float64        `json:"max_p99_regression_percent"`
+	BaselineMode                   string         `json:"baseline_mode,omitempty"`
+	MinPublishMessagesPerSecond    float64        `json:"min_publish_messages_per_second,omitempty"`
+	MinConsumeMessagesPerSecond    float64        `json:"min_consume_messages_per_second,omitempty"`
+	MaxPublishLatencyP99Millis     float64        `json:"max_publish_latency_p99_millis,omitempty"`
 	Host                           map[string]any `json:"host"`
 	Report                         artifact       `json:"report"`
 	Resources                      artifact       `json:"resources"`
@@ -106,16 +110,25 @@ func verifyEvidence(path string, requireSoak bool, expectedRevision string) erro
 	if err != nil {
 		return fmt.Errorf("resource artifact: %w", err)
 	}
-	baselinePath, err := verifyArtifact(base, proof.Baseline)
-	if err != nil {
-		return fmt.Errorf("baseline artifact: %w", err)
+	baselineMode := proof.BaselineMode
+	if baselineMode == "" {
+		baselineMode = "comparison"
 	}
-	var candidate, baseline report
+	if baselineMode != "comparison" && baselineMode != "inaugural" {
+		return fmt.Errorf("unsupported baseline mode %q", proof.BaselineMode)
+	}
+	var baselinePath string
+	if baselineMode == "comparison" {
+		baselinePath, err = verifyArtifact(base, proof.Baseline)
+		if err != nil {
+			return fmt.Errorf("baseline artifact: %w", err)
+		}
+	} else if proof.Baseline.File != "" || proof.Baseline.SHA256 != "" {
+		return fmt.Errorf("inaugural evidence must not reference a prior baseline")
+	}
+	var candidate report
 	if err := decodeFile(reportPath, &candidate); err != nil {
 		return fmt.Errorf("decode candidate report: %w", err)
-	}
-	if err := decodeFile(baselinePath, &baseline); err != nil {
-		return fmt.Errorf("decode baseline report: %w", err)
 	}
 	if candidate.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || candidate.Replicas != 3 || candidate.RequestedMessages < 1 || candidate.Published != candidate.RequestedMessages || candidate.Consumed != candidate.RequestedMessages || candidate.Missing != 0 || candidate.Duplicates != 0 || candidate.Corrupt != 0 {
 		return fmt.Errorf("candidate integrity or topology gate failed")
@@ -134,14 +147,27 @@ func verifyEvidence(path string, requireSoak bool, expectedRevision string) erro
 	if requireSoak && wallDuration < 24*60*60 {
 		return fmt.Errorf("candidate timestamps do not prove 24 hours of continuous operation")
 	}
-	if candidate.Replicas != baseline.Replicas || candidate.PayloadBytes != baseline.PayloadBytes || candidate.Publishers != baseline.Publishers || candidate.Batch != baseline.Batch || candidate.WorkloadMode != baseline.WorkloadMode || candidate.ConfiguredDurationSeconds != baseline.ConfiguredDurationSeconds {
-		return fmt.Errorf("baseline workload shape differs")
-	}
-	if baseline.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || baseline.RequestedMessages < 1 || baseline.Published != baseline.RequestedMessages || baseline.Consumed != baseline.RequestedMessages || baseline.PublishMessagesPerSecond <= 0 || baseline.ConsumeMessagesPerSecond <= 0 || baseline.PublishLatencyP99Millis <= 0 || baseline.Missing != 0 || baseline.Duplicates != 0 || baseline.Corrupt != 0 {
-		return fmt.Errorf("baseline integrity or measurements are invalid")
-	}
-	if candidate.PublishMessagesPerSecond < baseline.PublishMessagesPerSecond*(1-proof.MaxThroughputRegressionPercent/100) || candidate.ConsumeMessagesPerSecond < baseline.ConsumeMessagesPerSecond*(1-proof.MaxThroughputRegressionPercent/100) || candidate.PublishLatencyP99Millis > baseline.PublishLatencyP99Millis*(1+proof.MaxP99RegressionPercent/100) {
-		return fmt.Errorf("candidate performance regression exceeds evidence thresholds")
+	if baselineMode == "comparison" {
+		var baseline report
+		if err := decodeFile(baselinePath, &baseline); err != nil {
+			return fmt.Errorf("decode baseline report: %w", err)
+		}
+		if candidate.Replicas != baseline.Replicas || candidate.PayloadBytes != baseline.PayloadBytes || candidate.Publishers != baseline.Publishers || candidate.Batch != baseline.Batch || candidate.WorkloadMode != baseline.WorkloadMode || candidate.ConfiguredDurationSeconds != baseline.ConfiguredDurationSeconds {
+			return fmt.Errorf("baseline workload shape differs")
+		}
+		if baseline.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || baseline.RequestedMessages < 1 || baseline.Published != baseline.RequestedMessages || baseline.Consumed != baseline.RequestedMessages || baseline.PublishMessagesPerSecond <= 0 || baseline.ConsumeMessagesPerSecond <= 0 || baseline.PublishLatencyP99Millis <= 0 || baseline.Missing != 0 || baseline.Duplicates != 0 || baseline.Corrupt != 0 {
+			return fmt.Errorf("baseline integrity or measurements are invalid")
+		}
+		if candidate.PublishMessagesPerSecond < baseline.PublishMessagesPerSecond*(1-proof.MaxThroughputRegressionPercent/100) || candidate.ConsumeMessagesPerSecond < baseline.ConsumeMessagesPerSecond*(1-proof.MaxThroughputRegressionPercent/100) || candidate.PublishLatencyP99Millis > baseline.PublishLatencyP99Millis*(1+proof.MaxP99RegressionPercent/100) {
+			return fmt.Errorf("candidate performance regression exceeds evidence thresholds")
+		}
+	} else {
+		if proof.MinPublishMessagesPerSecond <= 0 || proof.MinConsumeMessagesPerSecond <= 0 || proof.MaxPublishLatencyP99Millis <= 0 {
+			return fmt.Errorf("inaugural evidence requires positive absolute performance thresholds")
+		}
+		if candidate.PublishMessagesPerSecond < proof.MinPublishMessagesPerSecond || candidate.ConsumeMessagesPerSecond < proof.MinConsumeMessagesPerSecond || candidate.PublishLatencyP99Millis > proof.MaxPublishLatencyP99Millis {
+			return fmt.Errorf("candidate performance exceeds inaugural absolute thresholds")
+		}
 	}
 	if err := verifyResourceSamples(resourcesPath, candidate.ConfiguredDurationSeconds, proof.SampleIntervalSeconds, candidate.StartedAt, candidate.FinishedAt); err != nil {
 		return err

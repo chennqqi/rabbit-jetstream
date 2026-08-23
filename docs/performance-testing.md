@@ -21,15 +21,23 @@ Run directly through Docker Desktop; WSL is not used:
 # Required release soak: at least 24 hours and compared with an approved baseline
 .\tests\performance\jetstream.ps1 -Mode soak -Duration 24:00:00 `
   -Baseline performance-baseline.json -Output performance-soak.json
+
+# First release only: establish the inaugural baseline with explicit absolute gates
+.\tests\performance\jetstream.ps1 -Mode soak -Duration 24:00:00 `
+  -InauguralBaseline -MinPublishMessagesPerSecond 4900 `
+  -MinConsumeMessagesPerSecond 4900 -MaxPublishLatencyP99Millis 10 `
+  -Output performance-soak.json
 ```
 
-Override `-PayloadBytes`, `-Publishers`, and `-Batch` to model each production workload. Test small and large payload cohorts separately. `ci` is only a correctness and gross-regression signal. It is not long enough to satisfy release soak acceptance. `scale` defaults to one million messages. `duration` exercises continuous operation but is not release evidence. `soak` rejects durations below 24 hours and requires both a baseline and retained output.
+Override `-PayloadBytes`, `-Publishers`, and `-Batch` to model each production workload. Test small and large payload cohorts separately. `ci` is only a correctness and gross-regression signal. It is not long enough to satisfy release soak acceptance. `scale` defaults to one million messages. `duration` exercises continuous operation but is not release evidence. `soak` rejects durations below 24 hours and requires retained output plus either an approved baseline or the first-release-only inaugural mode.
 
 ## Baselines and release evidence
 
 Create a baseline on the same dedicated hosts, Docker/NATS limits, storage, kernel, architecture, payload size, publisher count, batch size, and replica topology as the candidate. The gate refuses workload-shape mismatches. By default it fails when publish or consume throughput drops more than 20%, or publish P99 rises more than 30%. Tighten thresholds using the service SLO; do not widen them to make a release pass.
 
-Soak mode writes four inseparable release artifacts: the candidate report, `.resources.ndjson`, `.baseline.json`, and `.evidence.json`. The evidence manifest records SHA-256 for the other three files, source revision, built NATS image ID, exact workload parameters, regression limits, Docker host/kernel/CPU/memory/storage details, and sample interval. It is independently verified before the command succeeds.
+When no prior release exists, one reviewed 24-hour run may establish the inaugural baseline. Inaugural evidence has no prior-baseline artifact and therefore must declare positive absolute publish, consume, and P99 limits. It retains every integrity, topology, native-Linux, duration, provenance, and resource-continuity gate. Preserve its report as the mandatory comparison baseline for subsequent releases; inaugural mode is not valid merely because a later candidate lacks a convenient matching baseline.
+
+Comparison soak mode writes four inseparable release artifacts: the candidate report, `.resources.ndjson`, `.baseline.json`, and `.evidence.json`. Inaugural mode omits only `.baseline.json`. The evidence manifest records SHA-256 for every referenced artifact, source revision, built NATS image ID, exact workload parameters, comparison or absolute limits, host/kernel/CPU/memory/storage details, and sample interval. It is independently verified before the command succeeds.
 
 Recheck retained evidence before promotion or after copying it:
 

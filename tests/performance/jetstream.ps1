@@ -9,6 +9,10 @@ param(
     [TimeSpan]$ConsumerDelay = [TimeSpan]::Zero,
     [string]$Output = '',
     [string]$Baseline = '',
+    [switch]$InauguralBaseline,
+    [double]$MinPublishMessagesPerSecond = 0,
+    [double]$MinConsumeMessagesPerSecond = 0,
+    [double]$MaxPublishLatencyP99Millis = 0,
     [double]$MaxThroughputRegressionPercent = 20,
     [double]$MaxP99RegressionPercent = 30,
     [int]$SampleIntervalSeconds = 5
@@ -60,11 +64,15 @@ switch ($Mode) {
     'soak' {
         if ($Duration -eq [TimeSpan]::Zero) { $Duration = [TimeSpan]::FromHours(24) }
         if ($Duration -lt [TimeSpan]::FromHours(24)) { throw 'release soak duration must be at least 24 hours' }
-        if ($Messages -ne 0 -or $Output -eq '' -or $Baseline -eq '') { throw 'soak mode requires -Output and -Baseline and does not accept -Messages' }
+        if ($Messages -ne 0 -or $Output -eq '') { throw 'soak mode requires -Output and does not accept -Messages' }
+        if ($InauguralBaseline) {
+            if ($Baseline -ne '' -or $MinPublishMessagesPerSecond -le 0 -or $MinConsumeMessagesPerSecond -le 0 -or $MaxPublishLatencyP99Millis -le 0) { throw 'inaugural soak requires positive absolute performance thresholds and no -Baseline' }
+        } elseif ($Baseline -eq '') { throw 'comparison soak requires -Baseline' }
         & git diff --quiet HEAD --
         if ($LASTEXITCODE -ne 0) { throw 'release soak requires a clean tracked source tree' }
     }
 }
+if ($InauguralBaseline -and $Mode -ne 'soak') { throw '-InauguralBaseline is valid only with -Mode soak' }
 
 Push-Location $RepositoryRoot
 try {
@@ -111,12 +119,12 @@ try {
         Copy-Item -LiteralPath $ReportPath -Destination $Output
         Copy-Item -LiteralPath $ResourcePath -Destination "$Output.resources.ndjson"
     }
-    if ($Mode -in @('duration','soak') -and $Baseline -ne '' -and $Output -ne '') {
+    if ($Mode -in @('duration','soak') -and ($Baseline -ne '' -or $InauguralBaseline) -and $Output -ne '') {
         $CandidatePath = (Resolve-Path -LiteralPath $Output).Path
         $EvidencePath = "$CandidatePath.evidence.json"
         $BaselineCopy = "$CandidatePath.baseline.json"
         if ((Test-Path -LiteralPath $EvidencePath) -or (Test-Path -LiteralPath $BaselineCopy)) { throw 'soak evidence output already exists' }
-        Copy-Item -LiteralPath $Baseline -Destination $BaselineCopy
+        if ($Baseline -ne '') { Copy-Item -LiteralPath $Baseline -Destination $BaselineCopy }
         $DockerHost = & docker info --format '{{json .}}' | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) { throw 'unable to inspect Docker host for soak evidence' }
         $ImageID = & docker image inspect rabbit-jetstream/nats-server:performance-test --format '{{.Id}}'
@@ -124,20 +132,30 @@ try {
         $SourceRevision = (& git rev-parse HEAD).Trim()
         if ($LASTEXITCODE -ne 0 -or -not $SourceRevision) { throw 'unable to record source revision' }
         $ResourceOutput = "$CandidatePath.resources.ndjson"
+        $EvidenceCommand = @('tests/performance/jetstream.ps1','-Mode',$Mode,'-Duration',$Duration.ToString(),'-PayloadBytes',"$PayloadBytes",'-Publishers',"$Publishers",'-Batch',"$Batch",'-ConsumerStartDelay',$ConsumerStartDelay.ToString(),'-ConsumerDelay',$ConsumerDelay.ToString(),'-SampleIntervalSeconds',"$SampleIntervalSeconds",'-Output',[IO.Path]::GetFileName($CandidatePath))
+        if ($InauguralBaseline) {
+            $EvidenceCommand += @('-InauguralBaseline','-MinPublishMessagesPerSecond',"$MinPublishMessagesPerSecond",'-MinConsumeMessagesPerSecond',"$MinConsumeMessagesPerSecond",'-MaxPublishLatencyP99Millis',"$MaxPublishLatencyP99Millis")
+        } else {
+            $EvidenceCommand += @('-Baseline',[IO.Path]::GetFileName($BaselineCopy))
+        }
         $Evidence = [ordered]@{
             schema = 'rabbit-jetstream.io/performance-evidence/v1alpha1'
             mode = $Mode
             generated_at = [DateTime]::UtcNow.ToString('o')
             source_revision = $SourceRevision
             nats_image_id = $ImageID.Trim()
-            command = @('tests/performance/jetstream.ps1','-Mode',$Mode,'-Duration',$Duration.ToString(),'-PayloadBytes',"$PayloadBytes",'-Publishers',"$Publishers",'-Batch',"$Batch",'-ConsumerStartDelay',$ConsumerStartDelay.ToString(),'-ConsumerDelay',$ConsumerDelay.ToString(),'-SampleIntervalSeconds',"$SampleIntervalSeconds",'-Baseline',[IO.Path]::GetFileName($BaselineCopy),'-Output',[IO.Path]::GetFileName($CandidatePath))
+            command = $EvidenceCommand
             sample_interval_seconds = $SampleIntervalSeconds
             max_throughput_regression_percent = $MaxThroughputRegressionPercent
             max_p99_regression_percent = $MaxP99RegressionPercent
+            baseline_mode = $(if ($InauguralBaseline) { 'inaugural' } else { 'comparison' })
+            min_publish_messages_per_second = $MinPublishMessagesPerSecond
+            min_consume_messages_per_second = $MinConsumeMessagesPerSecond
+            max_publish_latency_p99_millis = $MaxPublishLatencyP99Millis
             host = [ordered]@{ operating_system=$DockerHost.OperatingSystem; os_type=$DockerHost.OSType; architecture=$DockerHost.Architecture; kernel_version=$DockerHost.KernelVersion; cpus=$DockerHost.NCPU; memory_bytes=$DockerHost.MemTotal; storage_driver=$DockerHost.Driver }
             report = [ordered]@{ file=[IO.Path]::GetFileName($CandidatePath); sha256=Get-SHA256 $CandidatePath }
             resources = [ordered]@{ file=[IO.Path]::GetFileName($ResourceOutput); sha256=Get-SHA256 $ResourceOutput }
-            baseline = [ordered]@{ file=[IO.Path]::GetFileName($BaselineCopy); sha256=Get-SHA256 $BaselineCopy }
+            baseline = $(if ($InauguralBaseline) { [ordered]@{} } else { [ordered]@{ file=[IO.Path]::GetFileName($BaselineCopy); sha256=Get-SHA256 $BaselineCopy } })
         }
         $Evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding utf8NoBOM
         $VerifyArguments = @('run','./tools/perfevidence','-evidence',$EvidencePath)
