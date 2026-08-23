@@ -19,7 +19,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	}
 	for _, file := range []string{"packaging/Dockerfile.nats-server", "packaging/Dockerfile.management", "packaging/Dockerfile.operator"} {
 		content := read(file)
-		if !strings.Contains(content, "golang:1.25.12-alpine") {
+		if !strings.Contains(content, "golang:1.25.13-alpine") {
 			t.Errorf("%s is not pinned to the patched Go toolchain", file)
 		}
 		for lineNumber, line := range strings.Split(content, "\n") {
@@ -29,11 +29,11 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		}
 	}
 	natsImage := read("packaging/Dockerfile.nats-server")
-	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.52.0") {
+	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.53.0") {
 		t.Error("NATS image lost its documented security dependency override")
 	}
 	operator := read("packaging/Dockerfile.operator")
-	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/net@v0.55.0") || !strings.Contains(operator, "-X main.version=${VERSION}") || !strings.Contains(operator, "GOARCH=$TARGETARCH") {
+	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/net@v0.56.0") || !strings.Contains(operator, "-X main.version=${VERSION}") || !strings.Contains(operator, "GOARCH=$TARGETARCH") {
 		t.Error("operator image no longer builds the minimal patched nats CLI")
 	}
 	scanner := read("tests/security/scan.ps1")

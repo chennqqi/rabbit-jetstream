@@ -204,7 +204,7 @@ func TestQualifyWithEnvironment(t *testing.T) {
 		t.Fatalf("non-Linux environment was accepted: %v", err)
 	}
 	environment.goos, environment.goarch = "linux", "386"
-	if _, err := qualifyWithEnvironment(bundle, revision, environment); err == nil || !strings.Contains(err.Error(), "unsupported production architecture") {
+	if _, err := qualifyWithEnvironment(bundle, revision, environment); err == nil || !strings.Contains(err.Error(), "requires amd64") {
 		t.Fatalf("unsupported architecture was accepted: %v", err)
 	}
 	environment.goarch = "amd64"
@@ -296,6 +296,18 @@ func TestReadDockerInfoRejectsInvalidJSON(t *testing.T) {
 	_, err = readDockerInfo(func(string, ...string) (string, error) { return "", errors.New("unavailable") })
 	if err == nil || !strings.Contains(err.Error(), "inspect Docker server") {
 		t.Fatalf("Docker command error was lost: %v", err)
+	}
+}
+
+func TestReadContainerInfoFallsBackToPodman(t *testing.T) {
+	result, err := readContainerInfo(func(name string, _ ...string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("not installed")
+		}
+		return `{"host":{"arch":"amd64","cpus":2,"hostname":"native-host","kernel":"6.12","memTotal":4096,"os":"linux","distribution":{"distribution":"rocky","version":"9.8"}},"store":{"graphDriverName":"overlay","graphRoot":"/home/sandbox/.local/share/containers/storage"}}`, nil
+	})
+	if err != nil || result.Engine != "podman" || result.OSType != "linux" || result.Architecture != "amd64" || result.Driver != "overlay" {
+		t.Fatalf("Podman info = %+v, %v", result, err)
 	}
 }
 

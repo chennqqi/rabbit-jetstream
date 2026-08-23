@@ -40,6 +40,7 @@ type releaseArtifact struct {
 }
 
 type dockerInfo struct {
+	Engine          string `json:"Engine"`
 	Name            string `json:"Name"`
 	OperatingSystem string `json:"OperatingSystem"`
 	OSType          string `json:"OSType"`
@@ -133,8 +134,8 @@ func qualifyWithEnvironment(bundle, expectedRevision string, environment qualifi
 	if environment.goos != "linux" {
 		return result, fmt.Errorf("native Linux is required; current runtime is %s/%s", environment.goos, environment.goarch)
 	}
-	if environment.goarch != "amd64" && environment.goarch != "arm64" {
-		return result, fmt.Errorf("unsupported production architecture: %s", environment.goarch)
+	if environment.goarch != "amd64" {
+		return result, fmt.Errorf("first-release qualification requires amd64, got %s", environment.goarch)
 	}
 	kernel, err := environment.readFile("/proc/sys/kernel/osrelease")
 	if err != nil {
@@ -147,12 +148,12 @@ func qualifyWithEnvironment(bundle, expectedRevision string, environment qualifi
 	if strings.Contains(strings.ToLower(string(kernel)+string(version)), "microsoft") {
 		return result, errors.New("WSL is not accepted for release qualification")
 	}
-	docker, err := readDockerInfo(environment.command)
+	docker, err := readContainerInfo(environment.command)
 	if err != nil {
 		return result, err
 	}
 	if docker.OSType != "linux" {
-		return result, fmt.Errorf("Docker server must be Linux, got %q", docker.OSType)
+		return result, fmt.Errorf("container engine host must be Linux, got %q", docker.OSType)
 	}
 	identity := strings.ToLower(docker.Name + " " + docker.OperatingSystem)
 	if strings.Contains(identity, "docker desktop") {
@@ -228,7 +229,49 @@ func readDockerInfo(command func(string, ...string) (string, error)) (dockerInfo
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		return result, fmt.Errorf("decode Docker server info: %w", err)
 	}
+	result.Engine = "docker"
 	return result, nil
+}
+
+func readContainerInfo(command func(string, ...string) (string, error)) (dockerInfo, error) {
+	result, dockerErr := readDockerInfo(command)
+	if dockerErr == nil {
+		return result, nil
+	}
+	raw, podmanErr := command("podman", "info", "--format", "json")
+	if podmanErr != nil {
+		return result, fmt.Errorf("inspect container engine (Docker: %v; Podman: %w)", dockerErr, podmanErr)
+	}
+	var info struct {
+		Host struct {
+			Arch         string `json:"arch"`
+			CPUs         int    `json:"cpus"`
+			Hostname     string `json:"hostname"`
+			Kernel       string `json:"kernel"`
+			MemTotal     int64  `json:"memTotal"`
+			OS           string `json:"os"`
+			Distribution struct {
+				Name    string `json:"distribution"`
+				Version string `json:"version"`
+			} `json:"distribution"`
+		} `json:"host"`
+		Store struct {
+			Driver string `json:"graphDriverName"`
+			Root   string `json:"graphRoot"`
+		} `json:"store"`
+	}
+	if err := json.Unmarshal([]byte(raw), &info); err != nil {
+		return result, fmt.Errorf("decode Podman host info: %w", err)
+	}
+	if info.Host.OS == "" || info.Host.Arch == "" {
+		return result, errors.New("Podman host info is incomplete")
+	}
+	return dockerInfo{
+		Engine: "podman", Name: info.Host.Hostname,
+		OperatingSystem: strings.TrimSpace(info.Host.Distribution.Name + " " + info.Host.Distribution.Version),
+		OSType:          info.Host.OS, Architecture: info.Host.Arch, KernelVersion: info.Host.Kernel,
+		Driver: info.Store.Driver, DockerRootDir: info.Store.Root, NCPU: info.Host.CPUs, MemTotal: info.Host.MemTotal,
+	}, nil
 }
 
 func readManifest(path string) (releaseManifest, error) {

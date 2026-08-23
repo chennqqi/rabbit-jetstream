@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.25.12-alpine@sha256:56961d79ea8129efddcc0b8643fd8a5416b4e6228cfd477e3fd61deb2672c587 AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.13-alpine@sha256:1e0126852075c9c60731c8ba49088448b91f63e2aed97ca9d1a9791622a05946 AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG NATSCLI_VERSION=v0.4.0
@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags=
     && cd /src/natscli-build \
     && go mod init rabbit-jetstream.local/natscli-build \
     && go get github.com/nats-io/natscli/nats@${NATSCLI_VERSION} \
-    && go get golang.org/x/crypto@v0.52.0 golang.org/x/net@v0.55.0 golang.org/x/text@v0.39.0 golang.org/x/term@v0.43.0 github.com/minio/highwayhash@v1.0.4 \
+    && go get golang.org/x/crypto@v0.53.0 golang.org/x/net@v0.56.0 golang.org/x/text@v0.39.0 golang.org/x/term@v0.44.0 github.com/minio/highwayhash@v1.0.4 \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/nats github.com/nats-io/natscli/nats
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
