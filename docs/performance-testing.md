@@ -55,3 +55,16 @@ go run ./tools/resourceaudit -input performance-soak.resources.ndjson \
 ```
 
 The audit requires exactly three equally sampled nodes and fails on malformed samples, unhealthy nodes, slow consumers, stalled clients, or non-monotonic node timestamps. Its summary records CPU, memory, JetStream storage, metadata pending, and minimum host free-space watermarks for operational review.
+
+For a first-release native-host run, create the manifest from the retained preflight rather than hand-writing artifact hashes:
+
+```bash
+go run ./tools/perfevidence -create-inaugural \
+  -evidence evidence.json -report candidate.json -resources resources.ndjson \
+  -native-preflight native-linux-preflight.json \
+  -nats-image-id sha256:<64-hex-image-id> -sample-interval 60 \
+  -min-publish 4900 -min-consume 4900 -max-p99 10 \
+  -command-json '["jetstream-bench","--duration","24h","--publish-rate","5000"]'
+```
+
+The generator requires the report, samples, and new manifest to share one directory, hashes both artifacts, derives host and frozen revision provenance from the preflight, writes the manifest exclusively, and immediately runs the independent 24-hour verifier.
