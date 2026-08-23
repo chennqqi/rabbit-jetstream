@@ -35,3 +35,13 @@ func TestLatencySummary(t *testing.T) {
 		t.Fatalf("p50=%v p95=%v p99=%v max=%v", p50, p95, p99, max)
 	}
 }
+
+func TestRateDeadline(t *testing.T) {
+	start := time.Unix(100, 0)
+	if target := rateDeadline(start, 5000, 5000); !target.Equal(start.Add(time.Second)) {
+		t.Fatalf("target = %v", target)
+	}
+	if target := rateDeadline(start, 1, 0); !target.IsZero() {
+		t.Fatalf("unlimited target = %v", target)
+	}
+}

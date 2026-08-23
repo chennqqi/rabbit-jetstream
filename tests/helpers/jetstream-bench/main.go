@@ -28,6 +28,7 @@ type report struct {
 	PayloadBytes              int       `json:"payload_bytes"`
 	Publishers                int       `json:"publishers"`
 	Batch                     int       `json:"batch"`
+	TargetPublishRate         int64     `json:"target_publish_messages_per_second,omitempty"`
 	WorkloadMode              string    `json:"workload_mode"`
 	ConfiguredDurationSeconds float64   `json:"configured_duration_seconds,omitempty"`
 	RequestedMessages         int64     `json:"requested_messages"`
@@ -107,13 +108,14 @@ func run() error {
 	duration := flag.Duration("duration", 0, "time-based publish duration")
 	payloadBytes := flag.Int("payload-bytes", 1024, "payload bytes, at least 16")
 	publishers := flag.Int("publishers", 4, "concurrent synchronous publishers")
+	publishRate := flag.Int64("publish-rate", 0, "maximum generated messages per second; 0 is unlimited")
 	batch := flag.Int("batch", 256, "consumer fetch batch")
 	replicas := flag.Int("replicas", 3, "Stream replicas")
 	timeout := flag.Duration("timeout", 10*time.Minute, "drain timeout after publishing")
 	consumerStartDelay := flag.Duration("consumer-start-delay", 0, "delay before consuming to create backlog")
 	consumerDelay := flag.Duration("consumer-delay", 0, "per-message processing delay before acknowledgement")
 	flag.Parse()
-	if *output == "" || *messages < 0 || (*messages == 0 && *duration <= 0) || *payloadBytes < 16 || *publishers < 1 || *batch < 1 || (*replicas != 1 && *replicas != 3 && *replicas != 5) || *timeout <= 0 || *consumerStartDelay < 0 || *consumerDelay < 0 {
+	if *output == "" || *messages < 0 || (*messages == 0 && *duration <= 0) || *payloadBytes < 16 || *publishers < 1 || *publishRate < 0 || *batch < 1 || (*replicas != 1 && *replicas != 3 && *replicas != 5) || *timeout <= 0 || *consumerStartDelay < 0 || *consumerDelay < 0 {
 		return errors.New("invalid benchmark arguments")
 	}
 	connectionOptions, err := natsclient.Options(natsclient.FromEnv())
@@ -175,6 +177,7 @@ func run() error {
 	go func() {
 		defer close(jobs)
 		defer close(publishDone)
+		generationStarted := time.Now()
 		deadline := time.Now().Add(*duration)
 		for id := int64(0); ; id++ {
 			if *messages > 0 && id >= *messages {
@@ -182,6 +185,11 @@ func run() error {
 			}
 			if *messages == 0 && time.Now().After(deadline) {
 				return
+			}
+			if target := rateDeadline(generationStarted, id, *publishRate); !target.IsZero() {
+				if delay := time.Until(target); delay > 0 {
+					time.Sleep(delay)
+				}
 			}
 			generated.Add(1)
 			jobs <- id
@@ -282,7 +290,7 @@ func run() error {
 	if *messages == 0 {
 		mode = "duration"
 	}
-	value := report{Schema: "rabbit-jetstream.io/performance-report/v1alpha1", NATSVersion: nc.ConnectedServerVersion(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, CPUs: runtime.NumCPU(), Replicas: *replicas, PayloadBytes: *payloadBytes, Publishers: *publishers, Batch: *batch, WorkloadMode: mode, ConfiguredDurationSeconds: duration.Seconds(), RequestedMessages: expected, Published: published.Load(), Consumed: consumed, Missing: missing, Duplicates: duplicates, Corrupt: corrupt, StartedAt: started, FinishedAt: finished, DurationSeconds: elapsed, PublishMessagesPerSecond: float64(published.Load()) / publishElapsed, ConsumeMessagesPerSecond: float64(consumed) / consumeElapsed, PublishLatencyP50Millis: p50, PublishLatencyP95Millis: p95, PublishLatencyP99Millis: p99, PublishLatencyMaxMillis: max, ConsumerStartDelayMillis: float64(*consumerStartDelay) / float64(time.Millisecond), ConsumerDelayMillis: float64(*consumerDelay) / float64(time.Millisecond), PeakBacklogMessages: peakBacklog, BacklogAtPublishEnd: backlogAtPublishEnd, DrainSeconds: drainSeconds, DrainMessagesPerSecond: drainRate}
+	value := report{Schema: "rabbit-jetstream.io/performance-report/v1alpha1", NATSVersion: nc.ConnectedServerVersion(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, CPUs: runtime.NumCPU(), Replicas: *replicas, PayloadBytes: *payloadBytes, Publishers: *publishers, Batch: *batch, TargetPublishRate: *publishRate, WorkloadMode: mode, ConfiguredDurationSeconds: duration.Seconds(), RequestedMessages: expected, Published: published.Load(), Consumed: consumed, Missing: missing, Duplicates: duplicates, Corrupt: corrupt, StartedAt: started, FinishedAt: finished, DurationSeconds: elapsed, PublishMessagesPerSecond: float64(published.Load()) / publishElapsed, ConsumeMessagesPerSecond: float64(consumed) / consumeElapsed, PublishLatencyP50Millis: p50, PublishLatencyP95Millis: p95, PublishLatencyP99Millis: p99, PublishLatencyMaxMillis: max, ConsumerStartDelayMillis: float64(*consumerStartDelay) / float64(time.Millisecond), ConsumerDelayMillis: float64(*consumerDelay) / float64(time.Millisecond), PeakBacklogMessages: peakBacklog, BacklogAtPublishEnd: backlogAtPublishEnd, DrainSeconds: drainSeconds, DrainMessagesPerSecond: drainRate}
 	if value.Published != expected || value.Consumed != expected || missing != 0 || duplicates != 0 || corrupt != 0 {
 		return fmt.Errorf("integrity failed: generated=%d published=%d consumed=%d missing=%d duplicates=%d corrupt=%d", expected, value.Published, value.Consumed, missing, duplicates, corrupt)
 	}
@@ -301,6 +309,13 @@ func run() error {
 		return err
 	}
 	return closeErr
+}
+
+func rateDeadline(start time.Time, id, messagesPerSecond int64) time.Time {
+	if messagesPerSecond <= 0 {
+		return time.Time{}
+	}
+	return start.Add(time.Duration(id) * time.Second / time.Duration(messagesPerSecond))
 }
 
 func makePayload(id int64, size int) []byte {
