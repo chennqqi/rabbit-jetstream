@@ -1,9 +1,25 @@
 package main
 
 import (
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go"
 )
+
+type retryPublisher struct {
+	failures int
+	calls    int
+}
+
+func (p *retryPublisher) PublishMsg(*nats.Msg, ...nats.PubOpt) (*nats.PubAck, error) {
+	p.calls++
+	if p.calls <= p.failures {
+		return nil, errors.New("temporary")
+	}
+	return &nats.PubAck{}, nil
+}
 
 func TestPayloadIntegrity(t *testing.T) {
 	for _, id := range []int64{0, 1, 999999} {
@@ -43,5 +59,28 @@ func TestRateDeadline(t *testing.T) {
 	}
 	if target := rateDeadline(start, 1, 0); !target.IsZero() {
 		t.Fatalf("unlimited target = %v", target)
+	}
+}
+
+func TestPublishWithRetry(t *testing.T) {
+	publisher := &retryPublisher{failures: 2}
+	retries, err := publishWithRetry(publisher, nats.NewMsg("test"), time.Second)
+	if err != nil || retries != 2 || publisher.calls != 3 {
+		t.Fatalf("retries=%d calls=%d err=%v", retries, publisher.calls, err)
+	}
+	publisher = &retryPublisher{failures: 100}
+	if _, err := publishWithRetry(publisher, nats.NewMsg("test"), time.Millisecond); err == nil {
+		t.Fatal("retry deadline was ignored")
+	}
+}
+
+func TestTransientConsumeError(t *testing.T) {
+	for _, err := range []error{nats.ErrNoResponders, nats.ErrDisconnected, nats.ErrConnectionClosed} {
+		if !transientConsumeError(err) {
+			t.Fatalf("transient error rejected: %v", err)
+		}
+	}
+	if transientConsumeError(errors.New("permission denied")) {
+		t.Fatal("permanent error accepted")
 	}
 }
