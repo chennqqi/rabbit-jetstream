@@ -192,8 +192,8 @@ func verifyApproval(path, expectedRevision string) error {
 	if err := json.Unmarshal(local, &localProof); err != nil || localProof.Schema != "rabbit-jetstream.io/local-rc/v1alpha1" || localProof.Mode != "release" || localProof.Server.Revision != proof.ServerRevision || localProof.Server.Dirty || localProof.SDK.Version != proof.SDKVersion || localProof.SDK.Revision != proof.SDKRevision || localProof.SDK.Dirty {
 		return errors.New("local Release evidence does not bind the approved candidate")
 	}
-	if len(proof.NativePreflights) != 2 {
-		return errors.New("native preflight evidence is required for amd64 and arm64")
+	if len(proof.NativePreflights) != 1 {
+		return errors.New("native preflight evidence is required for linux/amd64")
 	}
 	runtimes := make(map[string]bool)
 	for _, item := range proof.NativePreflights {
@@ -207,8 +207,8 @@ func verifyApproval(path, expectedRevision string) error {
 		}
 		runtimes[item.Runtime] = true
 	}
-	if !runtimes["linux/amd64"] || !runtimes["linux/arm64"] {
-		return errors.New("native preflights must cover linux/amd64 and linux/arm64")
+	if !runtimes["linux/amd64"] {
+		return errors.New("native preflight must cover linux/amd64")
 	}
 	soak, err := verify(proof.SoakEvidence)
 	if err != nil {

@@ -4,7 +4,7 @@ The scope, paired server/SDK version set and release exit criteria are defined i
 
 A production release is a two-stage process because GitHub Actions jobs cannot run the required 24-hour soak.
 
-1. On a clean checkout of the release commit, run `make verify-native-bundle` and then `make test-soak` on a dedicated native Linux host whose kernel, storage, limits, and architecture match production. Retain `native-linux-preflight.json`; run the preflight on every published native architecture. Docker Desktop and WSL evidence is rejected.
+1. Copy only the frozen bundle to a dedicated native Linux amd64 host whose kernel, storage and limits match production. As an unprivileged user, run its bundled `bin/linux-amd64/nativequal` with the frozen server revision and retain `native-linux-preflight.json`. Do not copy the source tree. Docker Desktop and WSL evidence is rejected; arm64 execution is deferred until a native host exists.
 2. Re-run `make verify-soak`. The verifier binds evidence to the current 40-character Git revision and independently checks report timestamps, native Linux provenance, the immutable image ID, continuous three-node samples and artifact hashes. Retain the four `performance-soak.json*` files and the baseline; do not create the final tag yet.
 3. Complete the staged canary, node-failure and rollback rehearsal, fill `docs/release-approval.template.json`, obtain the three required sign-offs after the final observation window, and run `make verify-release-approval`.
 4. Only after approval passes, create the final `vX.Y.Z` tag at the exact approved `source_revision`, create a draft GitHub release, upload the preflight, soak and approval evidence, then manually run the `Release` workflow and provide the draft release tag.

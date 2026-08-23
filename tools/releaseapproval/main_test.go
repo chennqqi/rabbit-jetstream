@@ -30,7 +30,7 @@ func TestVerifyApprovalRejectsUnsafePromotion(t *testing.T) {
 		want   string
 	}{
 		{"wrong revision", func(value *approval) { value.ServerRevision = strings.Repeat("3", 40) }, "release identity"},
-		{"missing architecture", func(value *approval) { value.NativePreflights = value.NativePreflights[:1] }, "amd64 and arm64"},
+		{"missing architecture", func(value *approval) { value.NativePreflights = nil }, "linux/amd64"},
 		{"bad stage order", func(value *approval) { value.CanaryStages[1].TrafficPercent = 11 }, "missing or out of order"},
 		{"overlapping stage", func(value *approval) { value.CanaryStages[1].StartedAt = value.CanaryStages[0].StartedAt }, "overlap"},
 		{"message loss", func(value *approval) { value.CanaryStages[2].MissingMessages = 1 }, "message integrity"},
@@ -117,7 +117,7 @@ func createApprovalFixture(t *testing.T, mutate func(*approval)) string {
 		KnownLimitations:     []string{"no-amqp-wire-compatibility", "at-least-once-delivery"},
 		PartialDependencies:  []compatibilityApproval{{ID: "priority-queue", Approved: true, Owner: "application", Rationale: "native SDK contract accepted"}},
 	}
-	for _, runtime := range []string{"linux/amd64", "linux/arm64"} {
+	for _, runtime := range []string{"linux/amd64"} {
 		preflightProof := referencedEvidence{Schema: "rabbit-jetstream.io/native-linux-preflight/v1alpha1", SourceRevision: testServerRevision, SDKVersion: "0.1.0-rc.1", SDKRevision: testSDKRevision, Runtime: runtime}
 		proof.NativePreflights = append(proof.NativePreflights, preflight{Runtime: runtime, Evidence: write("evidence/preflight-"+strings.TrimPrefix(runtime, "linux/")+".json", preflightProof)})
 	}

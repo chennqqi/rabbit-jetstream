@@ -10,15 +10,16 @@ Record the clean server and SDK 40-character revisions, `SDKVersion`, `ContractV
 
 Use a dedicated native Linux host matching production architecture, kernel, filesystem, storage class, CPU/memory limits and Docker configuration. Docker Desktop and WSL are invalid evidence.
 
-Before starting a multi-day qualification, copy the frozen bundle to a clean checkout of its server revision and run:
+Before starting a multi-day qualification, copy only the frozen bundle to the native Linux host. Do not copy the source tree. Run the bundled verifier as the unprivileged qualification user:
 
 ```bash
-make verify-native-bundle \
-  BUNDLE=/srv/rabbit-jetstream/v0.1.0-rc.1 \
-  NATIVE_QUAL_OUTPUT=native-linux-preflight.json
+/srv/rabbit-jetstream/v0.1.0-rc.1/bin/linux-amd64/nativequal \
+  -bundle /srv/rabbit-jetstream/v0.1.0-rc.1 \
+  -source-revision <40-character-server-revision> \
+  -output native-linux-preflight.json
 ```
 
-The preflight fails outside native Linux, on WSL or Docker Desktop, on a dirty or mismatched checkout, on any checksum mismatch, when an OCI archive lacks either `linux/amd64` or `linux/arm64`, or when the current-architecture `rjsctl` and management binaries do not report the bundle version. Retain the exclusive-create JSON output with the soak evidence. Run it once on production-matching amd64 hardware and once on production-matching arm64 hardware when both architectures are release targets; metadata-only cross-build inspection does not replace execution.
+The preflight fails outside native Linux, on WSL or Docker Desktop, on a mismatched revision, on any checksum mismatch, when an OCI archive lacks its declared platforms, or when the current-architecture `rjsctl` and management binaries do not report the bundle version. Retain the exclusive-create JSON output with the soak evidence. The first release is qualified for native execution on `linux/amd64` only. Arm64 artifacts remain cross-built but unqualified until an arm64 host is available.
 
 If no approved matching baseline exists, first run the same workload for 24 hours and review it as the baseline:
 
@@ -61,4 +62,4 @@ Copy [`release-approval.template.json`](release-approval.template.json), replace
 make verify-release-approval RELEASE_APPROVAL=/srv/rabbit-jetstream/release-approval.json
 ```
 
-The verifier binds local Release, amd64 and arm64 preflight, soak, canary, fault and rollback artifacts to the paired revisions; enforces the documented thresholds and exact promotion sequence; records the AMQP and at-least-once limitations; and rejects early, duplicate or missing sign-offs. It validates evidence completeness and integrity, not the truthfulness of manually exported metrics, so reviewers must still inspect the referenced observability exports.
+The verifier binds local Release, amd64 preflight, soak, canary, fault and rollback artifacts to the paired revisions; enforces the documented thresholds and exact promotion sequence; records the AMQP and at-least-once limitations; and rejects early, duplicate or missing sign-offs. It validates evidence completeness and integrity, not the truthfulness of manually exported metrics, so reviewers must still inspect the referenced observability exports.

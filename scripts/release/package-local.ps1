@@ -55,6 +55,7 @@ try {
         $BinaryDirectory = Join-Path $Destination "bin/linux-$Architecture"
         Invoke-Checked 'go' @('build', '-trimpath', "-ldflags=-s -w -X main.version=$Version", '-o', (Join-Path $BinaryDirectory 'rjs-management'), './management/cmd/rjs-management')
         Invoke-Checked 'go' @('build', '-trimpath', "-ldflags=-s -w -X main.version=$Version", '-o', (Join-Path $BinaryDirectory 'rjsctl'), './tools/rjsctl')
+        Invoke-Checked 'go' @('build', '-trimpath', '-ldflags=-s -w', '-o', (Join-Path $BinaryDirectory 'nativequal'), './tools/nativequal')
     }
 } finally {
     $env:GOOS = $PreviousGOOS; $env:GOARCH = $PreviousGOARCH; $env:CGO_ENABLED = $PreviousCGO

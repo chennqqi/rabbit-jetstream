@@ -36,3 +36,9 @@ Pull requests should explain motivation, behavioral changes, validation commands
 ## Architecture & Security
 
 Do not modify the NATS subtree for management features. The management service is a control plane and must not enter the message data path. Never commit credentials, generated data, or `.env` files. Production examples should use credentials/NKeys and TLS.
+
+## Native Linux Qualification Host
+
+Use `ssh jdcloudremote` for native Linux release qualification. SSH logs in as `root`, but run ordinary validation as `sandbox`; use root only for necessary host-level installation or configuration. The `sandbox` account has rootless Podman. Prefer release binaries for simple checks, and use rootless Podman when isolated networking or container behavior is needed.
+
+Never copy the source tree to the remote host. Build all binaries, images, charts, and verification helpers locally with Docker Desktop, then transfer only frozen release artifacts and evidence inputs. Prefer configured Chinese package and container mirrors for any unavoidable remote installation or download. The first release currently requires native execution qualification only on `linux/amd64`; arm64 artifacts may be cross-built but are not production-qualified until an arm64 host is available.

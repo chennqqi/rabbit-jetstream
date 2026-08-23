@@ -6,8 +6,7 @@
   "sdk_revision": "<40-character-sdk-revision>",
   "local_release_evidence": {"file": "evidence/local-rc.json", "sha256": "<sha256>"},
   "native_preflights": [
-    {"runtime": "linux/amd64", "evidence": {"file": "evidence/native-linux-amd64.json", "sha256": "<sha256>"}},
-    {"runtime": "linux/arm64", "evidence": {"file": "evidence/native-linux-arm64.json", "sha256": "<sha256>"}}
+    {"runtime": "linux/amd64", "evidence": {"file": "evidence/native-linux-amd64.json", "sha256": "<sha256>"}}
   ],
   "soak_evidence": {"file": "evidence/performance-soak.json.evidence.json", "sha256": "<sha256>"},
   "canary_stages": [

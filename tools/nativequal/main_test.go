@@ -160,7 +160,7 @@ func TestRunWritesEvidenceExclusively(t *testing.T) {
 		t.Fatalf("existing evidence was overwritten: code=%d stderr=%s", code, stderr.String())
 	}
 	failure := func(string, string) (evidence, error) { return evidence{}, errors.New("qualification failed") }
-	if code := runWithQualifier([]string{"-bundle", "bundle", "-output", filepath.Join(directory, "failed.json")}, &stdout, &stderr, failure); code != 1 || !strings.Contains(stderr.String(), "qualification failed") {
+	if code := runWithQualifier([]string{"-bundle", "bundle", "-output", filepath.Join(directory, "failed.json"), "-source-revision", qualified.SourceRevision}, &stdout, &stderr, failure); code != 1 || !strings.Contains(stderr.String(), "qualification failed") {
 		t.Fatalf("qualification error was lost: code=%d stderr=%s", code, stderr.String())
 	}
 }
@@ -184,10 +184,6 @@ func TestQualifyWithEnvironment(t *testing.T) {
 			switch {
 			case name == "docker":
 				return `{"Name":"native-host","OperatingSystem":"Ubuntu 24.04","OSType":"linux","Architecture":"x86_64","KernelVersion":"6.12","Driver":"overlay2","DockerRootDir":"/var/lib/docker","NCPU":16,"MemTotal":34359738368}`, nil
-			case name == "git" && strings.Join(args, " ") == "rev-parse HEAD":
-				return revision, nil
-			case name == "git" && strings.Join(args, " ") == "status --porcelain":
-				return "", nil
 			case filepath.Base(name) == "rjsctl" || filepath.Base(name) == "rjs-management":
 				return "v0.1.0-rc.1", nil
 			default:
@@ -199,7 +195,7 @@ func TestQualifyWithEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Schema != evidenceSchema || result.Runtime != "linux/amd64" || result.SourceRevision != revision || result.ChecksumFiles != 11 || len(result.Images) != 3 || result.GeneratedAt != fixedTime.Format(time.RFC3339Nano) {
+	if result.Schema != evidenceSchema || result.Runtime != "linux/amd64" || result.SourceRevision != revision || result.ChecksumFiles != 13 || len(result.Images) != 3 || result.GeneratedAt != fixedTime.Format(time.RFC3339Nano) {
 		t.Fatalf("unexpected evidence: %+v", result)
 	}
 
@@ -210,6 +206,10 @@ func TestQualifyWithEnvironment(t *testing.T) {
 	environment.goos, environment.goarch = "linux", "386"
 	if _, err := qualifyWithEnvironment(bundle, revision, environment); err == nil || !strings.Contains(err.Error(), "unsupported production architecture") {
 		t.Fatalf("unsupported architecture was accepted: %v", err)
+	}
+	environment.goarch = "amd64"
+	if _, err := qualifyWithEnvironment(bundle, "bad", environment); err == nil || !strings.Contains(err.Error(), "invalid expected source revision") {
+		t.Fatalf("invalid expected revision was accepted: %v", err)
 	}
 }
 
@@ -296,5 +296,11 @@ func TestReadDockerInfoRejectsInvalidJSON(t *testing.T) {
 	_, err = readDockerInfo(func(string, ...string) (string, error) { return "", errors.New("unavailable") })
 	if err == nil || !strings.Contains(err.Error(), "inspect Docker server") {
 		t.Fatalf("Docker command error was lost: %v", err)
+	}
+}
+
+func TestValidRevision(t *testing.T) {
+	if !validRevision(strings.Repeat("a", 40)) || validRevision("bad") {
+		t.Fatal("revision validation failed")
 	}
 }

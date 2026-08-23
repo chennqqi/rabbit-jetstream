@@ -34,7 +34,7 @@ func TestReleaseSoakRetainsIndependentlyVerifiableEvidence(t *testing.T) {
 		t.Error("Makefile no longer exposes final release approval verification")
 	}
 	releaseApproval := read("tools/releaseapproval/main.go")
-	for _, required := range []string{"release-approval/v1alpha1", "linux/amd64", "linux/arm64", "[]int{1, 10, 25, 50, 100}", "priority-queue", "no-amqp-wire-compatibility", "at-least-once-delivery", "service_owner", "application_owner", "on_call_operator"} {
+	for _, required := range []string{"release-approval/v1alpha1", "linux/amd64", "[]int{1, 10, 25, 50, 100}", "priority-queue", "no-amqp-wire-compatibility", "at-least-once-delivery", "service_owner", "application_owner", "on_call_operator"} {
 		if !strings.Contains(releaseApproval, required) {
 			t.Errorf("release approval verifier lost requirement %q", required)
 		}

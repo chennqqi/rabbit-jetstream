@@ -94,12 +94,12 @@ func runWithQualifier(args []string, stdout, stderr io.Writer, qualifier func(st
 	flags.SetOutput(stderr)
 	bundle := flags.String("bundle", "", "local release bundle directory")
 	output := flags.String("output", "", "preflight evidence JSON output")
-	expectedRevision := flags.String("source-revision", "", "expected 40-character server revision (defaults to HEAD)")
+	expectedRevision := flags.String("source-revision", "", "expected 40-character server revision")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if *bundle == "" || *output == "" {
-		fmt.Fprintln(stderr, "-bundle and -output are required")
+	if *bundle == "" || *output == "" || !validRevision(*expectedRevision) {
+		fmt.Fprintln(stderr, "-bundle, -output and a 40-character -source-revision are required")
 		return 2
 	}
 	result, err := qualifier(*bundle, *expectedRevision)
@@ -158,25 +158,8 @@ func qualifyWithEnvironment(bundle, expectedRevision string, environment qualifi
 	if strings.Contains(identity, "docker desktop") {
 		return result, errors.New("Docker Desktop is not accepted for release qualification")
 	}
-	head, err := environment.command("git", "rev-parse", "HEAD")
-	if err != nil {
-		return result, err
-	}
-	if len(head) != 40 {
-		return result, fmt.Errorf("invalid source revision %q", head)
-	}
-	status, err := environment.command("git", "status", "--porcelain")
-	if err != nil {
-		return result, err
-	}
-	if status != "" {
-		return result, errors.New("tracked source tree must be clean")
-	}
-	if expectedRevision == "" {
-		expectedRevision = head
-	}
-	if expectedRevision != head {
-		return result, fmt.Errorf("expected source revision %s, current HEAD is %s", expectedRevision, head)
+	if !validRevision(expectedRevision) {
+		return result, fmt.Errorf("invalid expected source revision %q", expectedRevision)
 	}
 	bundle, err = filepath.Abs(bundle)
 	if err != nil {
@@ -186,8 +169,8 @@ func qualifyWithEnvironment(bundle, expectedRevision string, environment qualifi
 	if err != nil {
 		return result, err
 	}
-	if manifest.ServerRevision != head {
-		return result, fmt.Errorf("bundle revision %s does not match HEAD %s", manifest.ServerRevision, head)
+	if manifest.ServerRevision != expectedRevision {
+		return result, fmt.Errorf("bundle revision %s does not match expected revision %s", manifest.ServerRevision, expectedRevision)
 	}
 	if !strings.Contains(manifest.Qualification, "native-linux-soak-and-canary-required") {
 		return result, errors.New("bundle qualification boundary is missing")
@@ -227,7 +210,7 @@ func qualifyWithEnvironment(bundle, expectedRevision string, environment qualifi
 	}
 	result = evidence{
 		Schema: evidenceSchema, GeneratedAt: environment.now().UTC().Format(time.RFC3339Nano),
-		SourceRevision: head, ReleaseVersion: manifest.Version, SDKVersion: manifest.SDK.Version,
+		SourceRevision: expectedRevision, ReleaseVersion: manifest.Version, SDKVersion: manifest.SDK.Version,
 		SDKRevision: manifest.SDK.Revision, ContractVersion: manifest.ContractVersion,
 		NATSVersion: manifest.NATSVersion, Runtime: environment.goos + "/" + environment.goarch,
 		KernelRelease: strings.TrimSpace(string(kernel)), Docker: docker,
@@ -355,8 +338,10 @@ func expectedArtifactPaths(version string) map[string]bool {
 	return map[string]bool{
 		"bin/linux-amd64/rjs-management":                                true,
 		"bin/linux-amd64/rjsctl":                                        true,
+		"bin/linux-amd64/nativequal":                                    true,
 		"bin/linux-arm64/rjs-management":                                true,
 		"bin/linux-arm64/rjsctl":                                        true,
+		"bin/linux-arm64/nativequal":                                    true,
 		"images/management.oci.tar":                                     true,
 		"images/nats.oci.tar":                                           true,
 		"images/operator.oci.tar":                                       true,
@@ -372,6 +357,10 @@ func safeRelativePath(path string) bool {
 	}
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
 	return clean == path && clean != "." && !strings.HasPrefix(clean, "../")
+}
+
+func validRevision(value string) bool {
+	return len(value) == 40 && strings.Trim(value, "0123456789abcdef") == ""
 }
 
 func readOCIPlatforms(path string) ([]string, error) {

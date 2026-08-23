@@ -29,7 +29,7 @@ After a clean `make test-local-release`, run `make package-local-rc`. It produce
 
 ## Production Evidence
 
-Docker Desktop is suitable for development and Linux-container functional gates. Final production approval additionally requires `make verify-native-bundle` and the existing 24-hour three-node soak on a dedicated native Linux host matching production, followed by `make verify-soak`. WSL and Docker Desktop do not satisfy this evidence requirement. Execute the preflight on each published native architecture.
+Docker Desktop is suitable for development and Linux-container functional gates. Final production approval additionally requires the bundled `nativequal` verifier and the existing 24-hour three-node soak on a dedicated native Linux amd64 host matching production, followed by `make verify-soak`. WSL and Docker Desktop do not satisfy this evidence requirement. Arm64 may be cross-built but is outside the first release's native qualification scope.
 
 After the soak, follow the staged [Production Readiness and Canary Runbook](production-readiness.md): deploy by immutable digest, validate publish/consume/DLQ and observability, introduce one node failure, then expand traffic only while error rate, redelivery, backlog, latency and storage remain within the documented thresholds.
 
