@@ -46,3 +46,12 @@ go run ./tools/perfevidence -evidence performance-soak.json.evidence.json -requi
 ```
 
 The verifier rejects modified or missing artifacts, a run shorter than 24 hours, incomplete/corrupt messages, mismatched workload shape, excessive throughput/P99 regression, sparse resource sampling, or fewer than three sampled nodes. Review resource samples for sustained growth, throttling, disk saturation, compaction behavior, and recovery headroom. A passing integrity report does not by itself prove capacity, and results from Docker Desktop must not be presented as Linux production hardware performance.
+
+Native-host sampling produced by `tests/helpers/resource-sampler` can be audited without loading the NDJSON into memory:
+
+```bash
+go run ./tools/resourceaudit -input performance-soak.resources.ndjson \
+  -output performance-soak.resources.summary.json
+```
+
+The audit requires exactly three equally sampled nodes and fails on malformed samples, unhealthy nodes, slow consumers, stalled clients, or non-monotonic node timestamps. Its summary records CPU, memory, JetStream storage, metadata pending, and minimum host free-space watermarks for operational review.
