@@ -84,6 +84,9 @@ func TestVerifyReleaseEvidenceRejectsTamperingAndShortRuns(t *testing.T) {
 			candidate.DurationSeconds = 3600
 		}},
 		{"missing messages", func(candidate *report, _ *evidence) { candidate.Missing = 1 }},
+		{"publish retry", func(candidate *report, _ *evidence) { candidate.PublishRetries = 1 }},
+		{"consume retry", func(candidate *report, _ *evidence) { candidate.ConsumeRetries = 1 }},
+		{"redeliveries allowed", func(candidate *report, _ *evidence) { candidate.AllowRedeliveries = true }},
 		{"regression", func(candidate *report, _ *evidence) { candidate.PublishMessagesPerSecond = 1 }},
 		{"wrong mode", func(_ *report, proof *evidence) { proof.Mode = "duration" }},
 		{"desktop host", func(_ *report, proof *evidence) { proof.Host["operating_system"] = "Docker Desktop" }},

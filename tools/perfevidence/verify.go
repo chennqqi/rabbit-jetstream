@@ -51,6 +51,7 @@ type report struct {
 	PayloadBytes              int       `json:"payload_bytes"`
 	Publishers                int       `json:"publishers"`
 	Batch                     int       `json:"batch"`
+	TargetPublishRate         float64   `json:"target_publish_messages_per_second"`
 	WorkloadMode              string    `json:"workload_mode"`
 	ConfiguredDurationSeconds float64   `json:"configured_duration_seconds"`
 	RequestedMessages         int64     `json:"requested_messages"`
@@ -68,6 +69,15 @@ type report struct {
 	PublishLatencyP50Millis   float64   `json:"publish_latency_p50_millis"`
 	PublishLatencyP95Millis   float64   `json:"publish_latency_p95_millis"`
 	PublishLatencyMaxMillis   float64   `json:"publish_latency_max_millis"`
+	PublishRetries            int64     `json:"publish_retries"`
+	ConsumeRetries            int64     `json:"consume_retries"`
+	AllowRedeliveries         bool      `json:"allow_redeliveries"`
+	ConsumerStartDelayMillis  float64   `json:"consumer_start_delay_millis"`
+	ConsumerDelayMillis       float64   `json:"consumer_delay_millis"`
+	PeakBacklogMessages       int64     `json:"peak_backlog_messages"`
+	BacklogAtPublishEnd       int64     `json:"backlog_at_publish_end"`
+	DrainSeconds              float64   `json:"drain_seconds"`
+	DrainMessagesPerSecond    float64   `json:"drain_messages_per_second"`
 }
 
 type resourceSample struct {
@@ -130,7 +140,7 @@ func verifyEvidence(path string, requireSoak bool, expectedRevision string) erro
 	if err := decodeFile(reportPath, &candidate); err != nil {
 		return fmt.Errorf("decode candidate report: %w", err)
 	}
-	if candidate.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || candidate.Replicas != 3 || candidate.RequestedMessages < 1 || candidate.Published != candidate.RequestedMessages || candidate.Consumed != candidate.RequestedMessages || candidate.Missing != 0 || candidate.Duplicates != 0 || candidate.Corrupt != 0 {
+	if candidate.Schema != "rabbit-jetstream.io/performance-report/v1alpha1" || candidate.Replicas != 3 || candidate.RequestedMessages < 1 || candidate.Published != candidate.RequestedMessages || candidate.Consumed != candidate.RequestedMessages || candidate.Missing != 0 || candidate.Duplicates != 0 || candidate.Corrupt != 0 || candidate.PublishRetries != 0 || candidate.ConsumeRetries != 0 || candidate.AllowRedeliveries {
 		return fmt.Errorf("candidate integrity or topology gate failed")
 	}
 	wallDuration := candidate.FinishedAt.Sub(candidate.StartedAt).Seconds()

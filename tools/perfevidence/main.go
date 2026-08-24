@@ -21,6 +21,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	preflightPath := flags.String("native-preflight", "", "native Linux preflight JSON")
 	natsImageID := flags.String("nats-image-id", "", "immutable NATS image ID")
 	commandJSON := flags.String("command-json", "", "exact workload command as a JSON string array")
+	commandFile := flags.String("command-file", "", "file containing exact workload command as a JSON string array")
 	sampleInterval := flags.Int("sample-interval", 60, "resource sample interval in seconds")
 	minPublish := flags.Float64("min-publish", 0, "inaugural minimum publish messages/second")
 	minConsume := flags.Float64("min-consume", 0, "inaugural minimum consume messages/second")
@@ -37,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *createInaugural {
 		revision, err := createInauguralEvidence(generateOptions{
 			EvidencePath: *evidencePath, ReportPath: *reportPath, ResourcesPath: *resourcesPath,
-			PreflightPath: *preflightPath, NATSImageID: *natsImageID, CommandJSON: *commandJSON,
+			PreflightPath: *preflightPath, NATSImageID: *natsImageID, CommandJSON: *commandJSON, CommandFile: *commandFile,
 			SampleInterval: *sampleInterval, MinPublish: *minPublish, MinConsume: *minConsume, MaxP99: *maxP99,
 		})
 		if err != nil {

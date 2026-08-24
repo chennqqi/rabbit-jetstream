@@ -20,6 +20,7 @@ type generateOptions struct {
 	PreflightPath  string
 	NATSImageID    string
 	CommandJSON    string
+	CommandFile    string
 	SampleInterval int
 	MinPublish     float64
 	MinConsume     float64
@@ -55,9 +56,20 @@ func createInauguralEvidence(options generateOptions) (string, error) {
 	if len(imageID) != len("sha256:")+64 || !strings.HasPrefix(imageID, "sha256:") || strings.Trim(strings.TrimPrefix(imageID, "sha256:"), "0123456789abcdef") != "" {
 		return "", errors.New("NATS image ID must be a lowercase SHA-256 ID")
 	}
+	if (options.CommandJSON == "") == (options.CommandFile == "") {
+		return "", errors.New("exactly one of command-json or command-file is required")
+	}
+	commandValue := []byte(options.CommandJSON)
+	if options.CommandFile != "" {
+		value, readErr := os.ReadFile(options.CommandFile)
+		if readErr != nil {
+			return "", fmt.Errorf("read command file: %w", readErr)
+		}
+		commandValue = value
+	}
 	var command []string
-	if err := json.Unmarshal([]byte(options.CommandJSON), &command); err != nil || len(command) == 0 {
-		return "", errors.New("command-json must be a non-empty JSON string array")
+	if err := json.Unmarshal(commandValue, &command); err != nil || len(command) == 0 {
+		return "", errors.New("workload command must be a non-empty JSON string array")
 	}
 	var preflight nativePreflight
 	if err := decodePreflight(options.PreflightPath, &preflight); err != nil {

@@ -69,6 +69,29 @@ func TestCLICreatesAndVerifiesInauguralEvidence(t *testing.T) {
 	}
 }
 
+func TestCreateInauguralEvidenceReadsCommandFile(t *testing.T) {
+	dir := t.TempDir()
+	value := validReport()
+	reportPath := filepath.Join(dir, "candidate.json")
+	resourcesPath := filepath.Join(dir, "resources.ndjson")
+	preflightPath := filepath.Join(dir, "preflight.json")
+	commandPath := filepath.Join(dir, "command.json")
+	writeJSON(t, reportPath, value)
+	writeSamplesFrom(t, resourcesPath, value.StartedAt, 24*time.Hour, time.Hour)
+	writePreflight(t, preflightPath)
+	if err := os.WriteFile(commandPath, []byte(`["jetstream-bench","--duration","24h"]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := createInauguralEvidence(generateOptions{
+		EvidencePath: filepath.Join(dir, "evidence.json"), ReportPath: reportPath, ResourcesPath: resourcesPath,
+		PreflightPath: preflightPath, NATSImageID: strings.Repeat("a", 64), CommandFile: commandPath,
+		SampleInterval: 3600, MinPublish: 900, MinConsume: 900, MaxP99: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writePreflight(t *testing.T, path string) {
 	t.Helper()
 	value := nativePreflight{Schema: "rabbit-jetstream.io/native-linux-preflight/v1alpha1", SourceRevision: testRevision, Runtime: "linux/amd64"}
