@@ -1,98 +1,57 @@
 # Rabbit JetStream v0.1.0-rc.1 原生 Linux 测试报告
 
-## 1. 报告摘要
+## 1. 综合结论
 
-| 项目 | 结果 |
+**通过生产资格验证（qualified）**，发布边界为 Linux/AMD64、三节点 JetStream、消息流三副本、每个 Queue 最多 8 个优先级（`0..7`）。该结论不是对任意优先级数量或任意容量的承诺；更高优先级数量、ARM64 及 RabbitMQ/AMQP 协议兼容不属于 v0.1 资格范围。
+
+| 项目 | 冻结版本 |
 | --- | --- |
-| 测试版本 | `v0.1.0-rc.1` |
-| 服务端提交 | `a703f1d849b98e4c986c44c511e70116d4109bf0` |
-| Native SDK 提交 | `ff54e4a8c135c3f477617d4c3768b81eec98f7ae` |
-| 测试平台 | Rocky Linux 10.2，Linux 6.12，AMD64，32 CPU，约 123 GiB 内存 |
-| 测试时间 | 2026-08-23 至 2026-08-24（UTC） |
-| 综合结论 | **有限制通过（qualified with limitations）** |
-| 发布建议 | 不允许以“不限制优先级数量”的方式进入生产；完成 SDK 调度优化和容量复测前，仅可按已验证配置进行受控试点 |
+| 服务端基线 | `a703f1d849b98e4c986c44c511e70116d4109bf0` |
+| Native SDK（最终故障修复） | `1f32a64f00142a58f4f484086cf4745548dd139f` |
+| 平台 | Rocky Linux 10.2，Linux 6.12，AMD64，32 CPU，约 123 GiB 内存 |
+| 集群 | NATS Server 2.14.1，3 节点，副本数 3，rootless Podman 5.8.2 |
 
-候选版本通过了三节点 JetStream、管理面、Native SDK 核心语义、单节点故障、网络隔离、滚动重启及连续 24 小时稳定性验证。主要阻塞项是 8 个优先级、100 万消息场景未能在 30 分钟硬时限内完成。首个正式版本不包含 RabbitMQ/AMQP 协议兼容，本报告也不对该能力作出结论。
+## 2. 变更与验证范围
 
-## 2. 范围与方法
+SDK 原有实现按优先级顺序执行 1 ms 空 consumer 拉取，8 级积压测试会超过 30 分钟。最终实现改为每个优先级持续拉取到有界缓冲区，再由本地调度器严格优先选择；默认总预取预算 256，8 级时每级 32。初始化采用两阶段绑定，关闭时 NAK 缓冲消息。`ConsumeErrHandler` 只传播 consumer 删除和错误请求等终止错误，连接中断、节点关闭和心跳缺失由 nats.go 自动恢复。
 
-本次验证覆盖：
+验证覆盖管理面创建/幂等/删除/审计/鉴权、Native SDK 优先级语义、PubAck、背压、重投、durable 重连、容量矩阵、24 小时稳定性、资源趋势、单节点停机、网络隔离和滚动重启。制品均在本机构建，仅传输冻结二进制及证据；远端未复制源代码。
 
-- 三节点 NATS JetStream 集群及管理服务部署；
-- Queue 创建、幂等重放、删除、鉴权和审计；
-- Native SDK 严格优先级、公平性、PubAck、背压、Nak 重投和 durable 重连；
-- 数据完整性、持续负载、资源趋势和三类故障恢复；
-- Linux/AMD64 原生运行。
+## 3. 结果汇总
 
-不在范围内：AMQP 协议兼容、ARM64 生产资格、跨仓库 CI。测试二进制和镜像均在本机构建，仅将冻结制品及验证输入传至远端；未复制源代码。实际执行主机为用户指定的 `rabbitjetstream`（`VM-90-6-rockylinux`）。后续验证主机使用规则以 `AGENTS.md` 为准。
-
-## 3. 测试环境
-
-- NATS Server：2.14.1；镜像 ID `sha256:7e68c4f9cc6e0cbad82688c01a90636c3965e622b6802b2f15587cc242a19ff7`
-- 容器运行时：rootless Podman 5.8.2，overlay 存储
-- 集群：3 个 JetStream 节点，消息流副本数 3
-- 文件系统：500 GB，测试结束剩余约 487 GB
-- Native Linux 预检：通过
-
-## 4. 结果汇总
-
-| 测试项 | 结果 | 关键结果 |
+| 测试 | 结果 | 关键数据 |
 | --- | --- | --- |
-| 24 小时持续负载 | 通过 | 4.32 亿条发布并消费；丢失、重复、损坏均为 0 |
-| 资源与健康审计 | 通过 | 4,323 个样本；无不健康、慢消费者、客户端停滞或元数据积压 |
-| 单节点停机 | 通过 | 90 万条；数据异常 0；发布重试 1 |
-| 网络隔离 | 通过 | 90 万条；数据异常 0；发布重试 8，消费重试 76 |
-| 逐节点滚动重启 | 通过 | 240 万条；丢失/损坏 0；发生 4 次预期的 at-least-once 重投 |
-| 管理面功能与鉴权 | 通过 | 未认证写入返回 401；apply、noop、delete、audit 均符合预期 |
-| Native SDK 功能 | 通过 | 严格优先级、公平性、确认、背压、重投和 durable 场景通过 |
-| 3 优先级、100 万条容量 | 通过 | 发布 27,756.67 msg/s；消费 733.05 msg/s；P99 0.498 ms |
-| 8 优先级、100 万条容量 | **未通过** | 30 分钟超时，未生成完整结果报告 |
+| 服务端 24 小时持续负载 | 通过 | 432,000,001 条，5,000 msg/s，丢失/重复/损坏 0 |
+| 最终 SDK 24 小时持续负载 | 通过 | 432,000,000 条，8 级，5,000 msg/s，丢失/重复/损坏 0，P99 0.915 ms |
+| 3/5/8 级各 100 万条，1 KiB | 通过 | 18,271 / 16,961 / 18,304 msg/s，完整性异常 0 |
+| 8 级，10 万条，16 KiB | 通过 | 9,640 msg/s，P99 3.278 ms，完整性异常 0 |
+| 8 级，1 万条，256 KiB | 通过 | 1,926 msg/s，P99 10.175 ms，完整性异常 0 |
+| 单节点停机 | 通过 | 90 万条完整性异常 0；最终 SDK 8 级候选复测 150 万条异常 0 |
+| 网络隔离 | 通过 | 90 万条，完整性异常 0 |
+| 逐节点滚动重启 | 通过 | 240 万条，丢失/损坏 0，4 次预期 at-least-once 重投 |
+| Linux race/断连/进程重启 | 通过 | SDK 集成和故障测试通过 |
+| 管理面和三节点最终健康 | 通过 | 鉴权、apply/noop/delete/audit、health/ready 正常 |
 
-## 5. 24 小时稳定性结果
+最终 SDK soak 从 `2026-08-24 21:59:17 CST` 至 `2026-08-25 21:59:18 CST`。systemd 退出码为 0，CPU 累计 6 小时 32 分，内存峰值 143.7 MiB；三节点元数据 pending 为 0。故障测试中的重复投递符合 JetStream at-least-once 语义，业务消费者仍须按消息 ID 幂等。
 
-测试从 `2026-08-23T10:07:06.692039159Z` 运行至 `2026-08-24T10:07:06.692936651Z`，目标速率 5,000 msg/s，1 KiB 消息，8 个发布协程，批次 256，副本数 3。
+## 4. 发布边界
 
-- 请求、发布、消费：均为 432,000,001 条；
-- 丢失、重复、内容损坏：均为 0；
-- 发布/消费重试：均为 0；
-- 实际发布/消费速率：约 5,000 msg/s；
-- 延迟：P50 0.25 ms，P95 0.37 ms，P99 0.95 ms，最大 71.20 ms；
-- 峰值 backlog 80，结束时 3，排空耗时 0.0003 秒。
+- v0.1 的生产支持上限是 8 个优先级，即 `maxPriority <= 7`。协议字段仍可表达更高值，但属于未取得资格的实验配置。
+- 上述吞吐是本次硬件和负载基线，不是所有消息大小、持久化介质或并发模型的 SLA。
+- 仅 Linux/AMD64 取得原生生产资格；ARM64 待具备原生主机后验证。
+- v0.1 是 Native SDK 方案，不承诺 RabbitMQ/AMQP 协议兼容；完全兼容保留在 Roadmap。
+- 交付语义为 at-least-once；业务必须实现幂等、超时、降级和回滚策略。
 
-资源审计覆盖每节点 1,441 个样本。NATS 节点峰值内存约为 560/423/414 MB；CPU 峰值 269%/173%/134%（多核计量）；元数据 pending 最大值为 0。持续负载结束后集群保持健康。
-
-## 6. 故障与语义验证
-
-单节点停机和网络隔离期间均保持完整交付。滚动重启场景出现 4 次重复投递，符合 JetStream 的 at-least-once 语义，不视为数据损坏；生产应用仍必须基于业务消息 ID 实现幂等消费。
-
-早期生成的 `fault-restarts.json` 因 systemd transient unit 的 `KillMode` 同时终止了被重启容器，属于测试编排缺陷，已作废且未纳入结论。报告采用修正后的手工逐节点滚动重启结果。
-
-## 7. 已知限制与发布门槛
-
-8 优先级容量场景失败的直接表现是 `context deadline exceeded`。现有 SDK 会顺序探测空的高优先级 consumer，默认每级探测超时 1 ms；优先级数量增长时，空队列探测开销显著压低消费能力。3 优先级场景虽通过，但该工作负载的端到端消费能力仅约 733 msg/s，不能外推为任意消息大小、优先级数量或积压规模下的生产容量。
-
-正式 GA 前必须完成：
-
-1. 优化 SDK 多优先级调度及空 consumer 探测机制；
-2. 对计划支持的最大优先级数执行 3/5/8 级及不同 backlog 的容量矩阵；
-3. 明确版本支持的最大优先级数、吞吐基线和资源规格；
-4. 增加逐优先级 pending、探测延迟和饥饿监控；
-5. 在修复后重跑 24 小时稳定性与全部故障测试。
-
-在上述门槛完成前，可考虑仅对 3 个优先级、负载不超过已验证消费能力且具备降级和回滚方案的业务进行受控试点。ARM64 需获得原生主机后单独取得生产资格；RabbitMQ/AMQP 完全兼容仅保留在 Roadmap。
-
-## 8. 证据与可追溯性
+## 5. 证据索引
 
 | 证据 | SHA-256 |
 | --- | --- |
-| [资格汇总](../artifacts/highhost/qualification-summary.json) | `9477e52c227ec1cba204b14c91aeffa6d265ac1b0c996bac3dc5699ea4572e4c` |
-| [24 小时结果](../artifacts/highhost/soak-24h.json) | `911ac9e1373fee2e6b16f442fc16a01de4bce95e66907315863f67e0b017937f` |
-| [24 小时证据索引](../artifacts/highhost/soak-evidence.json) | `19055d78c0db33951905eaf8eec687aa5de42aa6c1dc9028819c196a018d3028` |
-| [资源审计汇总](../artifacts/highhost/soak-resources.summary.json) | `ba793a5012e4f3a48401da538fc034211f53575d9f131e2826cf74569013e19f` |
-| [单节点停机](../artifacts/highhost/fault-smoke-unique.json) | `e579a30e3bc6226340adfd4754e6fe0afdf5e3c73b3521badd05228eaaba5e38` |
-| [网络隔离](../artifacts/highhost/fault-network.json) | `cfc8bc5881ae6209f1a4032522b3d96bc0a508b9cd5334f7635483e4275bb56b` |
-| [滚动重启](../artifacts/highhost/rolling-manual.json) | `56efa497f1135f2a784195c9629519607c89fb9c37ac8fa11334a423f7c55aa0` |
-| [3 优先级容量](../artifacts/highhost/sdk-priority-3levels-1m.json) | `2be1ea45233d6ce2938559d41d0dfd58191ecf3f6cdfd09bdbe084551cb5dcce` |
-| [8 优先级失败日志](../artifacts/highhost/sdk-priority-8levels-failure.log) | `b47f4462a5cfa9540bc18f37247a0fd41de45def3863ab87a07b912151157025` |
+| 服务端 24 小时结果 | `911ac9e1373fee2e6b16f442fc16a01de4bce95e66907315863f67e0b017937f` |
+| 资源审计汇总 | `ba793a5012e4f3a48401da538fc034211f53575d9f131e2826cf74569013e19f` |
+| 最终 SDK 24 小时结果 | `e62fe8f505b0640a14a79eb82175e35d6c2af642802302a56dd6dd40bf8d840b` |
+| 3/5/8 级 100 万条 | `e70e52b29266e9ae9a69e1134bb032a160b92b2510b69fbfe2c7c4fc05c0172e` / `1e2fb1f9dc20fbbc1bbcfad02e7f3999c8774776f4abf4feeb34d16f3423bb9` / `661cff16f4d13cf9f1675713a39176c22719678739bf0421a568cfcfdfe24cb1` |
+| 8 级 16 KiB / 256 KiB | `010d6e467c41b7c6032f1f9eb705e6528217ad688882305dbe4f1c03ca951bfc` / `95b93e6a68790f764a32d57b8af9b7a0126fcca71e5c52204ea74f36ca7fb3f2` |
+| 单节点停机 / 网络隔离 / 滚动重启 | `e579a30e3bc6226340adfd4754e6fe0afdf5e3c73b3521badd05228eaaba5e38` / `cfc8bc5881ae6209f1a4032522b3d96bc0a508b9cd5334f7635483e4275bb56b` / `56efa497f1135f2a784195c9629519607c89fb9c37ac8fa11334a423f7c55aa0` |
+| 最终 SDK 单节点停机复测 | `f26938d619ac0e1032269ac61e2f59350b9b767388e5d5c00f4baa572251bcd1` |
 
-测试结束后，临时 Queue、管理实例和辅助二进制均已清理。为避免误删非本轮数据，`RJS_AUDIT_EVENTS` 与 `KV_RJS_META` 被保留。最终三个 NATS 节点及管理服务均为 healthy/ready，工作区已通过 `go test ./...`。
+JSON 证据保存在本地忽略目录 `artifacts/highhost/` 和 `artifacts/qualification-v2/`。测试结束后受前缀保护的清理工具删除了 5 个临时 SDK 流；最终仅保留 `RJS_AUDIT_EVENTS` 和 `KV_RJS_META`，集群元数据 pending 为 0。
