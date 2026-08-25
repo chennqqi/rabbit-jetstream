@@ -43,6 +43,14 @@ function Get-GitValue {
     }
 }
 
+function Get-RelativePath {
+    param([string]$BasePath, [string]$TargetPath)
+    $BaseFull = [IO.Path]::GetFullPath($BasePath).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    $TargetFull = [IO.Path]::GetFullPath($TargetPath)
+    $Relative = ([Uri]$BaseFull).MakeRelativeUri([Uri]$TargetFull).ToString()
+    return [Uri]::UnescapeDataString($Relative).Replace('/', [IO.Path]::DirectorySeparatorChar)
+}
+
 $ServerRevision = Get-GitValue $RepositoryRoot @('rev-parse', 'HEAD')
 $SDKRevision = Get-GitValue $SDKPath @('rev-parse', 'HEAD')
 $ServerDirty = [bool](Get-GitValue $RepositoryRoot @('status', '--porcelain'))
@@ -97,7 +105,7 @@ $Evidence = [ordered]@{
     steps = $Steps
 }
 $Evidence['performance_report'] = if ($PerformanceReport) {
-    [ordered]@{ path = [IO.Path]::GetRelativePath($RepositoryRoot, $PerformanceReport); sha256 = (Get-FileHash -LiteralPath $PerformanceReport -Algorithm SHA256).Hash.ToLowerInvariant() }
+    [ordered]@{ path = Get-RelativePath $RepositoryRoot $PerformanceReport; sha256 = (Get-FileHash -LiteralPath $PerformanceReport -Algorithm SHA256).Hash.ToLowerInvariant() }
 } else { $null }
 $OutputPath = if ([System.IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $RepositoryRoot $Output }
 New-Item -ItemType Directory -Force -Path (Split-Path $OutputPath) | Out-Null

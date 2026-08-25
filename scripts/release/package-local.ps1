@@ -30,6 +30,13 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "command failed: $Command $($Arguments -join ' ')" }
 }
 
+function Get-RelativePath([string]$BasePath, [string]$TargetPath) {
+    $BaseFull = [IO.Path]::GetFullPath($BasePath).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    $TargetFull = [IO.Path]::GetFullPath($TargetPath)
+    $Relative = ([Uri]$BaseFull).MakeRelativeUri([Uri]$TargetFull).ToString()
+    return [Uri]::UnescapeDataString($Relative).Replace('/', [IO.Path]::DirectorySeparatorChar)
+}
+
 $ServerRevision = Get-GitValue $RepositoryRoot @('rev-parse', 'HEAD')
 $SDKRevision = Get-GitValue $SDKPath @('rev-parse', 'HEAD')
 if ((Get-GitValue $RepositoryRoot @('status', '--porcelain')) -or (Get-GitValue $SDKPath @('status', '--porcelain'))) { throw 'both repositories must be clean' }
@@ -80,7 +87,7 @@ $PerformancePath = Join-Path $RepositoryRoot $LocalEvidence.performance_report.p
 Copy-Item -LiteralPath $PerformancePath -Destination (Join-Path $Destination 'evidence/performance-ci.json')
 
 $Artifacts = Get-ChildItem -LiteralPath $Destination -Recurse -File | Sort-Object FullName | ForEach-Object {
-    [ordered]@{ path = [IO.Path]::GetRelativePath($Destination, $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+    [ordered]@{ path = (Get-RelativePath $Destination $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
 $Manifest = [ordered]@{
     schema = 'rabbit-jetstream.io/release-bundle/v1alpha1'
@@ -98,7 +105,7 @@ $ManifestPath = Join-Path $Destination 'release-manifest.json'
 $Manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ManifestPath -Encoding utf8
 $ChecksumFiles = Get-ChildItem -LiteralPath $Destination -Recurse -File | Sort-Object FullName
 $ChecksumLines = foreach ($File in $ChecksumFiles) {
-    $Relative = [IO.Path]::GetRelativePath($Destination, $File.FullName).Replace('\', '/')
+    $Relative = (Get-RelativePath $Destination $File.FullName).Replace('\', '/')
     '{0}  {1}' -f (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $Relative
 }
 $ChecksumLines | Set-Content -LiteralPath (Join-Path $Destination 'SHA256SUMS') -Encoding ascii
