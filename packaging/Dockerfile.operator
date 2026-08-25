@@ -3,12 +3,14 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG NATSCLI_VERSION=v0.4.0
 ARG VERSION=dev
+ARG GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
+ARG GOSUMDB=sum.golang.google.cn
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY internal ./internal
 COPY tools ./tools
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/rjsctl ./tools/rjsctl \
+RUN --mount=type=cache,target=/go/pkg/mod CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/rjsctl ./tools/rjsctl \
     && mkdir /src/natscli-build \
     && cd /src/natscli-build \
     && go mod init rabbit-jetstream.local/natscli-build \
