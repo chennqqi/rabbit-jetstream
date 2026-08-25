@@ -1,6 +1,7 @@
 /.env
 /bin/
 /dist/
+/dist-*/
 /data/
 /artifacts/
 *.log
