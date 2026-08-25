@@ -13,6 +13,10 @@ $SDKPath = (Resolve-Path $SDKPath).Path
 $Steps = [System.Collections.Generic.List[object]]::new()
 $ArtifactsRoot = Join-Path $RepositoryRoot 'artifacts'
 New-Item -ItemType Directory -Force -Path $ArtifactsRoot | Out-Null
+$ReleaseCacheRoot = Join-Path $ArtifactsRoot 'release-cache'
+$env:GOCACHE = Join-Path $ReleaseCacheRoot 'go-build'
+$env:XDG_CONFIG_HOME = Join-Path $ReleaseCacheRoot 'xdg'
+New-Item -ItemType Directory -Force -Path $env:GOCACHE, $env:XDG_CONFIG_HOME | Out-Null
 
 function Invoke-Checked {
     param([string]$Name, [string]$WorkingDirectory, [string]$Command, [string[]]$Arguments)
