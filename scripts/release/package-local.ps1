@@ -108,5 +108,6 @@ $ChecksumLines = foreach ($File in $ChecksumFiles) {
     $Relative = (Get-RelativePath $Destination $File.FullName).Replace('\', '/')
     '{0}  {1}' -f (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $Relative
 }
-$ChecksumLines | Set-Content -LiteralPath (Join-Path $Destination 'SHA256SUMS') -Encoding ascii
+$ChecksumPath = Join-Path $Destination 'SHA256SUMS'
+[IO.File]::WriteAllText($ChecksumPath, (($ChecksumLines -join "`n") + "`n"), [Text.Encoding]::ASCII)
 Write-Host "Local release bundle created: $Destination"
