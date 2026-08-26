@@ -15,6 +15,7 @@ function Wait-Container($Name) { $Code = (& docker wait $Name).Trim(); if ($Code
 Push-Location $RepositoryRoot
 try {
     New-Item -ItemType Directory -Path $Output | Out-Null
+    if ($IsLinux) { & chmod 0777 $Output }
     Invoke-Docker network create $Network
     Invoke-Docker build -f packaging/Dockerfile.nats-server -t rabbit-jetstream/nats-server:shadow-test .
     Invoke-Docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:shadow-test .
