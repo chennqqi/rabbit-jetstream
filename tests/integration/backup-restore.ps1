@@ -22,6 +22,7 @@ try {
     }
 
     New-Item -ItemType Directory -Path $BackupRoot | Out-Null
+    if ($IsLinux) { & chmod 0777 $BackupRoot }
     Invoke-Docker run --rm --network $Network -v "${BackupRoot}:/backup" rabbit-jetstream/operator:local backup create --server nats://nats:4222 --output /backup/account
     Invoke-Docker run --rm -v "${BackupRoot}:/backup:ro" rabbit-jetstream/operator:local backup verify --input /backup/account
 

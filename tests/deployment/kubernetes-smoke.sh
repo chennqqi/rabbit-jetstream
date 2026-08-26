@@ -116,7 +116,7 @@ test "$auth_before" = "$auth_after"
 
 management_ip="$(kubectl -n "$namespace" get service "${release}-rabbit-jetstream-management" -o jsonpath='{.spec.clusterIP}')"
 kubectl -n "$namespace" run network-allowed --image="$busybox_image" --restart=Never --attach --rm --command -- \
-  wget -T 10 -qO- "http://${management_ip}:8223/readyz" | grep -q '"status":"ready"'
+  wget -T 10 -qO- "http://${management_ip}:8223/readyz" | grep -F '"status":"ready"' >/dev/null
 denied_namespace="${namespace}-denied"
 kubectl create namespace "$denied_namespace"
 denied_result="$(kubectl -n "$denied_namespace" run network-denied --image="$busybox_image" --restart=Never --attach --rm --command -- \
@@ -145,8 +145,8 @@ kubectl -n "$namespace" port-forward --address 127.0.0.1 "service/${release}-rab
 port_forward_pid=$!
 ready='false'
 for _ in $(seq 1 30); do
-  if curl --fail --silent --show-error "http://127.0.0.1:$local_port/readyz" | grep -q '"status":"ready"'; then
-    curl --fail --silent --show-error "http://127.0.0.1:$local_port/admin/" | grep -q '<title>Rabbit JetStream · Operations</title>'
+  if curl --fail --silent --show-error "http://127.0.0.1:$local_port/readyz" | grep -F '"status":"ready"' >/dev/null; then
+    curl --fail --silent --show-error "http://127.0.0.1:$local_port/admin/" | grep -F '<title>Rabbit JetStream · Operations</title>' >/dev/null
     ready='true'
     break
   fi

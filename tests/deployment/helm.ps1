@@ -192,6 +192,7 @@ try {
 	$TLSDirectory = Join-Path $Temporary 'tls'
 	& go run ./tests/helpers/tls-fixture --output $TLSDirectory
 	if ($LASTEXITCODE -ne 0) { throw 'test TLS certificate generation failed' }
+	if ($IsLinux) { & chmod -R a+rX $TLSDirectory }
 	$TLSConfigMatch = [regex]::Match($TLSRendered, '(?m)^  nats\.conf: \|\r?\n(?<config>(?:    [^\r\n]*(?:\r?\n|$))+)(?=---|\z)')
 	if (-not $TLSConfigMatch.Success) { throw 'mTLS NATS configuration was not found' }
 	$TLSConfig = [regex]::Replace($TLSConfigMatch.Groups['config'].Value, '(?m)^    ', '')

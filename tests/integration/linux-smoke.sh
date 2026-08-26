@@ -25,18 +25,18 @@ docker run --rm --network "$network" "$nats_box_image" \
   nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
 docker run --rm --network "$network" "$nats_box_image" \
   nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
-curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/cluster | grep -q '"streams":1'
-curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams | grep -q '"name":"RJS_API"'
-curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API | grep -q '"replicas":1'
-curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers | grep -q '"name":"WORKER"'
-curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/nodes | grep -q '"available":1'
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/cluster | grep -F '"streams":1' >/dev/null
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams | grep -F '"name":"RJS_API"' >/dev/null
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API | grep -F '"replicas":1' >/dev/null
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers | grep -F '"name":"WORKER"' >/dev/null
+curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/nodes | grep -F '"available":1' >/dev/null
 
 docker run --rm --network "$network" -v "$repo_root:/src" -w /src "$go_tool_image" \
   go run ./tools/rjsctl diagnostics collect --url http://management:8223 \
   --output "/src/$(basename "$bundle")"
 unzip -t "$bundle"
-unzip -p "$bundle" manifest.json | grep -q 'rabbit-jetstream.io/diagnostics/v1alpha1'
-unzip -p "$bundle" manifest.json | grep -q '"sha256"'
+unzip -p "$bundle" manifest.json | grep -F 'rabbit-jetstream.io/diagnostics/v1alpha1' >/dev/null
+unzip -p "$bundle" manifest.json | grep -F '"sha256"' >/dev/null
 
 docker image inspect rabbit-jetstream/nats-server:local \
   --format '{{if ne .Os "linux"}}{{json .}}{{end}}' | grep -q '^$'

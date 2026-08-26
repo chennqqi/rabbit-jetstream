@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- Fix Linux CI portability for writable offline Go module metadata, non-root test output/TLS fixtures, and `pipefail`-safe HTTP assertions.
 - Add a Dockerized Chromium/Firefox Admin UI E2E release gate covering Queue lifecycle, authentication and revision errors, partial API failure, narrow viewports, credential non-persistence, and automated accessibility checks.
 - Fix nested management dialogs and allow an operator token to be entered safely inside the Queue editor.
 - Add discoverable bilingual Roadmap, standalone/cluster/Kubernetes deployment guidance, and an operations runbook.

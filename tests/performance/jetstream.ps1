@@ -90,7 +90,7 @@ try {
         Start-Sleep -Seconds 1
     }
     if ($Attempt -eq 90) { throw 'three-node JetStream cluster did not become ready' }
-    $Arguments = @('run','-d','--name',$Bench,'--network',$Network,'-e','GOPROXY=off','-v',"${HostGoModCache}:/go/pkg/mod:ro",'-v',"${GoBuildCache}:/root/.cache/go-build",'-v',"${RepositoryRoot}:/src",'-w','/src','golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58','go','run','./tests/helpers/jetstream-bench','--server','nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222','--output',"$ContainerTemporary/report.json",'--payload-bytes',"$PayloadBytes",'--publishers',"$Publishers",'--batch',"$Batch",'--replicas','3')
+    $Arguments = @('run','-d','--name',$Bench,'--network',$Network,'-e','GOPROXY=off','-v',"${HostGoModCache}:/go/pkg/mod",'-v',"${GoBuildCache}:/root/.cache/go-build",'-v',"${RepositoryRoot}:/src",'-w','/src','golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58','go','run','./tests/helpers/jetstream-bench','--server','nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222','--output',"$ContainerTemporary/report.json",'--payload-bytes',"$PayloadBytes",'--publishers',"$Publishers",'--batch',"$Batch",'--replicas','3')
     if ($ConsumerStartDelay -gt [TimeSpan]::Zero) { $Arguments += @('--consumer-start-delay',"$([int64]$ConsumerStartDelay.TotalMilliseconds)ms") }
     if ($ConsumerDelay -gt [TimeSpan]::Zero) { $Arguments += @('--consumer-delay',"$([int64]$ConsumerDelay.TotalMilliseconds)ms") }
     if ($Mode -in @('duration','soak')) { $Arguments += @('--messages','0','--duration',"$([int64]$Duration.TotalSeconds)s",'--timeout','30m') } else { $Arguments += @('--messages',"$Messages",'--timeout','10m') }

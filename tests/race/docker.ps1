@@ -10,7 +10,7 @@ $HostGoModCache = (& go env GOMODCACHE).Trim()
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $HostGoModCache)) { throw 'host Go module cache is unavailable' }
 
 function Invoke-LinuxRace([string]$Source, [string]$Workdir) {
-    & docker run --rm -e GOPROXY=off -e CGO_ENABLED=1 -v "${HostGoModCache}:/go/pkg/mod:ro" -v "${GoBuildCache}:/root/.cache/go-build" -v "${Source}:${Workdir}:ro" -w $Workdir $GoImage go test -race -count=1 ./...
+    & docker run --rm -e GOPROXY=off -e CGO_ENABLED=1 -v "${HostGoModCache}:/go/pkg/mod" -v "${GoBuildCache}:/root/.cache/go-build" -v "${Source}:${Workdir}:ro" -w $Workdir $GoImage go test -race -count=1 ./...
     if ($LASTEXITCODE -ne 0) { throw "Linux race test failed for $Source" }
 }
 
