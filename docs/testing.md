@@ -1,5 +1,7 @@
 # Production Test Strategy
 
+[English](testing.md) | [简体中文](testing.zh-CN.md)
+
 Replacing RabbitMQ makes correctness and recoverability release requirements, not optional QA work.
 
 ## Test Pyramid

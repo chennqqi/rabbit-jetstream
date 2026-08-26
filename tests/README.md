@@ -1,5 +1,7 @@
 # Test Suites
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 - `integration/`: black-box tests against real single-node and three-node JetStream deployments.
 - `fault/`: node loss, network interruption, process crash, disk pressure, and recovery scenarios.
 - `compatibility/`: RabbitMQ-style semantic contracts shared with client SDK repositories.

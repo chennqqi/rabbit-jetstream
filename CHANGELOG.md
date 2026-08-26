@@ -1,5 +1,7 @@
 # Changelog
 
+[English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
+
 ## v0.1.0-rc.1
 
 - Ship a management control plane, embedded Admin UI and `rjsctl` operator CLI around the pinned NATS JetStream `v2.14.1` subtree.

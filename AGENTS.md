@@ -37,6 +37,10 @@ Pull requests should explain motivation, behavioral changes, validation commands
 
 Do not modify the NATS subtree for management features. The management service is a control plane and must not enter the message data path. Never commit credentials, generated data, or `.env` files. Production examples should use credentials/NKeys and TLS.
 
+## Documentation Languages
+
+English is the default documentation language. User-facing README, changelog, testing, release, and operational documents must provide a corresponding Simplified Chinese `.zh-CN.md` version with reciprocal language links. Keep commands, version boundaries, safety requirements, and acceptance thresholds semantically identical; resolve ambiguity in favor of the English version.
+
 ## Native Linux Qualification Host
 
 Use `ssh jdcloudremote` for native Linux release qualification. SSH logs in as `root`, but run ordinary validation as `sandbox`; use root only for necessary host-level installation or configuration. The `sandbox` account has rootless Podman. Prefer release binaries for simple checks, and use rootless Podman when isolated networking or container behavior is needed.
