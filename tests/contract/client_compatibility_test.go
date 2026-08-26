@@ -90,7 +90,8 @@ func TestClientCompatibilityContractIsCompleteAndEvidenceBacked(t *testing.T) {
 func TestFirstReleaseDoesNotRequireAMQPCompatibility(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requirements := map[string][]string{
-		"README.md":            {"首个正式版本", "rabbit-jetstream-go", "不是首版发布门槛"},
+		"README.md":            {"first release", "rabbit-jetstream-go", "does not implement the AMQP wire protocol"},
+		"README.zh-CN.md":      {"首版", "rabbit-jetstream-go", "不实现 AMQP 线协议"},
 		"docs/architecture.md": {"首版验收目标", "并不要求 SDK 基于 AMQP", "不阻塞首个正式版本发布"},
 		"docs/roadmap.md":      {"## 版本范围", "不要求基于 AMQP", "## M5：AMQP 0-9-1 协议网关（未来研究）", "不属于首个正式版本"},
 	}
@@ -103,6 +104,33 @@ func TestFirstReleaseDoesNotRequireAMQPCompatibility(t *testing.T) {
 			if !strings.Contains(string(raw), phrase) {
 				t.Errorf("%s lost first-release boundary %q", relative, phrase)
 			}
+		}
+	}
+}
+
+func TestCoreDocumentationIsBilingualWithEnglishDefault(t *testing.T) {
+	root := filepath.Join("..", "..")
+	pairs := [][2]string{
+		{"README.md", "README.zh-CN.md"},
+		{"CHANGELOG.md", "CHANGELOG.zh-CN.md"},
+		{"docs/testing.md", "docs/testing.zh-CN.md"},
+		{"tests/README.md", "tests/README.zh-CN.md"},
+		{"docs/releases/v0.1.0-rc.1.md", "docs/releases/v0.1.0-rc.1.zh-CN.md"},
+	}
+	for _, pair := range pairs {
+		english, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(pair[0])))
+		if err != nil {
+			t.Fatalf("read default English document %s: %v", pair[0], err)
+		}
+		chinese, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(pair[1])))
+		if err != nil {
+			t.Fatalf("read Chinese document %s: %v", pair[1], err)
+		}
+		if !strings.Contains(string(english), filepath.Base(pair[1])) {
+			t.Errorf("%s does not link to %s", pair[0], pair[1])
+		}
+		if !strings.Contains(string(chinese), filepath.Base(pair[0])) {
+			t.Errorf("%s does not link to %s", pair[1], pair[0])
 		}
 	}
 }
