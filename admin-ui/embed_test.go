@@ -52,7 +52,7 @@ func TestManagementUIPreservesMutationSafetyContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	value := string(script)
-	for _, required := range []string{"Authorization", "If-None-Match", "If-Match", "X-RJS-Confirm-Queue", "operator-token", "managedQueueName&&name!==managedQueueName", "cannot be renamed", "maxPriority", "declarationSubjects"} {
+	for _, required := range []string{"Authorization", "If-None-Match", "If-Match", "X-RJS-Confirm-Queue", "operator-token", "editor-token", "managedQueueName&&name!==managedQueueName", "cannot be renamed", "maxPriority", "declarationSubjects"} {
 		if !strings.Contains(value, required) {
 			t.Errorf("management UI missing %q", required)
 		}

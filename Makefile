@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak verify-native-bundle verify-release-approval test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
+.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-admin-ui test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak verify-native-bundle verify-release-approval test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
 
 BUNDLE ?= dist/v0.1.0-rc.1
 NATIVE_QUAL_OUTPUT ?= native-linux-preflight.json
@@ -25,6 +25,9 @@ test:
 
 test-race:
 	go test -race ./...
+
+test-admin-ui:
+	pwsh -NoProfile -File tests/admin-ui/run.ps1
 
 test-linux-smoke:
 	bash tests/integration/linux-smoke.sh

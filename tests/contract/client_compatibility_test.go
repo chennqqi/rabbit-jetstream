@@ -90,10 +90,11 @@ func TestClientCompatibilityContractIsCompleteAndEvidenceBacked(t *testing.T) {
 func TestFirstReleaseDoesNotRequireAMQPCompatibility(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requirements := map[string][]string{
-		"README.md":            {"first release", "rabbit-jetstream-go", "does not implement the AMQP wire protocol"},
-		"README.zh-CN.md":      {"首版", "rabbit-jetstream-go", "不实现 AMQP 线协议"},
-		"docs/architecture.md": {"首版验收目标", "并不要求 SDK 基于 AMQP", "不阻塞首个正式版本发布"},
-		"docs/roadmap.md":      {"## 版本范围", "不要求基于 AMQP", "## M5：AMQP 0-9-1 协议网关（未来研究）", "不属于首个正式版本"},
+		"README.md":             {"first release", "rabbit-jetstream-go", "does not implement the AMQP wire protocol"},
+		"README.zh-CN.md":       {"首版", "rabbit-jetstream-go", "不实现 AMQP 线协议"},
+		"docs/architecture.md":  {"首版验收目标", "并不要求 SDK 基于 AMQP", "不阻塞首个正式版本发布"},
+		"docs/roadmap.md":       {"first stable release", "does not accept AMQP clients unchanged", "## Future: RabbitMQ/AMQP Compatibility", "outside the first release"},
+		"docs/roadmap.zh-CN.md": {"## 版本范围", "不要求基于 AMQP", "## M5：AMQP 0-9-1 协议网关（未来研究）", "不属于首个正式版本"},
 	}
 	for relative, expected := range requirements {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
@@ -114,6 +115,9 @@ func TestCoreDocumentationIsBilingualWithEnglishDefault(t *testing.T) {
 		{"README.md", "README.zh-CN.md"},
 		{"CHANGELOG.md", "CHANGELOG.zh-CN.md"},
 		{"docs/testing.md", "docs/testing.zh-CN.md"},
+		{"docs/deployment.md", "docs/deployment.zh-CN.md"},
+		{"docs/operations.md", "docs/operations.zh-CN.md"},
+		{"docs/roadmap.md", "docs/roadmap.zh-CN.md"},
 		{"tests/README.md", "tests/README.zh-CN.md"},
 		{"docs/releases/v0.1.0-rc.1.md", "docs/releases/v0.1.0-rc.1.zh-CN.md"},
 	}

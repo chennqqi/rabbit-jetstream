@@ -32,7 +32,7 @@ go run ./tools/rjsctl diagnostics collect --url http://127.0.0.1:8223 --output d
 helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream --namespace messaging --create-namespace
 ```
 
-Configuration uses `RJS_*` environment variables or flags. See [Architecture](docs/architecture.md), [Configuration](docs/configuration.md), [Queue Schema](docs/queue-schema.md), [Native SDK Contract](docs/native-sdk-contract.md), [Testing](docs/testing.md), [Release Process](docs/releasing.md), and [Roadmap](docs/roadmap.md).
+Configuration uses `RJS_*` environment variables or flags. Start with the [Deployment Guide](docs/deployment.md) for standalone, clustered, and Kubernetes installations and the [Operations Runbook](docs/operations.md) for routine checks and incidents. See also [Architecture](docs/architecture.md), [Configuration](docs/configuration.md), [Queue Schema](docs/queue-schema.md), [Native SDK Contract](docs/native-sdk-contract.md), [Testing](docs/testing.md), [Release Process](docs/releasing.md), and [Roadmap](docs/roadmap.md).
 
 ## Repository Layout
 

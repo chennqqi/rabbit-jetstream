@@ -74,6 +74,7 @@ Invoke-Checked 'sdk-vet' $SDKPath 'go' @('vet', './...')
 Invoke-Checked 'sdk-build' $SDKPath 'go' @('build', './...')
 
 if ($Mode -in @('Full', 'Release')) {
+    Invoke-Checked 'admin-ui-browser-e2e' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/admin-ui/run.ps1')
     Invoke-Checked 'sdk-docker-integration' $SDKPath 'pwsh' @('-NoProfile', '-File', './scripts/test-integration.ps1')
     Invoke-Checked 'server-sdk-contract' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/native-sdk.ps1')
     foreach ($Scenario in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'auth', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')) {

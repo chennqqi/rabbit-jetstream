@@ -2,6 +2,12 @@
 
 [English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
 
+## 未发布
+
+- 新增 Docker 化 Chromium/Firefox Admin UI E2E 发布门禁，覆盖 Queue 生命周期、认证与 revision 错误、部分 API 故障、窄屏、凭据不持久化和自动可访问性检查。
+- 修复管理对话框嵌套问题，并支持在 Queue 编辑器中安全输入 operator token。
+- 新增可发现的双语 Roadmap、单节点/集群/Kubernetes 部署指南和运维手册。
+
 ## v0.1.0-rc.1
 
 - 提供管理控制面、内嵌 Admin UI 和 `rjsctl` 运维 CLI。

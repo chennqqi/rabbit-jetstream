@@ -4,6 +4,10 @@
 
 替代 RabbitMQ 意味着正确性和可恢复性是发布要求，而不是可选 QA。
 
+## Admin UI 浏览器资格验证
+
+`make test-admin-ui` 使用 Docker Compose 启动真实的单节点 JetStream 和管理服务，再通过 Playwright 在 Linux Chromium 与 Firefox 中操作内嵌控制台。测试覆盖仪表盘加载、筛选、键盘操作、优先级 Queue 创建/更新/删除、精确删除确认、Bearer 认证失败、revision 冲突、部分 API 故障、窄屏行为、凭据不持久化，以及 WCAG A/AA serious/critical 自动检查。本地 RC 的 `Full` 和 `Release` 模式均包含此门禁。静态资源或仅 HTTP Smoke 不能替代真实浏览器测试。
+
 ## 测试分层
 
 1. 单元与契约测试覆盖配置、API 校验、资源命名、策略调和和失败分支。

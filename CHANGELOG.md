@@ -2,6 +2,12 @@
 
 [English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Add a Dockerized Chromium/Firefox Admin UI E2E release gate covering Queue lifecycle, authentication and revision errors, partial API failure, narrow viewports, credential non-persistence, and automated accessibility checks.
+- Fix nested management dialogs and allow an operator token to be entered safely inside the Queue editor.
+- Add discoverable bilingual Roadmap, standalone/cluster/Kubernetes deployment guidance, and an operations runbook.
+
 ## v0.1.0-rc.1
 
 - Ship a management control plane, embedded Admin UI and `rjsctl` operator CLI around the pinned NATS JetStream `v2.14.1` subtree.

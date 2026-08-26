@@ -32,7 +32,7 @@ go run ./tools/rjsctl diagnostics collect --url http://127.0.0.1:8223 --output d
 helm upgrade --install rabbit-jetstream deploy/helm/rabbit-jetstream --namespace messaging --create-namespace
 ```
 
-配置使用 `RJS_*` 环境变量或命令行参数。详见[架构](docs/architecture.md)、[配置](docs/configuration.md)、[Queue Schema](docs/queue-schema.md)、[Native SDK 契约](docs/native-sdk-contract.md)、[测试策略](docs/testing.md)、[发布流程](docs/releasing.md)和 [Roadmap](docs/roadmap.md)。
+配置使用 `RJS_*` 环境变量或命令行参数。请先阅读[部署指南](docs/deployment.zh-CN.md)，其中包含单节点开发、三节点集群和 Kubernetes 安装；日常巡检与故障处置见[运维手册](docs/operations.zh-CN.md)。其他资料包括[架构](docs/architecture.md)、[配置](docs/configuration.md)、[Queue Schema](docs/queue-schema.md)、[Native SDK 契约](docs/native-sdk-contract.md)、[测试策略](docs/testing.zh-CN.md)、[发布流程](docs/releasing.md)和 [Roadmap](docs/roadmap.zh-CN.md)。
 
 ## 仓库结构
 
