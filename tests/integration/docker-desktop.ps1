@@ -9,6 +9,8 @@ $GoToolImage = 'golang@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0f
 $GoBuildCache = 'rabbit-jetstream-go-build-cache'
 $HostGoModCache = (& go env GOMODCACHE).Trim()
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $HostGoModCache)) { throw 'host Go module cache is unavailable' }
+& go mod download
+if ($LASTEXITCODE -ne 0) { throw 'failed to populate host Go module cache' }
 $GoCacheArgs = @('-e', 'GOPROXY=off', '-v', "${HostGoModCache}:/go/pkg/mod", '-v', "${GoBuildCache}:/root/.cache/go-build")
 $NATSBoxImage = 'natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c'
 $AlpineImage = 'alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40'

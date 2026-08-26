@@ -8,6 +8,15 @@ $GoImage = 'golang@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14
 $GoBuildCache = 'rabbit-jetstream-go-race-build-cache'
 $HostGoModCache = (& go env GOMODCACHE).Trim()
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $HostGoModCache)) { throw 'host Go module cache is unavailable' }
+& go mod download
+if ($LASTEXITCODE -ne 0) { throw 'failed to populate repository Go module cache' }
+Push-Location $SDKPath
+try {
+    & go mod download
+    if ($LASTEXITCODE -ne 0) { throw 'failed to populate SDK Go module cache' }
+} finally {
+    Pop-Location
+}
 
 function Invoke-LinuxRace([string]$Source, [string]$Workdir) {
     & docker run --rm -e GOPROXY=off -e CGO_ENABLED=1 -v "${HostGoModCache}:/go/pkg/mod" -v "${GoBuildCache}:/root/.cache/go-build" -v "${Source}:${Workdir}:ro" -w $Workdir $GoImage go test -race -count=1 ./...

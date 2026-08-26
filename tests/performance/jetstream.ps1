@@ -28,6 +28,8 @@ $ContainerTemporary = "/src/$([IO.Path]::GetFileName($Temporary))"
 $HostGoModCache = (& go env GOMODCACHE).Trim()
 $GoBuildCache = 'rabbit-jetstream-go-performance-build-cache'
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $HostGoModCache)) { throw 'host Go module cache is unavailable' }
+& go mod download
+if ($LASTEXITCODE -ne 0) { throw 'failed to populate host Go module cache' }
 
 function Invoke-Docker { & docker @args; if ($LASTEXITCODE -ne 0) { throw "docker command failed: docker $args" } }
 function Get-SHA256([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }

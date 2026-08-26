@@ -12,6 +12,13 @@ $GoImage = 'golang@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14
 $GoBuildCache = 'rabbit-jetstream-go-build-cache'
 $HostGoModCache = (& go env GOMODCACHE).Trim()
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $HostGoModCache)) { throw 'host Go module cache is unavailable' }
+Push-Location $SDKPath
+try {
+    & go mod download
+    if ($LASTEXITCODE -ne 0) { throw 'failed to populate SDK Go module cache' }
+} finally {
+    Pop-Location
+}
 $PreviousToken = $env:RJS_ADMIN_TOKEN
 
 try {

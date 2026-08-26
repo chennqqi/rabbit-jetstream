@@ -16,7 +16,9 @@ try {
     if ($IsLinux) { & chmod 0777 $TemporaryRoot }
     Invoke-Docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:migration-test .
     $ContainerOutput = '/output/result'
-    $Mounts = @('-v', "${RepositoryRoot}:/src:ro", '-v', "${TemporaryRoot}:/output", '-w', '/src')
+    $RunUser = @()
+    if ($IsLinux) { $RunUser = @('--user', "$(& id -u):$(& id -g)") }
+    $Mounts = $RunUser + @('-v', "${RepositoryRoot}:/src:ro", '-v', "${TemporaryRoot}:/output", '-w', '/src')
     Invoke-Docker run --rm @Mounts rabbit-jetstream/operator:migration-test migrate rabbitmq-definitions --output $ContainerOutput tests/fixtures/rabbitmq-definitions.json
     $Report = Get-Content -LiteralPath (Join-Path $Output 'migration-report.json') -Raw | ConvertFrom-Json
     if (-not $Report.compatible -or $Report.converted -ne 3 -or $Report.queues -ne 3) { throw 'migration report is incorrect' }
