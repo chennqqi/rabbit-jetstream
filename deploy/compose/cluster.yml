@@ -9,7 +9,7 @@ x-nats: &nats
   security_opt: ["no-new-privileges:true"]
   cap_drop: ["ALL"]
   healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:8222/healthz"]
+    test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:8222/healthz"]
     interval: 5s
     timeout: 2s
     retries: 12
