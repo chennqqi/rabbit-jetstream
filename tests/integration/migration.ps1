@@ -31,8 +31,12 @@ try {
     if (-not $Pass.passed -or $Pass.matched -ne 3 -or $Pass.missing -ne 0) { throw 'passing reconciliation report is incorrect' }
 
     $FailReport = "$ContainerOutput/reconciliation-fail.json"
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & docker run --rm @Mounts rabbit-jetstream/operator:migration-test migrate reconcile --source tests/fixtures/migration-shadow-source.ndjson --target tests/fixtures/migration-shadow-drift.ndjson --output $FailReport 2>$null
-    if ($LASTEXITCODE -eq 0) { throw 'drifted message evidence unexpectedly passed' }
+    $DriftExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
+    if ($DriftExitCode -eq 0) { throw 'drifted message evidence unexpectedly passed' }
     $Fail = Get-Content -LiteralPath (Join-Path $Output 'reconciliation-fail.json') -Raw | ConvertFrom-Json
     if ($Fail.passed -or $Fail.missing -ne 1 -or $Fail.unexpected -ne 1 -or $Fail.content_mismatch -ne 1 -or $Fail.target_duplicates -ne 1) { throw 'failed reconciliation report is incorrect' }
 } finally {

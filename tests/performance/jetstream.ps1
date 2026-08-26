@@ -114,6 +114,9 @@ try {
         Start-Sleep -Seconds $SampleIntervalSeconds
     }
     $ReportPath = Join-Path $Temporary 'report.json'
+    if ($IsLinux) {
+        Invoke-Docker run --rm -v "${Temporary}:/output" alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 chmod -R a+rX /output
+    }
     $Report = Assert-Report $ReportPath
     if ($Baseline -ne '') { Compare-Baseline $Report $Baseline }
     if ($Output -ne '') {

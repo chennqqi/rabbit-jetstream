@@ -35,6 +35,16 @@ docker compose -p "$project" -f "$compose_file" up -d --build --wait
 wait_for_nodes '"available":3'
 nats nats-1 stream add RJS_E2E --subjects rjs.e2e --storage file --replicas 3 --defaults
 nats nats-1 publish rjs.e2e before-failure
+for _ in $(seq 1 45); do
+  baseline_json="$(nats nats-1 stream info RJS_E2E --json || true)"
+  if [[ "$(grep -Ec '"current":[[:space:]]*true' <<<"$baseline_json")" -eq 2 ]] &&
+     [[ "$(grep -Ec '"messages":[[:space:]]*1' <<<"$baseline_json")" -eq 1 ]]; then
+    break
+  fi
+  sleep 1
+done
+test "$(grep -Ec '"current":[[:space:]]*true' <<<"$baseline_json")" -eq 2
+test "$(grep -Ec '"messages":[[:space:]]*1' <<<"$baseline_json")" -eq 1
 
 docker compose -p "$project" -f "$compose_file" stop nats-1
 sleep 5
@@ -58,16 +68,16 @@ test "$(docker inspect --format '{{.State.Health.Status}}' "${project}-nats-1-1"
 for _ in $(seq 1 45); do
   cluster_json="$(nats nats-1 stream info RJS_E2E --json || true)"
   managed_stream="$(curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/streams/RJS_E2E || true)"
-  if [[ "$(grep -c '"current": true' <<<"$cluster_json")" -eq 2 ]] &&
-     [[ "$(grep -c '"messages": 2' <<<"$cluster_json")" -eq 1 ]] &&
-     [[ "$(grep -c '"messages":2' <<<"$managed_stream")" -eq 1 ]] &&
-     [[ "$(grep -c '"current":true' <<<"$managed_stream")" -eq 2 ]]; then
+  if [[ "$(grep -Ec '"current":[[:space:]]*true' <<<"$cluster_json")" -eq 2 ]] &&
+     [[ "$(grep -Ec '"messages":[[:space:]]*2' <<<"$cluster_json")" -eq 1 ]] &&
+     [[ "$(grep -Ec '"messages":[[:space:]]*2' <<<"$managed_stream")" -eq 1 ]] &&
+     [[ "$(grep -Ec '"current":[[:space:]]*true' <<<"$managed_stream")" -eq 2 ]]; then
     break
   fi
   sleep 1
 done
-test "$(grep -c '"current": true' <<<"$cluster_json")" -eq 2
-test "$(grep -c '"messages": 2' <<<"$cluster_json")" -eq 1
-test "$(grep -c '"messages":2' <<<"$managed_stream")" -eq 1
-test "$(grep -c '"current":true' <<<"$managed_stream")" -eq 2
+test "$(grep -Ec '"current":[[:space:]]*true' <<<"$cluster_json")" -eq 2
+test "$(grep -Ec '"messages":[[:space:]]*2' <<<"$cluster_json")" -eq 1
+test "$(grep -Ec '"messages":[[:space:]]*2' <<<"$managed_stream")" -eq 1
+test "$(grep -Ec '"current":[[:space:]]*true' <<<"$managed_stream")" -eq 2
 wait_for_nodes '"available":3'

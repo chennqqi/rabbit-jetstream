@@ -9,6 +9,7 @@ RUN go get golang.org/x/crypto@${NATS_X_CRYPTO_VERSION} \
     && mkdir -p /out/data/jetstream
 
 FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+RUN apk upgrade --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
 COPY --from=build /out/nats-server /usr/local/bin/nats-server
 COPY --chown=65532:65532 --from=build /out/data /data
 USER 65532:65532

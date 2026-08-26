@@ -299,6 +299,7 @@ try {
 			if ($Scenario -eq 'diagnostics') {
 				$ContainerOutput = "/src/$([IO.Path]::GetFileName($DiagnosticBundle))"
 				Invoke-Docker run --rm @GoCacheArgs --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
+				if ($IsLinux) { Invoke-Docker run --rm -v "${DiagnosticBundle}:/bundle.zip" $AlpineImage chmod a+r /bundle.zip }
 				$Archive = [IO.Compression.ZipFile]::OpenRead($DiagnosticBundle)
 				try {
 					$Names = @($Archive.Entries | ForEach-Object FullName)

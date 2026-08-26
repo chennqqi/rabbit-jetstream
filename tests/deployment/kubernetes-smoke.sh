@@ -77,12 +77,19 @@ fi
 docker build -f "$repo_root/packaging/Dockerfile.nats-server" -t rabbit-jetstream/nats-server:kubernetes-smoke "$repo_root"
 docker build -f "$repo_root/packaging/Dockerfile.management" -t rabbit-jetstream/management:kubernetes-smoke "$repo_root"
 docker build -f "$repo_root/packaging/Dockerfile.operator" -t rabbit-jetstream/operator:kubernetes-smoke "$repo_root"
-nats_digest="$(docker image inspect rabbit-jetstream/nats-server:kubernetes-smoke --format '{{index .RepoDigests 0}}')"
-nats_digest="${nats_digest##*@}"
-management_digest="$(docker image inspect rabbit-jetstream/management:kubernetes-smoke --format '{{index .RepoDigests 0}}')"
-management_digest="${management_digest##*@}"
-operator_digest="$(docker image inspect rabbit-jetstream/operator:kubernetes-smoke --format '{{index .RepoDigests 0}}')"
-operator_digest="${operator_digest##*@}"
+image_digest() {
+  local image="$1"
+  local reference
+  reference="$(docker image inspect "$image" --format '{{join .RepoDigests "\n"}}' | sed -n '1p')"
+  if [[ -n "$reference" ]]; then
+    printf '%s\n' "${reference##*@}"
+  else
+    docker image inspect "$image" --format '{{.Id}}'
+  fi
+}
+nats_digest="$(image_digest rabbit-jetstream/nats-server:kubernetes-smoke)"
+management_digest="$(image_digest rabbit-jetstream/management:kubernetes-smoke)"
+operator_digest="$(image_digest rabbit-jetstream/operator:kubernetes-smoke)"
 for digest in "$nats_digest" "$management_digest" "$operator_digest"; do
   printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
 done
