@@ -18,7 +18,7 @@ try {
     Invoke-Docker network create $Network
     Invoke-Docker build -f packaging/Dockerfile.nats-server -t rabbit-jetstream/nats-server:shadow-test .
     Invoke-Docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:shadow-test .
-    Invoke-Docker run -d --name $Rabbit --network $Network --network-alias rabbit --tmpfs '/var/lib/rabbitmq:rw,uid=999,gid=999,mode=0700' -e RABBITMQ_DEFAULT_USER=rjs -e RABBITMQ_DEFAULT_PASS=test -e RABBITMQ_ERLANG_COOKIE=rjs-shadow-test-cookie 'rabbitmq@sha256:5733d284ee87779d6f7628382cc69457d5ac82447c9e8ffba0cfeb92353e343b'
+    Invoke-Docker run -d --name $Rabbit --network $Network --network-alias rabbit --tmpfs '/var/lib/rabbitmq:rw,uid=100,gid=101,mode=0700' -e RABBITMQ_DEFAULT_USER=rjs -e RABBITMQ_DEFAULT_PASS=test -e RABBITMQ_ERLANG_COOKIE=rjs-shadow-test-cookie 'rabbitmq@sha256:5733d284ee87779d6f7628382cc69457d5ac82447c9e8ffba0cfeb92353e343b'
     Invoke-Docker run -d --name $NATS --network $Network --network-alias nats rabbit-jetstream/nats-server:shadow-test -js
     for ($i=0; $i -lt 180; $i++) {
         & docker exec $Rabbit rabbitmq-diagnostics -q ping 2>$null
