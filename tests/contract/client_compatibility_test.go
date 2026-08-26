@@ -120,6 +120,7 @@ func TestCoreDocumentationIsBilingualWithEnglishDefault(t *testing.T) {
 		{"docs/roadmap.md", "docs/roadmap.zh-CN.md"},
 		{"tests/README.md", "tests/README.zh-CN.md"},
 		{"docs/releases/v0.1.0-rc.1.md", "docs/releases/v0.1.0-rc.1.zh-CN.md"},
+		{"docs/releases/v0.1.0-rc.2.md", "docs/releases/v0.1.0-rc.2.zh-CN.md"},
 	}
 	for _, pair := range pairs {
 		english, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(pair[0])))

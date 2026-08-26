@@ -4,10 +4,14 @@
 
 ## Unreleased
 
+## v0.1.0-rc.2
+
 - Fix Linux CI portability for writable offline Go module metadata, non-root test output/TLS fixtures, and `pipefail`-safe HTTP assertions.
 - Add a Dockerized Chromium/Firefox Admin UI E2E release gate covering Queue lifecycle, authentication and revision errors, partial API failure, narrow viewports, credential non-persistence, and automated accessibility checks.
 - Fix nested management dialogs and allow an operator token to be entered safely inside the Queue editor.
 - Add discoverable bilingual Roadmap, standalone/cluster/Kubernetes deployment guidance, and an operations runbook.
+- Replace the Alpine NATS runtime with a pinned distroless image and a static health checker to remove runtime OS-package vulnerabilities.
+- Harden Linux smoke, cluster-fault, migration, Kubernetes, and release gates without weakening message-integrity assertions.
 
 ## v0.1.0-rc.1
 
