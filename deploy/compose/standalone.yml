@@ -17,7 +17,7 @@ services:
       - ../nats/standalone.conf:/etc/nats/nats.conf:ro
       - nats-data:/data
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:8222/healthz"]
       interval: 5s
       timeout: 2s
       retries: 12
