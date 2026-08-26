@@ -20,8 +20,20 @@ try {
     Invoke-Docker build -f packaging/Dockerfile.operator -t rabbit-jetstream/operator:shadow-test .
     Invoke-Docker run -d --name $Rabbit --network $Network --network-alias rabbit -e RABBITMQ_DEFAULT_USER=rjs -e RABBITMQ_DEFAULT_PASS=test 'rabbitmq@sha256:5733d284ee87779d6f7628382cc69457d5ac82447c9e8ffba0cfeb92353e343b'
     Invoke-Docker run -d --name $NATS --network $Network --network-alias nats rabbit-jetstream/nats-server:shadow-test -js
-    for ($i=0; $i -lt 60; $i++) { & docker exec $Rabbit rabbitmq-diagnostics -q ping 2>$null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 1 }
-    if ($i -eq 60) { throw 'RabbitMQ did not become ready' }
+    for ($i=0; $i -lt 180; $i++) {
+        & docker exec $Rabbit rabbitmq-diagnostics -q ping 2>$null
+        if ($LASTEXITCODE -eq 0) { break }
+        $RabbitState = (& docker inspect --format '{{.State.Status}}' $Rabbit 2>$null).Trim()
+        if ($RabbitState -eq 'exited' -or $RabbitState -eq 'dead') {
+            & docker logs $Rabbit
+            throw "RabbitMQ exited before becoming ready (state: $RabbitState)"
+        }
+        Start-Sleep -Seconds 1
+    }
+    if ($i -eq 180) {
+        & docker logs $Rabbit
+        throw 'RabbitMQ did not become ready within 180 seconds'
+    }
     for ($i=0; $i -lt 60; $i++) { & docker run --rm --network $Network natsio/nats-box@sha256:ffce8bd103383f179f8c7f11cf645726acf5d17280706c530c3b342dbe16334c nats server check connection -s nats://nats:4222 2>$null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 1 }
     if ($i -eq 60) { throw 'NATS did not become ready' }
     Invoke-Docker run --rm --network $Network -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tests/helpers/shadow-publisher --mode setup
