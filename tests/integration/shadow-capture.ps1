@@ -21,7 +21,7 @@ try {
     Invoke-Docker run -d --name $Rabbit --network $Network --network-alias rabbit --tmpfs '/var/lib/rabbitmq:rw,uid=100,gid=101,mode=0700' -e RABBITMQ_DEFAULT_USER=rjs -e RABBITMQ_DEFAULT_PASS=test -e RABBITMQ_ERLANG_COOKIE=rjs-shadow-test-cookie 'rabbitmq@sha256:5733d284ee87779d6f7628382cc69457d5ac82447c9e8ffba0cfeb92353e343b'
     Invoke-Docker run -d --name $NATS --network $Network --network-alias nats rabbit-jetstream/nats-server:shadow-test -js
     for ($i=0; $i -lt 180; $i++) {
-        & docker exec $Rabbit rabbitmq-diagnostics -q ping 2>$null
+        & docker exec --user 100:101 $Rabbit rabbitmq-diagnostics -q ping 2>$null
         if ($LASTEXITCODE -eq 0) { break }
         $RabbitState = (& docker inspect --format '{{.State.Status}}' $Rabbit 2>$null).Trim()
         if ($RabbitState -eq 'exited' -or $RabbitState -eq 'dead') {
