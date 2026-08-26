@@ -35,6 +35,7 @@ try {
     $ErrorActionPreference = 'Continue'
     & docker run --rm @Mounts rabbit-jetstream/operator:migration-test migrate reconcile --source tests/fixtures/migration-shadow-source.ndjson --target tests/fixtures/migration-shadow-drift.ndjson --output $FailReport 2>$null
     $DriftExitCode = $LASTEXITCODE
+    $global:LASTEXITCODE = 0
     $ErrorActionPreference = $PreviousErrorActionPreference
     if ($DriftExitCode -eq 0) { throw 'drifted message evidence unexpectedly passed' }
     $Fail = Get-Content -LiteralPath (Join-Path $Output 'reconciliation-fail.json') -Raw | ConvertFrom-Json
