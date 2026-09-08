@@ -74,6 +74,35 @@ func TestVerifyApprovalRejectsTamperedArtifact(t *testing.T) {
 	}
 }
 
+func TestVerifyApprovalSoleOwner(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*approval)
+		want   string
+	}{
+		{"valid", func(*approval) {}, ""},
+		{"unsigned", func(a *approval) { a.Signoffs[0].Approved = false }, "invalid release sign-off"},
+		{"blank owner", func(a *approval) { a.Signoffs[0].Name = "  " }, "invalid release sign-off"},
+		{"premature", func(a *approval) { a.Signoffs[0].ApprovedAt = a.CanaryStages[0].StartedAt }, "invalid release sign-off"},
+		{"mixed models", func(a *approval) { a.Signoffs = append(a.Signoffs, signoff{Role: "service_owner"}) }, "one sole_owner"},
+		{"incomplete roles", func(a *approval) { a.Signoffs[0].Role = "service_owner" }, "one sole_owner"},
+		{"missing stage", func(a *approval) { a.CanaryStages = a.CanaryStages[:4] }, "canary must contain"},
+		{"message loss", func(a *approval) { a.CanaryStages[0].MissingMessages = 1 }, "message integrity"},
+		{"failed rollback", func(a *approval) { a.Rollback.Passed = false }, "rollback rehearsal"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := createApprovalFixture(t, func(a *approval) {
+				a.Signoffs = []signoff{{Role: "sole_owner", Name: "owner", Approved: true, ApprovedAt: a.Signoffs[0].ApprovedAt}}
+				test.mutate(a)
+			})
+			err := verifyApproval(path, testServerRevision)
+			if test.want == "" && err != nil || test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
+				t.Fatalf("verifyApproval() = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	path := createApprovalFixture(t, nil)
 	var stdout, stderr strings.Builder

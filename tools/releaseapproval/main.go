@@ -273,12 +273,17 @@ func verifyApproval(path, expectedRevision string) error {
 		}
 	}
 	requiredRoles := map[string]bool{"service_owner": false, "application_owner": false, "on_call_operator": false}
+	// A sole owner explicitly accepts all three operational responsibilities.
+	// The same evidence and observation gates apply to both signing models.
+	if len(proof.Signoffs) == 1 && proof.Signoffs[0].Role == "sole_owner" {
+		requiredRoles = map[string]bool{"sole_owner": false}
+	}
 	if len(proof.Signoffs) != len(requiredRoles) {
-		return errors.New("exactly three release sign-offs are required")
+		return errors.New("one sole_owner or three role-specific release sign-offs are required")
 	}
 	canaryEndedAt := proof.CanaryStages[len(proof.CanaryStages)-1].EndedAt
 	for _, item := range proof.Signoffs {
-		if _, exists := requiredRoles[item.Role]; !exists || requiredRoles[item.Role] || item.Name == "" || !item.Approved || item.ApprovedAt.IsZero() || item.ApprovedAt.Before(canaryEndedAt) {
+		if _, exists := requiredRoles[item.Role]; !exists || requiredRoles[item.Role] || strings.TrimSpace(item.Name) == "" || !item.Approved || item.ApprovedAt.IsZero() || item.ApprovedAt.Before(canaryEndedAt) {
 			return fmt.Errorf("invalid release sign-off for role %q", item.Role)
 		}
 		requiredRoles[item.Role] = true

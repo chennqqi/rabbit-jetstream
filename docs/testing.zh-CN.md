@@ -31,3 +31,18 @@ make test-linux-fault
 ```
 
 Linux/AMD64 是首版生产资格平台。Windows 和 Docker Desktop 用于开发反馈，不能替代原生 Linux 资格证据；ARM64 可交叉构建，但在取得原生环境验证前不具备生产资格。完整命令和证据规则见英文默认文档；如有歧义以英文版本为准。
+
+### 影子迁移开发复跑
+
+生产镜像构建使用 BuildKit 模块缓存，以及可配置的 `GOPROXY` / `GOSUMDB` 构建参数。NATS 和 management 构建采用与 operator 一致的默认值。间歇下载失败可重试，但必须保留校验和验证及漏洞门禁阈值。
+
+`tests/integration/shadow-capture.ps1` 默认重新构建生产测试镜像。在 Linux 上，迁移容器使用调用者的 UID/GID，使证据保持私有 `0600` 权限且宿主断言可读。切流动作使用包含 `/bin/cp` 的专用测试镜像运行相同 CLI，生产镜像仍为 distroless。
+
+开发期间依赖下载不可用时，可使用已有测试镜像和已填充的宿主模块缓存：
+
+```powershell
+$ShadowGoCache = (go env GOMODCACHE).Trim()
+pwsh -NoProfile -File tests/integration/shadow-capture.ps1 -SkipBuild -GoModCache $ShadowGoCache
+```
+
+`-GoModCache` 禁止 publisher 辅助程序下载模块。`-SkipBuild` 不能证明当前发布 revision 已取得资格。CI 和本地 `Release` 门禁使用默认完整构建流程，并保留全部迁移断言。

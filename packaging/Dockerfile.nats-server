@@ -1,13 +1,15 @@
 FROM --platform=$BUILDPLATFORM golang:1.25.13-alpine@sha256:1e0126852075c9c60731c8ba49088448b91f63e2aed97ca9d1a9791622a05946 AS build
 ARG TARGETOS
 ARG TARGETARCH
-ARG NATS_X_CRYPTO_VERSION=v0.53.0
+ARG NATS_X_CRYPTO_VERSION=v0.55.0
+ARG GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
+ARG GOSUMDB=sum.golang.google.cn
 WORKDIR /src
 COPY packaging/healthcheck/main.go ./packaging/healthcheck/main.go
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/healthcheck ./packaging/healthcheck/main.go
 WORKDIR /src/upstream/nats-server
 COPY upstream/nats-server/ ./
-RUN go get golang.org/x/crypto@${NATS_X_CRYPTO_VERSION} \
+RUN --mount=type=cache,target=/go/pkg/mod go get golang.org/x/crypto@${NATS_X_CRYPTO_VERSION} \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/nats-server . \
     && mkdir -p /out/data/jetstream
 

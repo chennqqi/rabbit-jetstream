@@ -29,11 +29,11 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		}
 	}
 	natsImage := read("packaging/Dockerfile.nats-server")
-	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.53.0") {
+	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.55.0") {
 		t.Error("NATS image lost its documented security dependency override")
 	}
 	operator := read("packaging/Dockerfile.operator")
-	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/net@v0.56.0") || !strings.Contains(operator, "-X main.version=${VERSION}") || !strings.Contains(operator, "GOARCH=$TARGETARCH") {
+	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/crypto@v0.55.0") || !strings.Contains(operator, "golang.org/x/net@v0.57.0") || !strings.Contains(operator, "-X main.version=${VERSION}") || !strings.Contains(operator, "GOARCH=$TARGETARCH") {
 		t.Error("operator image no longer builds the minimal patched nats CLI")
 	}
 	scanner := read("tests/security/scan.ps1")

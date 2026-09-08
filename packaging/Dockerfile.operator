@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/go/pkg/mod CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$T
     && cd /src/natscli-build \
     && go mod init rabbit-jetstream.local/natscli-build \
     && go get github.com/nats-io/natscli/nats@${NATSCLI_VERSION} \
-    && go get golang.org/x/crypto@v0.53.0 golang.org/x/net@v0.56.0 golang.org/x/text@v0.39.0 golang.org/x/term@v0.44.0 github.com/minio/highwayhash@v1.0.4 \
+    && go get golang.org/x/crypto@v0.55.0 golang.org/x/net@v0.57.0 golang.org/x/text@v0.41.0 golang.org/x/term@v0.45.0 github.com/minio/highwayhash@v1.0.4 \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/nats github.com/nats-io/natscli/nats
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35

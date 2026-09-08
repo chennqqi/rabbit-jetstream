@@ -378,7 +378,7 @@ func verifyManifestArtifacts(bundle string, manifest releaseManifest) error {
 }
 
 func expectedArtifactPaths(version string) map[string]bool {
-	return map[string]bool{
+	paths := map[string]bool{
 		"bin/linux-amd64/rjs-management":                                true,
 		"bin/linux-amd64/rjsctl":                                        true,
 		"bin/linux-amd64/nativequal":                                    true,
@@ -392,6 +392,12 @@ func expectedArtifactPaths(version string) map[string]bool {
 		"evidence/performance-ci.json":                                  true,
 		"rabbit-jetstream-" + strings.TrimPrefix(version, "v") + ".tgz": true,
 	}
+	if version != "v0.1.0-rc.1" {
+		paths["licenses/NATS-LICENSE"] = true
+		paths["licenses/release-license-records.md"] = true
+		paths["licenses/release-license-records.zh-CN.md"] = true
+	}
+	return paths
 }
 
 func safeRelativePath(path string) bool {

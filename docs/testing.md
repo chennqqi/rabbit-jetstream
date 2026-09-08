@@ -96,3 +96,18 @@ On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
 ```
 
 The CI profile verifies a three-replica persistent workload and retains its report. Large-scale and release-soak profiles, baseline rules, resource evidence, and interpretation limits are defined in [Performance and Soak Testing](performance-testing.md). The release profile enforces a minimum 24-hour duration; the short CI profile never satisfies that gate.
+
+### Shadow migration development reruns
+
+Production image builds use BuildKit module caches and configurable `GOPROXY` / `GOSUMDB` build arguments. The NATS and management builds share the operator's defaults. Intermittent downloads may be retried; checksum verification and vulnerability thresholds must remain enabled.
+
+`tests/integration/shadow-capture.ps1` normally rebuilds the production test images. On Linux it maps migration containers to the invoking UID/GID, preserving private `0600` evidence while allowing host assertions. Cutover actions run the same CLI in a test-only image with `/bin/cp`; production remains distroless.
+
+For development when dependency downloads are unavailable, use pre-existing test images and a populated host module cache:
+
+```powershell
+$ShadowGoCache = (go env GOMODCACHE).Trim()
+pwsh -NoProfile -File tests/integration/shadow-capture.ps1 -SkipBuild -GoModCache $ShadowGoCache
+```
+
+`-GoModCache` disables module downloads for the publisher helper. `-SkipBuild` does not qualify the current release revision. CI and the local `Release` gate use the default full-build path and retain all migration assertions.
