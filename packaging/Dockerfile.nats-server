@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/h
 WORKDIR /src/upstream/nats-server
 COPY upstream/nats-server/ ./
 RUN --mount=type=cache,target=/go/pkg/mod go get golang.org/x/crypto@${NATS_X_CRYPTO_VERSION} \
+    && go mod download golang.org/x/sys \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/nats-server . \
     && mkdir -p /out/data/jetstream
 

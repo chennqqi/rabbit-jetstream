@@ -34,7 +34,13 @@ Follow-up status and remaining conditions:
 
 No `rc.2` or GA release was published. The overall estimate remains unchanged until mandatory gates close.
 
-### Required order
+### Frozen regression and qualification-host decision
+
+All 31 local Release gates passed for server `6d437e2403bc75b866ba394805491584e3d19586` and SDK `8c63313efc3f9cefb87744358795a633fa55acc2`, both clean. Evidence: `artifacts/rc2-local-release.json`, SHA-256 `f974ec636c31d01078111105df04e37e5d678f93be9f9cda4f7801ba9a5f9098`. Coverage was 80.3% overall, 92.3% topology and 96.1% controller. The 20,000-message local performance smoke passed; it is not production capacity evidence. Native Kind is a separate gate and was not executed by this local entry point.
+
+The subsequent dual-platform package exposed a missing `x/sys` checksum in the ARM64 NATS build after the security override. The build now explicitly downloads that module before compilation. This packaging change requires a new server freeze and regression; the preceding evidence remains bound only to `6d437e24`.
+
+The owner will provide a separate formal qualification host. Do not start or claim the formal 24-hour soak on the current 2-CPU/4-GB `jdcloudremote`; use it only for isolated installation, fault and rollback functional checks. Native Kind and exact-candidate long-duration qualification remain pending the suitable host. The old 32-CPU host's reports cannot qualify the new candidate.
 
 ### rc.2 freeze and sole-owner workflow
 
@@ -43,6 +49,8 @@ The rc.2 SDK candidate is frozen on the local `release/v0.1.0-rc.2` branch at `8
 The owner has confirmed that one person covers service, application and on-call responsibilities. The approval template therefore uses a single unsigned `sole_owner` entry. Review all stage/fault/rollback evidence once and sign once after the final observation window. The five automated observation stages and their integrity, health and rollback gates remain applicable; no final approval is inferred from permission to prepare a candidate.
 
 The local rc.2 package embeds BuildKit SBOM/provenance attestations and includes license records. All binaries are built locally in Docker; only frozen artifacts and evidence inputs may be transferred to `jdcloudremote`. Public publisher signing and redistribution terms remain separate from local artifact qualification.
+
+### Required order
 
 1. Restore a fully green CI baseline.
 2. Freeze the final server and SDK revisions.
