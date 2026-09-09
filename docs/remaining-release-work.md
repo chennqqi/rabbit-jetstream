@@ -2,7 +2,21 @@
 
 [English](remaining-release-work.md) | [简体中文](remaining-release-work.zh-CN.md)
 
-The project is approximately **92% complete** for its explicitly bounded first release. The remaining 8% is primarily release closure, not missing core Queue functionality.
+The original planning estimate was 92%; the current engineering estimate is approximately **95%** for the explicitly bounded first release. This is not a release-approval score. Remaining work is primarily qualification and release closure, not missing core Queue functionality. The original 8% breakdown below is retained for traceability.
+
+## Current status: 2026-09-09
+
+- The final rc.2 runtime is frozen at `2872e4819f5da873c752a1e06cf186d459a9b594`, with SDK `8c63313efc3f9cefb87744358795a633fa55acc2`. All 31 local Release gates passed for this pair; the final local evidence is `artifacts/rc2-local-release-final.json`. This supersedes the earlier packaging-checksum follow-up below.
+- The owner selected `lsb112` for non-container qualification and required all builds on the local workstation. [Real bare-metal mode](baremetal-qualification.md) is implemented. Verification tools are separately frozen at `49f1dbfe43db727022eb2f53aeae7dd98f17a6e7`; runtime binaries remain identical to the frozen candidate. Local Go tests, vet, Linux tool race tests and coverage passed (80.4% overall; critical packages 92.3%/96.1%).
+- The final two-minute calibration passed: 600,001 messages published and consumed, zero missing/duplicate/corrupt messages or retries, approximately 5,000 messages/s, publish P99 1.67 ms, and resource audit passed. Initial launcher/logging and metadata-convergence failures were retained and fixed; those attempts do not count toward the soak.
+- The new 24-hour run started at **2026-09-09 12:22:49 Asia/Shanghai**, with workload completion expected **2026-09-10 12:22:49**, followed by sampling/audit. Unit: `rjs-qual-rc2-20260909-soak02.service`. Initial checks confirm the workload, three NATS processes, management and sampler are running as one non-root dynamic user in the bounded cgroup. All builds were local; no containers or compiler were used on the host. Only new qualification directories and test processes were created.
+- **Running is not passed.** Retain the full observation window and validate final integrity, performance and resource evidence before closing this gate. Original reports remain on the qualification host; downloading them to the local artifacts directory awaits explicit data-transfer approval. Native Kind on a suitable separate host, application Canary observations, sole-owner sign-off, and public release conditions remain separate outstanding gates. No additional percentage credit is claimed merely for starting the soak.
+
+Check the current run without modifying it:
+
+```bash
+ssh lsb112 'systemctl status rjs-qual-rc2-20260909-soak02.service --no-pager'
+```
 
 ## Remaining Work
 
