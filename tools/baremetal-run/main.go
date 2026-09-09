@@ -140,12 +140,22 @@ func run(ctx context.Context, o options) (err error) {
 		}
 		s.permanent = append(s.permanent, c)
 	}
+	stable := 0
 	for deadline := time.Now().Add(60 * time.Second); ; {
-		if err = s.nodesHealthy(); err == nil {
-			break
+		err = s.nodesHealthy()
+		if err == nil {
+			err = s.clusterReady()
+		}
+		if err == nil {
+			stable++
+			if stable >= 5 {
+				break
+			}
+		} else {
+			stable = 0
 		}
 		if time.Now().After(deadline) {
-			return err
+			return fmt.Errorf("cluster readiness did not stabilize: %v", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -376,6 +386,49 @@ func (s *supervisor) nodesHealthy() error {
 			return errors.New("node identity changed")
 		}
 		s.ids[i] = id
+	}
+	return nil
+}
+
+// Process health alone does not prove that the R3 metadata group can place a
+// stream. Wait for all nodes to agree on a leader and its two caught-up peers.
+func (s *supervisor) clusterReady() error {
+	leader := ""
+	leaderReady := false
+	for i := 0; i < 3; i++ {
+		var value struct {
+			Meta struct {
+				Leader   string `json:"leader"`
+				Size     int    `json:"cluster_size"`
+				Replicas []struct {
+					Name    string `json:"name"`
+					Current bool   `json:"current"`
+					Offline bool   `json:"offline"`
+					Lag     uint64 `json:"lag"`
+				} `json:"replicas"`
+			} `json:"meta_cluster"`
+		}
+		if err := s.get(fmt.Sprintf("http://127.0.0.1:%d/jsz", s.opts.port+6+i), &value); err != nil {
+			return err
+		}
+		m := value.Meta
+		if m.Size != 3 || m.Leader == "" || (leader != "" && leader != m.Leader) {
+			return errors.New("R3 metadata cluster has not converged")
+		}
+		leader = m.Leader
+		if leader == fmt.Sprintf("rjs-bare-%d", i+1) {
+			seen := map[string]bool{leader: true}
+			for _, peer := range m.Replicas {
+				if !peer.Current || peer.Offline || peer.Lag != 0 || seen[peer.Name] {
+					return errors.New("metadata peer is not current")
+				}
+				seen[peer.Name] = true
+			}
+			leaderReady = len(m.Replicas) == 2 && seen["rjs-bare-1"] && seen["rjs-bare-2"] && seen["rjs-bare-3"]
+		}
+	}
+	if !leaderReady {
+		return errors.New("metadata leader does not report two current peers")
 	}
 	return nil
 }

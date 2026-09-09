@@ -137,6 +137,46 @@ func TestHostGuards(t *testing.T) {
 	}
 }
 
+func TestClusterReadiness(t *testing.T) {
+	good := `{"meta_cluster":{"leader":"rjs-bare-1","cluster_size":3,"replicas":[{"name":"rjs-bare-2","current":true},{"name":"rjs-bare-3","current":true}]}}`
+	for _, fault := range []string{"", "missing", "size", "leader", "offline", "lag", "current", "duplicate", "peer-count", "transport"} {
+		t.Run(fault, func(t *testing.T) {
+			body := good
+			switch fault {
+			case "missing":
+				body = `{}`
+			case "size":
+				body = strings.ReplaceAll(good, `"cluster_size":3`, `"cluster_size":2`)
+			case "leader":
+				body = strings.ReplaceAll(good, `rjs-bare-1`, `unknown`)
+			case "offline":
+				body = strings.ReplaceAll(good, `"current":true`, `"current":true,"offline":true`)
+			case "lag":
+				body = strings.ReplaceAll(good, `"current":true`, `"current":true,"lag":1`)
+			case "current":
+				body = strings.ReplaceAll(good, `true`, `false`)
+			case "duplicate":
+				body = strings.ReplaceAll(good, `rjs-bare-3`, `rjs-bare-2`)
+			case "peer-count":
+				body = strings.ReplaceAll(good, `,{"name":"rjs-bare-3","current":true}`, ``)
+			}
+			s := &supervisor{opts: options{port: 24220}, client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if fault == "transport" {
+					return nil, errors.New("offline")
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			})}}
+			err := s.clusterReady()
+			if fault == "" && err != nil {
+				t.Fatal(err)
+			}
+			if fault != "" && err == nil {
+				t.Fatal("cluster not ready but accepted")
+			}
+		})
+	}
+}
+
 func TestValidate(t *testing.T) {
 	good := options{bundle: t.TempDir(), output: t.TempDir(), revision: strings.Repeat("a", 40), duration: 24 * time.Hour, port: 24220}
 	if err := validate(good); err != nil {

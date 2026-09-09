@@ -42,6 +42,8 @@ func helperMain() {
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/varz" {
 				fmt.Fprint(w, `{"server_id":"fixture","start":"2026-01-01"}`)
+			} else if r.URL.Path == "/jsz" {
+				fmt.Fprint(w, `{"meta_cluster":{"leader":"rjs-bare-1","cluster_size":3,"replicas":[{"name":"rjs-bare-2","current":true},{"name":"rjs-bare-3","current":true}]}}`)
 			} else {
 				fmt.Fprint(w, `{}`)
 			}
@@ -119,7 +121,7 @@ func TestSupervisedLifecycle(t *testing.T) {
 				duration = time.Minute
 			}
 			o := options{bundle: bundle, output: output, revision: strings.Repeat("a", 40), duration: duration, port: base, calibrate: calibrate}
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
 			if err := run(ctx, o); err != nil {
 				t.Fatal(err)
