@@ -33,7 +33,7 @@ systemctl status rjs-qual-UNIQUE-ID.service
 systemctl stop rjs-qual-UNIQUE-ID.service
 ```
 
-不得按进程名称批量杀进程或删除状态目录。失败证据保留；重试必须使用新状态目录，重新计算完整观察窗口。
+不得按进程名称批量杀进程或删除状态目录。失败证据保留；重试必须使用新状态目录，重新计算完整观察窗口。监督进程启动错误记录在本服务的 journal 中（`journalctl -u rjs-qual-UNIQUE-ID.service`）；子进程日志与证据仍在私有运行目录。使用 journal 避免在 systemd 创建动态状态目录之前依赖该目录。
 
 ## 验收标准
 

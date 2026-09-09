@@ -32,7 +32,7 @@ systemd-run --unit="$unit" --description="Isolated RJS bare-metal $mode ($run_id
  --property=IOWeight=10 --property="IOWriteBandwidthMax=$device 20M" --property="IOReadBandwidthMax=$device 40M" \
  --property=Nice=10 --property=IOSchedulingClass=idle --property=TasksMax=128 --property=LimitNOFILE=4096 --property=LimitFSIZE=256M \
  --property=RuntimeMaxSec=26h --property=TimeoutStopSec=30s --property=Restart=no --property=KillMode=control-group --property=OOMPolicy=stop \
- --property="StandardOutput=append:$state/supervisor.log" --property="StandardError=append:$state/supervisor.log" \
+ --property=StandardOutput=journal --property=StandardError=journal --property="SyslogIdentifier=$unit" \
  --setenv=RJS_BAREMETAL_CONFINED=systemd-v1 --setenv=GOMAXPROCS=2 \
  "$bundle/bin/linux-amd64/baremetal-run" -bundle "$bundle" -output "$state" -source-revision "$revision" "${args[@]}"
 systemctl show "$unit.service" -p Id -p MainPID -p DynamicUser -p User -p StateDirectory -p CPUQuotaPerSecUSec -p MemoryHigh -p MemoryMax -p MemorySwapMax -p IOWriteBandwidthMax -p IOReadBandwidthMax -p TasksMax -p RuntimeMaxUSec -p IPAddressDeny -p IPAddressAllow -p ProtectSystem -p KillMode

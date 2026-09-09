@@ -33,7 +33,7 @@ systemctl status rjs-qual-UNIQUE-ID.service
 systemctl stop rjs-qual-UNIQUE-ID.service
 ```
 
-Do not kill processes by name or delete state directories. Failed run evidence is retained. A fresh run requires fresh state and restarts the full observation window.
+Do not kill processes by name or delete state directories. Failed run evidence is retained. A fresh run requires fresh state and restarts the full observation window. Supervisor startup errors are recorded in this unit's journal (`journalctl -u rjs-qual-UNIQUE-ID.service`); child logs and evidence remain in the private run directory. Journal output avoids relying on a dynamic state directory before systemd creates it.
 
 ## Acceptance
 
