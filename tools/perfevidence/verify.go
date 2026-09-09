@@ -27,6 +27,10 @@ type evidence struct {
 	GeneratedAt                    time.Time      `json:"generated_at"`
 	SourceRevision                 string         `json:"source_revision"`
 	NATSImageID                    string         `json:"nats_image_id"`
+	DeploymentMode                 string         `json:"deployment_mode,omitempty"`
+	NATSBinarySHA256               string         `json:"nats_binary_sha256,omitempty"`
+	VerificationRevision           string         `json:"verification_revision,omitempty"`
+	NativePreflight                artifact       `json:"native_preflight,omitempty"`
 	Command                        []string       `json:"command"`
 	SampleIntervalSeconds          int            `json:"sample_interval_seconds"`
 	MaxThroughputRegressionPercent float64        `json:"max_throughput_regression_percent"`
@@ -93,8 +97,33 @@ func verifyEvidence(path string, requireSoak bool, expectedRevision string) erro
 	if proof.Schema != evidenceSchema {
 		return fmt.Errorf("unsupported evidence schema %q", proof.Schema)
 	}
-	if proof.GeneratedAt.IsZero() || len(proof.SourceRevision) != 40 || strings.Trim(proof.SourceRevision, "0123456789abcdef") != "" || len(proof.NATSImageID) != len("sha256:")+64 || !strings.HasPrefix(proof.NATSImageID, "sha256:") || strings.Trim(strings.TrimPrefix(proof.NATSImageID, "sha256:"), "0123456789abcdef") != "" || len(proof.Command) == 0 || len(proof.Host) == 0 {
+	if proof.GeneratedAt.IsZero() || len(proof.SourceRevision) != 40 || strings.Trim(proof.SourceRevision, "0123456789abcdef") != "" || len(proof.Command) == 0 || len(proof.Host) == 0 {
 		return fmt.Errorf("evidence provenance is incomplete")
+	}
+	if proof.DeploymentMode == "bare-metal" {
+		if proof.NATSImageID != "" || !validSHA256(proof.NATSBinarySHA256) || len(proof.VerificationRevision) != 40 || strings.Trim(proof.VerificationRevision, "0123456789abcdef") != "" {
+			return errors.New("bare-metal binary provenance is incomplete or mixed with image provenance")
+		}
+		preflightPath, err := verifyArtifact(filepath.Dir(path), proof.NativePreflight)
+		if err != nil {
+			return fmt.Errorf("bare-metal preflight: %w", err)
+		}
+		var preflight nativePreflight
+		if err := decodePreflight(preflightPath, &preflight); err != nil {
+			return err
+		}
+		if preflight.Schema != "rabbit-jetstream.io/native-linux-preflight/v1alpha1" || preflight.Runtime != "linux/amd64" || preflight.DeploymentMode != "bare-metal" || preflight.SourceRevision != proof.SourceRevision || preflight.NATSBinarySHA256 != proof.NATSBinarySHA256 || preflight.VerificationRevision != proof.VerificationRevision || !validSHA256(preflight.BundleManifestSHA256) {
+			return errors.New("bare-metal preflight does not bind this workload")
+		}
+		boundHost, _ := json.Marshal(preflight.Host)
+		claimedHost, _ := json.Marshal(proof.Host)
+		if string(boundHost) != string(claimedHost) || preflight.Host["architecture"] != "amd64" || preflight.Host["os_type"] != "linux" {
+			return errors.New("bare-metal host identity differs from preflight")
+		}
+	} else {
+		if (proof.DeploymentMode != "" && proof.DeploymentMode != "container") || len(proof.NATSImageID) != 71 || !strings.HasPrefix(proof.NATSImageID, "sha256:") || !validSHA256(strings.TrimPrefix(proof.NATSImageID, "sha256:")) || proof.NATSBinarySHA256 != "" {
+			return errors.New("container image provenance is incomplete")
+		}
 	}
 	if requireSoak && (len(expectedRevision) != 40 || strings.Trim(expectedRevision, "0123456789abcdef") != "" || proof.SourceRevision != expectedRevision) {
 		return fmt.Errorf("release evidence source revision does not match the expected revision")
@@ -179,7 +208,7 @@ func verifyEvidence(path string, requireSoak bool, expectedRevision string) erro
 			return fmt.Errorf("candidate performance exceeds inaugural absolute thresholds")
 		}
 	}
-	if err := verifyResourceSamples(resourcesPath, candidate.ConfiguredDurationSeconds, proof.SampleIntervalSeconds, candidate.StartedAt, candidate.FinishedAt); err != nil {
+	if err := verifyResourceSamplesForMode(resourcesPath, candidate.ConfiguredDurationSeconds, proof.SampleIntervalSeconds, candidate.StartedAt, candidate.FinishedAt, proof.DeploymentMode == "bare-metal"); err != nil {
 		return err
 	}
 	return nil
@@ -213,6 +242,14 @@ func verifyArtifact(base string, item artifact) (string, error) {
 }
 
 func verifyResourceSamples(path string, duration float64, interval int, workloadStarted, workloadFinished time.Time) error {
+	return verifyResourceSamplesForMode(path, duration, interval, workloadStarted, workloadFinished, false)
+}
+
+func validSHA256(value string) bool {
+	return len(value) == 64 && strings.Trim(value, "0123456789abcdef") == ""
+}
+
+func verifyResourceSamplesForMode(path string, duration float64, interval int, workloadStarted, workloadFinished time.Time, bare bool) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -222,11 +259,29 @@ func verifyResourceSamples(path string, duration float64, interval int, workload
 	nodes := map[string]int{}
 	lastByNode := map[string]time.Time{}
 	continuous := true
+	identities := map[string]string{}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var sample resourceSample
 		if err := json.Unmarshal(scanner.Bytes(), &sample); err != nil || sample.CapturedAt.IsZero() || sample.Node == "" {
 			return fmt.Errorf("invalid resource sample")
+		}
+		if bare {
+			var health struct {
+				Healthy bool `json:"healthy"`
+				Server  struct {
+					ID    string `json:"server_id"`
+					Start string `json:"start"`
+				} `json:"server_statistics"`
+			}
+			if err := json.Unmarshal(scanner.Bytes(), &health); err != nil || !health.Healthy || health.Server.ID == "" || health.Server.Start == "" {
+				return errors.New("bare-metal node health or identity missing")
+			}
+			identity := health.Server.ID + "/" + health.Server.Start
+			if previous := identities[sample.Node]; previous != "" && previous != identity {
+				return errors.New("bare-metal node restarted during soak")
+			}
+			identities[sample.Node] = identity
 		}
 		if first.IsZero() || sample.CapturedAt.Before(first) {
 			first = sample.CapturedAt

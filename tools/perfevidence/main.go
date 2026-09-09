@@ -20,6 +20,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	resourcesPath := flags.String("resources", "", "resource sampler NDJSON")
 	preflightPath := flags.String("native-preflight", "", "native Linux preflight JSON")
 	natsImageID := flags.String("nats-image-id", "", "immutable NATS image ID")
+	natsBinary := flags.String("nats-binary-sha256", "", "bare-metal NATS binary SHA-256; excludes image ID")
 	commandJSON := flags.String("command-json", "", "exact workload command as a JSON string array")
 	commandFile := flags.String("command-file", "", "file containing exact workload command as a JSON string array")
 	sampleInterval := flags.Int("sample-interval", 60, "resource sample interval in seconds")
@@ -39,7 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		revision, err := createInauguralEvidence(generateOptions{
 			EvidencePath: *evidencePath, ReportPath: *reportPath, ResourcesPath: *resourcesPath,
 			PreflightPath: *preflightPath, NATSImageID: *natsImageID, CommandJSON: *commandJSON, CommandFile: *commandFile,
-			SampleInterval: *sampleInterval, MinPublish: *minPublish, MinConsume: *minConsume, MaxP99: *maxP99,
+			NATSBinarySHA256: *natsBinary,
+			SampleInterval:   *sampleInterval, MinPublish: *minPublish, MinConsume: *minConsume, MaxP99: *maxP99,
 		})
 		if err != nil {
 			fmt.Fprintln(stderr, err)
