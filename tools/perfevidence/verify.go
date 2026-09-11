@@ -312,7 +312,7 @@ func verifyResourceSamplesForMode(path string, duration float64, interval int, w
 	}
 	windowAligned := !workloadStarted.IsZero() && !workloadFinished.IsZero() && !first.Before(workloadStarted.Add(-tolerance)) && !first.After(workloadStarted.Add(tolerance)) && !last.Before(workloadFinished.Add(-tolerance)) && !last.After(workloadFinished.Add(tolerance))
 	if len(nodes) != 3 || !continuous || first.IsZero() || last.Sub(first).Seconds() < duration-float64(2*interval) || !windowAligned {
-		return fmt.Errorf("resource samples do not span the workload across three nodes")
+		return fmt.Errorf("resource samples do not span the workload across three nodes: counts=%v minimum_per_node=%d continuous=%t span_seconds=%.6f window_aligned=%t", nodes, minimumSamples, continuous, last.Sub(first).Seconds(), windowAligned)
 	}
 	return nil
 }
