@@ -35,6 +35,17 @@ test("write preserves original ETag, exact body, memory token and makes one requ
   assert.equal(calls.length, 2);
 });
 
+test("tenant context is explicit, validated, and fenced across credential changes",async()=>{
+  const calls=[];const api=createAPI({origin:"http://localhost",fetch:async(url,options)=>{calls.push({url,headers:options.headers});return new Response("{}");}});
+  api.setToken("access");api.setTenant("team-a");
+  await api.request("/api/v1/queues");
+  assert.equal(calls[0].headers.get("Authorization"),"Bearer access");assert.equal(calls[0].headers.get("X-RJS-Tenant"),"team-a");
+  await api.request("/api/v1/session");assert.equal(calls[1].headers.get("X-RJS-Tenant"),null);
+  assert.throws(()=>api.setTenant("bad tenant"),TypeError);
+  api.setToken("replacement");await api.request("/api/v1/queues");assert.equal(calls[2].headers.get("X-RJS-Tenant"),null);
+  api.setTenant("team-b");api.clearToken();await api.request("/api/v1/queues");assert.equal(calls[3].headers.get("X-RJS-Tenant"),null);
+});
+
 test("HTTP errors preserve blocked operations, status and correlation without retry", async () => {
   for (const status of [401, 403, 409, 503]) {
     let calls = 0;

@@ -200,7 +200,7 @@ try {
   const collectionResponse=await api("/api/v1/queues/live_candidate/consumers"), collection=await collectionResponse.json();
   assert.equal(collectionResponse.status,200);assert.equal(collection.total,3);assert.equal(collection.declaration_revision,etag);
   assert.ok(collection.items.every(row=>row.expected && row.observed && row.status==="present"));report.checks.push("real-priority-collection-three-members");
-  browser=await ({chromium,firefox}[browserEngine]).launch({headless:true});
+  browser=await ({chromium,firefox}[browserEngine]).launch({headless:true,...(browserEngine==="chromium"&&process.env.RJS_PLAYWRIGHT_CHANNEL?{channel:process.env.RJS_PLAYWRIGHT_CHANNEL}:{})});
   report.browserVersion=browser.version();
   const page=await browser.newPage({locale:"en-US",viewport:{width:1440,height:1000}});
   const errors=[];page.on("pageerror",error=>errors.push(error.message));
@@ -215,7 +215,7 @@ try {
   await page.goto(origin+"/admin/");await auditAccessibility(page,"login");
   for(const [legacy,target] of [["/admin/#overview","overview"],["/admin/index.html#queues","queues"],["/admin/#nodes","nodes"]]){
     await page.goto(origin+legacy);await expect(page).toHaveURL(origin+`/admin/${target}`);
-    await expect(page.getByRole("button",{name:"Verify identity",exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Sign in",exact:true})).toBeVisible();
   }
   await page.goto(origin+"/admin/");
   await page.evaluate(()=>{location.hash="nodes";});await expect(page).toHaveURL(origin+"/admin/nodes");
@@ -223,10 +223,12 @@ try {
   report.checks.push("legacy-hash-startup-index-entry-hashchange-canonical-replacement-back");
   await page.goto(origin+"/admin/");
   await page.getByRole("button",{name:"简体中文",exact:true}).click();
-  await page.getByLabel("Bearer Token",{exact:true}).fill("unsaved-language-test-input");
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("恢复用 Bearer Token",{exact:true}).fill("unsaved-language-test-input");
   await page.reload();await expect(page.locator("html")).toHaveAttribute("lang","zh-CN");
-  await expect(page.getByRole("button",{name:"验证身份",exact:true})).toBeVisible();
-  await expect(page.getByLabel("Bearer Token",{exact:true})).toHaveValue("");
+  await expect(page.getByRole("button",{name:"登录",exact:true})).toBeVisible();
+  await page.locator(".recovery-login summary").click();
+  await expect(page.getByLabel("恢复用 Bearer Token",{exact:true})).toHaveValue("");
   assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage))),{"rjs.language":"zh"});
   await page.getByRole("button",{name:"English",exact:true}).click();
   await page.reload();await expect(page.locator("html")).toHaveAttribute("lang","en");
@@ -236,8 +238,9 @@ try {
   await expect(page.getByRole("status")).toContainText("无法记住此次选择");
   await page.reload();await expect(page.locator("html")).toHaveAttribute("lang","en");
   report.checks.push("language-preference-survives-reload-only-allowlisted-value-no-token-input");
-  await page.getByLabel("Bearer token",{exact:true}).fill(auditor);
-  await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("Recovery bearer token",{exact:true}).fill(auditor);
+  await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   await expect(page.locator("#console-content")).toBeFocused();
   const skipNavigation=page.getByRole("button",{name:"Skip to page content",exact:true}),skipURL=page.url();
   await skipNavigation.focus();await expect(skipNavigation).toBeFocused();
@@ -357,9 +360,9 @@ try {
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   await page.screenshot({path:path.join(evidence,"access-settings-mobile.png"),fullPage:true});
   await page.getByRole("button",{name:"Clear this session",exact:true}).click();
-  await expect(page.getByLabel("Bearer token",{exact:true})).toBeVisible();await expect(page.getByLabel("Bearer token",{exact:true})).toBeFocused();
+  await expect(page.getByLabel("Username",{exact:true})).toBeVisible();await expect(page.getByLabel("Username",{exact:true})).toBeFocused();
   assert.equal(await page.evaluate(()=>localStorage.getItem("rjs.language")),"en");
-  await page.getByLabel("Bearer token",{exact:true}).fill(auditor);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(auditor);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Access and settings",exact:true})).toBeVisible();
   assert.equal(forwardedPuts,settingsPuts);
   await navigate("Queue list");await page.setViewportSize({width:1440,height:1000});
@@ -1016,8 +1019,8 @@ try {
   await navigate("Queue list");
   await page.getByRole("link",{name:"live_candidate",exact:true}).click();
   await page.getByRole("button",{name:"Clear local session",exact:true}).click();
-  await page.getByLabel("Bearer token",{exact:true}).fill(operator);
-  await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);
+  await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   await navigate("Overview");const historyRegion=page.getByRole("region",{name:"Metric history",exact:true});await expect(historyRegion.getByRole("img")).toBeVisible();await expect(historyRegion).toContainText("gap");
   await historyRegion.getByRole("combobox",{name:/^Time window/}).selectOption("1h");await expect.poll(()=>report.prometheusQueries.some(item=>item.query==="rjs_jetstream_storage_bytes"&&item.step==="60")).toBe(true);
   assert.ok(report.prometheusQueries.every(item=>/^rjs_(jetstream_(storage|memory)_bytes|uptime_seconds|queue_(messages|bytes))/.test(item.query)),JSON.stringify(report.prometheusQueries));
@@ -1123,14 +1126,14 @@ try {
   await page.goBack();await expect(draft).toHaveValue("{broken");
   await expect(page.getByRole("heading",{name:"Advisory preview — not applied",exact:true})).toHaveCount(0);
   page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(draft).toHaveValue("{broken");
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(page.getByLabel("Bearer token",{exact:true})).toBeVisible();
+  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(page.getByLabel("Username",{exact:true})).toBeVisible();
   report.checks.push("operator-draft-preview-no-write-route-retention-invalid-json-confirmed-clear");
   let initialReadCalls=0;
   const failInitialRead=route=>{initialReadCalls++;return route.fulfill({status:503,contentType:"application/json",body:'{"error":{"code":"unavailable","message":"Injected initial read failure"}}'});};
   await page.route("**/api/v1/queues/live_candidate",failInitialRead);
   const putsBeforeInitialRetry=forwardedPuts;
   await page.goto(origin+"/admin/queues/by-name/live_candidate/edit");
-  await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   const retryInitial=page.getByRole("button",{name:"Retry canonical read",exact:true});
   await expect(retryInitial).toBeVisible();await expect(draft).toHaveCount(0);assert.equal(initialReadCalls,1);
   await retryInitial.click();await expect(retryInitial).toBeVisible();assert.equal(initialReadCalls,2);
@@ -1402,7 +1405,7 @@ try {
       await route.fulfill({response,json:body});
     },{times:1});
   }
-  await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();await expect(draft).not.toHaveValue("");
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();await expect(draft).not.toHaveValue("");
   const unknownDraft=JSON.parse(await draft.inputValue());unknownDraft.spec.retention.maxMessages=300;
   await draft.fill(JSON.stringify(unknownDraft));await page.getByRole("button",{name:"Preview changes",exact:true}).click();
   await page.getByRole("checkbox",{name:"I reviewed this preview and authorize applying this draft.",exact:true}).check();const putsBeforeUnknown=forwardedPuts;dropNextApplyResponse=true;await applyButton.click();
@@ -1497,9 +1500,9 @@ try {
     await expect(retained).toBeVisible();
     report.checks.push("synthetic-session-expiry-real-unknown-write-retained-evidence-no-extra-put");
   }
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(page.getByLabel("Bearer token",{exact:true})).toBeFocused();
+  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(page.getByLabel("Username",{exact:true})).toBeFocused();
   report.checks.push("confirmed-browser-apply-real-write",`${faultMode}-apply-response-unknown-locked-inspection-no-additional-put`);
-  await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   await navigate("Create Queue");
   const creationSchemaPuts=forwardedPuts;
   await page.getByLabel("New Queue name",{exact:true}).fill("schema_retained_input");
@@ -1572,7 +1575,7 @@ try {
   await page.screenshot({path:path.join(evidence,"create-another.png"),fullPage:true});
   report.checks.push("multiple-creations-explicit-blank-settings-retained-receipts-name-reuse-rejected-second-create-navigation");
   await page.getByRole("button",{name:"Clear local session",exact:true}).click();
-  await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   await prepareCreation();await expect(page.getByText(/Creation conflicts with current resource state\./)).toBeVisible();await expect(applyButton).toHaveCount(0);await expect(page.getByRole("button",{name:"Read latest for comparison",exact:true})).toHaveCount(0);
   assert.equal((await api("/api/v1/queues/new")).headers.get("etag"),createdETag);
   const beforeParkPuts=forwardedPuts,conflictedRaw=await draft.inputValue();
@@ -1613,7 +1616,7 @@ try {
   report.checks.push("browser-create-new-name-explicit-settings-preview-no-write-duplicate-no-overwrite");
   // Destructive verification is restricted to these two newly created fixtures
   // inside this harness's isolated loopback broker, never an existing service.
-  await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   let deletionWrites=0;
   await navigate("Queue list");await page.getByRole("link",{name:"live_candidate",exact:true}).click();
   await page.getByRole("link",{name:"Edit draft and preview",exact:true}).click();await expect(draft).not.toHaveValue("");
@@ -1880,7 +1883,7 @@ try {
   await batchImportChecks({page,api,origin,operator,expect,assert,evidence,path,report});
   await bulkChangeChecks({page,api,origin,operator,expect,assert,report});
   await page.goto(origin+"/admin/queues/by-name/live_candidate");
-  await page.getByLabel("Bearer token",{exact:true}).fill(auditor);await page.getByRole("button",{name:"Verify identity",exact:true}).click();await tabs.getByRole("link",{name:"Consumers",exact:true}).click();await expect(region).toBeVisible();
+  await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(auditor);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();await tabs.getByRole("link",{name:"Consumers",exact:true}).click();await expect(region).toBeVisible();
   const beforeBrokerLossRows=await region.getByRole("row").allTextContents(),beforeBrokerLossTime=await queueConsumerView.locator("time").getAttribute("datetime");
   for(const spec of nodeSpecs)await stop(spec.child);
   await page.getByRole("button",{name:"Refresh Consumers",exact:true}).click();

@@ -12,8 +12,9 @@ export async function queueExportChecks({page,api,origin,auditor,expect,assert,e
     URL.revokeObjectURL=value=>{window.__exportRevoked.push(value);revoke(value);};
   });
   await page.goto(`${origin}/admin/queues/by-name/${name}?tab=configuration`);
-  await page.getByLabel("Bearer token",{exact:true}).fill(auditor);
-  await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("Recovery bearer token",{exact:true}).fill(auditor);
+  await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   const panel=page.getByRole("region",{name:"Queue declaration export",exact:true});
   const prepare=()=>panel.getByRole("button",{name:"Prepare declaration download",exact:true}).click();
   const link=panel.getByRole("link",{name:"Download Queue JSON",exact:true});

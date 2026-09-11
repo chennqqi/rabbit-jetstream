@@ -1,6 +1,6 @@
 import React, {useEffect, useRef} from "react";
 
-export function SessionIdentity({identity, text, onClear}) {
+export function SessionIdentity({identity, text, onClear, onTenantChange}) {
   const disclosure = useRef(null);
   const summary = useRef(null);
   useEffect(() => {
@@ -29,6 +29,7 @@ export function SessionIdentity({identity, text, onClear}) {
           <dt>{text.role}</dt><dd>{identity.role}</dd>
           <dt>{text.expires}</dt><dd>{identity.expires_at ?? text.unknown}</dd>
           <dt>{text.policy}</dt><dd>{identity.resource_read_policy}</dd></dl>
+        {identity.tenants.length>0&&<label className="tenant-selector" htmlFor="active-tenant">{text.tenant}<select id="active-tenant" value={identity.active_tenant} onChange={event=>onTenantChange(event.target.value)}>{identity.tenants.map(tenant=><option key={tenant}>{tenant}</option>)}</select></label>}
       </div>
     </details>
     <button onClick={onClear}>{text.clear}</button>

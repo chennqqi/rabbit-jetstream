@@ -10,8 +10,9 @@ export async function routingBindingChecks({page,api,origin,auditor,expect,asser
   const created=await api(url,{method:"PUT",headers:{"If-None-Match":"*"},body:JSON.stringify(document)});
   assert.equal(created.status,200,await created.text());
   await page.goto(`${origin}/admin/queues/by-name/${name}?tab=routing`);
-  await page.getByLabel("Bearer token",{exact:true}).fill(auditor);
-  await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("Recovery bearer token",{exact:true}).fill(auditor);
+  await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   const panel=page.getByRole("region",{name:"Routing probe",exact:true});
   await panel.getByLabel("Probe mode",{exact:true}).selectOption("exchange");
   for(const [type,exchange,key]of [["direct","direct_events","created"],["topic","topic_events","orders"],["fanout","fanout_events",""]]){

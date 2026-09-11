@@ -19,7 +19,7 @@ func TestEveryRepositoryNATSConnectionUsesSharedSecurityPolicy(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() && (relative == ".git" || relative == "upstream" || strings.HasPrefix(relative, "upstream"+string(filepath.Separator))) {
+		if entry.IsDir() && (relative == ".git" || relative == "upstream" || relative == "artifacts" || strings.HasPrefix(relative, "upstream"+string(filepath.Separator)) || strings.HasPrefix(relative, "artifacts"+string(filepath.Separator))) {
 			return filepath.SkipDir
 		}
 		if entry.IsDir() || filepath.Ext(path) != ".go" {

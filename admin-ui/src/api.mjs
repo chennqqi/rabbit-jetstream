@@ -92,6 +92,7 @@ export class APIError extends Error {
 export function createAPI({fetch: fetcher = globalThis.fetch, origin = globalThis.location?.origin, now = Date.now, requireMutationCapabilities=false} = {}) {
   if (!origin) throw new TypeError("API origin is required");
   let token = "";
+  let tenant = "";
   let credentialGeneration=0;
   const capabilityListeners=new Set();
   const notifyCapabilities=value=>{for(const listener of capabilityListeners){try{listener(value);}catch{/* Observers must not change transport outcomes. */}}};
@@ -99,9 +100,10 @@ export function createAPI({fetch: fetcher = globalThis.fetch, origin = globalThi
   return {
     requireMutationCapabilities,
     subscribeCapabilityReads(listener){capabilityListeners.add(listener);return()=>capabilityListeners.delete(listener);},
-    setToken(value) { credentialGeneration++;token = String(value).trim(); deadline = null; expiredCallback = null; },
-    clearToken() { credentialGeneration++;token = ""; deadline = null; expiredCallback = null; },
-    expireToken() { credentialGeneration++;token = ""; deadline = 0; expiredCallback = null; },
+    setToken(value) { credentialGeneration++;token = String(value).trim(); tenant = ""; deadline = null; expiredCallback = null; },
+    setTenant(value) { value=String(value);if(!/^[A-Za-z0-9._-]{1,128}$/.test(value))throw new TypeError("Invalid tenant identity");credentialGeneration++;tenant=value; },
+    clearToken() { credentialGeneration++;token = ""; tenant = ""; deadline = null; expiredCallback = null; },
+    expireToken() { credentialGeneration++;token = ""; tenant = ""; deadline = 0; expiredCallback = null; },
     setTokenDeadline(value, callback) { deadline = value; expiredCallback = callback; },
     async request(path, {method = "GET", body, headers: inputHeaders, signal, timeout = 10000} = {}) {
       if (deadline !== null && now() >= deadline) {
@@ -121,6 +123,7 @@ export function createAPI({fetch: fetcher = globalThis.fetch, origin = globalThi
       const headers = new Headers(inputHeaders);
       headers.set("Accept", "application/json");
       if (token) headers.set("Authorization", `Bearer ${token}`);
+      if (tenant && !["/api/v1/auth/login", "/api/v1/session"].includes(url.pathname) && !url.pathname.startsWith("/api/v1/oidc/")) headers.set("X-RJS-Tenant",tenant);
       const payload = body === undefined ? undefined : stringifyJSON(body);
       if (payload !== undefined) headers.set("Content-Type", "application/json");
       const controller = new AbortController();
@@ -155,7 +158,7 @@ export function createAPI({fetch: fetcher = globalThis.fetch, origin = globalThi
       if(!Number.isSafeInteger(maxBytes)||maxBytes<1)throw new TypeError("Invalid download limit");
       if(deadline!==null&&now()>=deadline){credentialGeneration++;token="";const notify=expiredCallback;expiredCallback=null;notify?.();throw new APIError("Verified credential expired before dispatch",{kind:"expired",code:"local_session_expired",status:401,uncertain:false});}
       const url=new URL(path,origin);if(url.origin!==origin||!url.pathname.startsWith("/api/v1/")||url.search||url.username||url.password||url.hash)throw new TypeError("Only same-origin versioned API downloads without query are allowed");
-      const headers=new Headers({Accept:"application/zip"});if(token)headers.set("Authorization",`Bearer ${token}`);
+      const headers=new Headers({Accept:"application/zip"});if(token)headers.set("Authorization",`Bearer ${token}`);if(tenant)headers.set("X-RJS-Tenant",tenant);
       const controller=new AbortController(),abort=()=>controller.abort(signal?.reason);if(signal?.aborted)abort();else signal?.addEventListener("abort",abort,{once:true});const timer=setTimeout(()=>controller.abort(new DOMException("Request timed out","TimeoutError")),timeout);
       let response;
       try{

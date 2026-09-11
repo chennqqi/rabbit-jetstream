@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Rabbit JetStream Management API
   version: 1.0.0
-  description: Stable v1 control-plane and operations contract. Resource GET/HEAD requires operator or auditor authentication by default (401 missing/invalid credentials, 403 insufficient role, 404 read_api_disabled when authentication is unconfigured). Only explicit loopback-bound RJS_LOCAL_DEMO permits anonymous resource reads; session, audit and writes remain authenticated. Probes, metrics, static UI and published contracts remain public and require network-level exposure controls.
+  description: Stable v1 control-plane and operations contract. Resource GET/HEAD requires operator or auditor authentication by default (401 missing/invalid credentials, 403 insufficient role, 404 read_api_disabled when authentication is unconfigured). Authenticated resource operations accept X-RJS-Tenant; it is required when an identity belongs to multiple tenants, defaults to the sole membership otherwise, and is checked before any tenant backend access. Only explicit loopback-bound RJS_LOCAL_DEMO permits anonymous resource reads; session, audit and writes remain authenticated. Probes, metrics, static UI and published contracts remain public and require network-level exposure controls.
 servers:
   - url: /
 security: [{bearerAuth: []}]
@@ -230,6 +230,30 @@ paths:
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/login:
+    post:
+      operationId: loginLocalAccount
+      description: Verify a configured local username/password pair and issue one short-lived bearer access token. The response creates no cookie or refresh token and must not be persisted in browser storage. Authentication failures do not reveal whether the username exists.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LocalLoginRequest'}
+      responses:
+        '200':
+          description: Short-lived access token and the authenticated account's tenant memberships.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LocalLoginResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '415': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /api/v1/session:
     get:
       operationId: getSession
@@ -246,6 +270,54 @@ paths:
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
+  /api/v1/access/tenants:
+    get:
+      operationId: listAccessTenants
+      description: Platform-administrator view of configured tenant identifiers. NATS credentials and connection settings are never returned.
+      responses:
+        '200': {$ref: '#/components/responses/JSON'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/access/accounts:
+    get:
+      operationId: listLocalAccounts
+      responses:
+        '200': {$ref: '#/components/responses/JSON'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createLocalAccount
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccountChange'}}}
+      responses:
+        '201': {description: Account created, content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccount'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/v1/access/accounts/{username}:
+    parameters:
+      - {name: username, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}}
+    put:
+      operationId: updateLocalAccount
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccountChange'}}}
+      responses:
+        '200': {description: Account updated, content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccount'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteLocalAccount
+      responses:
+        '204': {description: Account deleted}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
   /api/v1/info:
     get: {operationId: info, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
   /api/v1/cluster:
@@ -852,6 +924,7 @@ components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
   parameters:
+    Tenant: {name: X-RJS-Tenant, in: header, description: Selected tenant ID. Required for identities with multiple memberships; forbidden for nonmembers. Duplicate, empty, or invalid values are rejected., schema: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}}
     NameQuery: {name: q, in: query, description: Trimmed case-insensitive literal name substring; maximum 256 normalized UTF-8 bytes., schema: {type: string}}
     NameSort: {name: sort, in: query, schema: {type: string, enum: [name], default: name}}
     SortOrder: {name: order, in: query, schema: {type: string, enum: [asc, desc], default: asc}}
@@ -1097,6 +1170,7 @@ components:
     Session:
       type: object
       required: [actor, role, permissions, expires_at, resource_read_policy]
+      additionalProperties: false
       properties:
         actor: {type: string}
         role: {type: string, enum: [operator, auditor]}
@@ -1104,7 +1178,69 @@ components:
           type: array
           items: {type: string, enum: ['resources:read', 'audit:read', 'queue:preview', 'queue:apply', 'queue:delete']}
         expires_at: {type: [string, 'null'], format: date-time}
+        tenants:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+          description: Present for local accounts. Absence means the credential is not an application-level tenant credential.
+        tenant_roles:
+          type: object
+          additionalProperties: {type: string, enum: [operator, auditor]}
+          description: Effective role keyed by tenant for local multi-tenant accounts.
+        tenant_permissions:
+          type: object
+          additionalProperties: {type: array, items: {type: string}}
+          description: Server-derived permissions keyed by tenant; the UI must replace, not merge, permissions when switching.
         resource_read_policy: {type: string, enum: [authenticated, anonymous]}
+    LocalLoginRequest:
+      type: object
+      required: [username, password]
+      additionalProperties: false
+      properties:
+        username: {type: string, minLength: 1, maxLength: 128}
+        password: {type: string, minLength: 1, maxLength: 1024, format: password}
+    LocalLoginResponse:
+      type: object
+      required: [access_token, token_type, expires_at, actor, role, tenants]
+      additionalProperties: false
+      properties:
+        access_token: {type: string, minLength: 1, description: Short-lived bearer credential; keep only in page memory.}
+        token_type: {type: string, const: Bearer}
+        expires_at: {type: string, format: date-time}
+        actor: {type: string, pattern: '^local:[A-Za-z0-9._-]{1,128}$'}
+        role: {type: string, enum: [operator, auditor]}
+        tenants:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+    LocalAccount:
+      type: object
+      additionalProperties: false
+      required: [username, memberships, disabled, platform_admin]
+      properties:
+        username: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+        memberships: {type: array, minItems: 1, items: {$ref: '#/components/schemas/TenantMembership'}}
+        disabled: {type: boolean}
+        platform_admin: {type: boolean}
+    LocalAccountChange:
+      type: object
+      additionalProperties: false
+      required: [memberships, disabled, platform_admin]
+      properties:
+        username: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+        password: {type: string, minLength: 12, maxLength: 1024, format: password}
+        memberships: {type: array, minItems: 1, items: {$ref: '#/components/schemas/TenantMembership'}}
+        disabled: {type: boolean}
+        platform_admin: {type: boolean}
+    TenantMembership:
+      type: object
+      additionalProperties: false
+      required: [tenant, role]
+      properties:
+        tenant: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+        role: {type: string, enum: [operator, auditor]}
     DeletePreview:
       type: object
       required: [queue, stream, base_revision, observed_at, stream_present, ownership, requires_force, blocked]

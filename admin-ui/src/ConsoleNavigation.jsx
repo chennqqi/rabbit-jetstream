@@ -38,6 +38,7 @@ export function ConsoleNavigation({language,route,router,permissions}) {
     ...(permissions.includes("diagnostics:create")?[["/admin/diagnostics",zh?"诊断包":"Diagnostics",IconDownload,["diagnostics"]]]:[]),
     ["/admin/alerts",zh?"运维告警":"Operational alerts",IconBell,["alerts"]],
     ["/admin/settings",zh?"访问与设置":"Access and settings",IconSettings,["settings"]],
+    ...(permissions.includes("access:manage")?[["/admin/access",zh?"租户访问管理":"Tenant access",IconUsers,["access"]]]:[]),
     ["/admin/compatibility",zh?"兼容性":"Compatibility",IconFileText,["compatibility"]],
   ];
   return <nav ref={navigation} className={`primary-nav${open?" is-open":""}`} aria-label={zh?"主导航":"Primary navigation"} onKeyDown={event=>{if(event.key==="Escape"&&open){event.preventDefault();setOpen(false);toggle.current?.focus();}}}>

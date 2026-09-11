@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/chennqqi/rabbit-jetstream/management/internal/tenant"
 )
 
 func parseGlobalConsumerQuery(r *http.Request) (globalConsumerQuery, error) {
@@ -73,7 +75,8 @@ func (h *Handler) globalConsumers(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_query", err.Error())
 		return
 	}
-	status := h.consumerIndex.status()
+	index := h.consumerIndex(r.Context())
+	status := index.status()
 	if status.Generation == nil {
 		writeJSON(w, http.StatusServiceUnavailable, status)
 		return
@@ -115,14 +118,15 @@ func (h *Handler) refreshGlobalConsumers(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), globalConsumerCollectLimit+time.Second)
 	defer cancel()
-	generation, busy, err := h.consumerIndex.refresh(ctx, h.client, time.Now)
+	index := h.consumerIndex(ctx)
+	generation, busy, err := index.refresh(ctx, h.client, time.Now)
 	if busy {
-		writeJSON(w, http.StatusAccepted, h.consumerIndex.status())
+		writeJSON(w, http.StatusAccepted, index.status())
 		return
 	}
 	if err != nil {
 		h.logger.Warn("global Consumer collection failed")
-		writeJSON(w, http.StatusServiceUnavailable, h.consumerIndex.status())
+		writeJSON(w, http.StatusServiceUnavailable, index.status())
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
@@ -131,4 +135,10 @@ func (h *Handler) refreshGlobalConsumers(w http.ResponseWriter, r *http.Request)
 		Total        int       `json:"total"`
 		CompletedAt  time.Time `json:"completed_at"`
 	}{"ready", generation.ID, len(generation.Rows), generation.CompletedAt})
+}
+
+func (h *Handler) consumerIndex(ctx context.Context) *globalConsumerIndex {
+	id, _ := tenant.FromContext(ctx)
+	value, _ := h.consumerIndexes.LoadOrStore(id, &globalConsumerIndex{})
+	return value.(*globalConsumerIndex)
 }

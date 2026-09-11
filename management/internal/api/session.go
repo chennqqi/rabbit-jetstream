@@ -9,11 +9,14 @@ import (
 )
 
 type sessionResponse struct {
-	Actor              string     `json:"actor"`
-	Role               string     `json:"role"`
-	Permissions        []string   `json:"permissions"`
-	ExpiresAt          *time.Time `json:"expires_at"`
-	ResourceReadPolicy string     `json:"resource_read_policy"`
+	Actor              string              `json:"actor"`
+	Role               string              `json:"role"`
+	Permissions        []string            `json:"permissions"`
+	ExpiresAt          *time.Time          `json:"expires_at"`
+	Tenants            []string            `json:"tenants,omitempty"`
+	TenantRoles        map[string]string   `json:"tenant_roles,omitempty"`
+	TenantPermissions  map[string][]string `json:"tenant_permissions,omitempty"`
+	ResourceReadPolicy string              `json:"resource_read_policy"`
 }
 
 // session reports authorization, not backend availability or a login cookie.
@@ -25,16 +28,31 @@ func (h *Handler) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := r.Context().Value(principalKey{}).(identity.Principal)
-	result := sessionResponse{Actor: principal.Actor, Role: principal.Role, Permissions: []string{"resources:read", "audit:read", "history:read"}, ResourceReadPolicy: "anonymous"}
+	platformAdmin := principal.PlatformAdmin || (principal.Role == "operator" && len(principal.Tenants) == 0)
+	result := sessionResponse{Actor: principal.Actor, Role: principal.Role, Permissions: permissionsForRole(principal.Role, platformAdmin), Tenants: append([]string(nil), principal.Tenants...), TenantRoles: principal.TenantRoles, ResourceReadPolicy: "anonymous"}
+	if len(principal.TenantRoles) > 0 {
+		result.TenantPermissions = make(map[string][]string, len(principal.TenantRoles))
+		for id, role := range principal.TenantRoles {
+			result.TenantPermissions[id] = permissionsForRole(role, platformAdmin)
+		}
+	}
 	if h.auth.RequireReadAuth {
 		result.ResourceReadPolicy = "authenticated"
-	}
-	if principal.Role == "operator" {
-		result.Permissions = append(result.Permissions, "queue:preview", "queue:apply", "queue:delete", "diagnostics:create", "diagnostics:download")
 	}
 	if !principal.ExpiresAt.IsZero() {
 		expiry := principal.ExpiresAt.UTC()
 		result.ExpiresAt = &expiry
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func permissionsForRole(role string, platformAdmin bool) []string {
+	result := []string{"resources:read", "audit:read", "history:read"}
+	if role == "operator" {
+		result = append(result, "queue:preview", "queue:apply", "queue:delete", "diagnostics:create", "diagnostics:download")
+	}
+	if platformAdmin {
+		result = append(result, "access:manage")
+	}
+	return result
 }

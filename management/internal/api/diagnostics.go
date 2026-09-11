@@ -19,6 +19,7 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/management/internal/identity"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/tenant"
 )
 
 const (
@@ -37,9 +38,11 @@ type diagnosticRequest struct {
 type metadataCollector struct {
 	h        *Handler
 	terminal jetstream.AuditEvent
+	tenant   string
 }
 
 func (c metadataCollector) Collect(ctx context.Context) (diagnostics.Result, error) {
+	ctx = tenant.WithContext(ctx, c.tenant)
 	result, err := c.h.collectDiagnosticMetadata(ctx)
 	outcome, code := "completed", ""
 	if err != nil {
@@ -70,13 +73,15 @@ func (h *Handler) createDiagnosticJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := r.Context().Value(principalKey{}).(identity.Principal)
+	tenantID, _ := tenant.FromContext(r.Context())
+	owner := tenantID + "\x00" + principal.Actor
 	jobID := randomAuditID()
 	intent := h.newDiagnosticAudit(r, "diagnostics.create", jobID)
 	if !h.recordDiagnosticAudit(intent, "intent", "attempted", "", 0) {
 		writeAPIError(w, 503, "audit_unavailable", "diagnostic collection rejected because audit intent could not be persisted")
 		return
 	}
-	job, err := h.diagnostics.StartWithID(principal.Actor, jobID, metadataCollector{h: h, terminal: intent})
+	job, err := h.diagnostics.StartWithID(owner, jobID, metadataCollector{h: h, terminal: intent, tenant: tenantID})
 	if err != nil {
 		code, status := "diagnostics_capacity", http.StatusTooManyRequests
 		if errors.Is(err, diagnostics.ErrClosed) {
@@ -99,7 +104,7 @@ func (h *Handler) diagnosticJob(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, 400, "invalid_query", "diagnostic status accepts no query parameters")
 		return
 	}
-	job, err := h.diagnostics.Get(principal.Actor, r.PathValue("id"))
+	job, err := h.diagnostics.Get(diagnosticOwner(r.Context(), principal), r.PathValue("id"))
 	if err != nil {
 		writeAPIError(w, 404, "diagnostic_job_not_found", "diagnostic job not found")
 		return
@@ -122,7 +127,7 @@ func (h *Handler) cancelDiagnosticJob(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, 503, "audit_unavailable", "cancellation rejected because audit intent could not be persisted")
 		return
 	}
-	job, err := h.diagnostics.Cancel(principal.Actor, id)
+	job, err := h.diagnostics.Cancel(diagnosticOwner(r.Context(), principal), id)
 	if err != nil {
 		_ = h.recordDiagnosticAudit(intent, "outcome", "rejected", "diagnostic_job_not_found", 404)
 		writeAPIError(w, 404, "diagnostic_job_not_found", "diagnostic job not found")
@@ -145,7 +150,7 @@ func (h *Handler) downloadDiagnosticJob(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	id := r.PathValue("id")
-	archive, err := h.diagnostics.Download(principal.Actor, id)
+	archive, err := h.diagnostics.Download(diagnosticOwner(r.Context(), principal), id)
 	if errors.Is(err, diagnostics.ErrNotFound) {
 		writeAPIError(w, 404, "diagnostic_job_not_found", "diagnostic job not found")
 		return
@@ -185,7 +190,8 @@ func (h *Handler) authorizeDiagnosticOwner(w http.ResponseWriter, r *http.Reques
 func (h *Handler) newDiagnosticAudit(r *http.Request, action, id string) jetstream.AuditEvent {
 	requestID := auditRequestID(r)
 	principal, _ := r.Context().Value(principalKey{}).(identity.Principal)
-	return jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Action: action, ResourceKind: "DiagnosticJob", ResourceName: id, Actor: principal.Actor, ActorRole: principal.Role, SourceIP: remoteIP(r.RemoteAddr)}
+	tenantID, _ := tenant.FromContext(r.Context())
+	return jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Action: action, ResourceKind: "DiagnosticJob", ResourceName: id, Actor: principal.Actor, ActorRole: principal.Role, Tenant: tenantID, SourceIP: remoteIP(r.RemoteAddr)}
 }
 
 func (h *Handler) recordDiagnosticAudit(base jetstream.AuditEvent, phase, outcome, code string, status int) bool {
@@ -202,7 +208,7 @@ func (h *Handler) recordDiagnosticAudit(base jetstream.AuditEvent, phase, outcom
 		event.ID = randomAuditID()
 		event.IntentID = base.ID
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(tenant.WithContext(context.Background(), event.Tenant), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
 		if h.logger != nil {
@@ -246,11 +252,11 @@ func (h *Handler) collectDiagnosticMetadata(ctx context.Context) (diagnostics.Re
 	add("management-build", "management-build.json", buildInfo(h.version, h.console.RuntimeRevision, h.console.RuntimeClean, info), nil)
 	add("server-capabilities", "server-capabilities.json", h.capabilitiesContract(), nil)
 	account, err := h.client.AccountInfo(ctx)
-	add("jetstream-account", "jetstream-account.json", map[string]any{"serverUrl": redact.URL(h.client.ServerURL()), "account": account}, err)
+	add("jetstream-account", "jetstream-account.json", map[string]any{"serverUrl": redact.URL(h.serverURL(ctx)), "account": account}, err)
 	if h.controller == nil {
 		add("controller", "controller.json", nil, errors.New("unavailable"))
 	} else {
-		add("controller", "controller.json", h.controller.Status(), nil)
+		add("controller", "controller.json", h.controllerStatusFor(ctx), nil)
 	}
 	if h.monitor == nil {
 		add("nodes", "nodes.json", nil, errors.New("unavailable"))
@@ -320,3 +326,8 @@ func cloneDiagnosticSources(input map[string]monitoring.SourceObservation) map[s
 }
 
 var _ diagnostics.Collector = metadataCollector{}
+
+func diagnosticOwner(ctx context.Context, principal identity.Principal) string {
+	tenantID, _ := tenant.FromContext(ctx)
+	return tenantID + "\x00" + principal.Actor
+}

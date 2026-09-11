@@ -64,3 +64,20 @@ test("router rejects external targets and reacts to history events", () => {
   for(const path of ["https://outside.test/admin/queues","/api/v1/queues","/admin/queues?token=x"])assert.throws(()=>router.navigate(path));
   unsubscribe();assert.equal(listener,null);
 });
+
+test("tenant URLs are explicit, canonical, and preserved by navigation",()=>{
+  const route=readRoute(new URL("https://example.test/admin/tenants/team-a/queues/by-name/orders?tab=summary"));
+  assert.deepEqual(route,{kind:"queue",name:"orders",tab:"summary",tenant:"team-a"});
+  for(const path of ["/admin/tenants/bad%2Fid/queues","/admin/tenants/%74eam/queues","/admin/tenants/bad id/queues"])
+    assert.equal(readRoute(new URL(path,"https://example.test")).kind,"invalid");
+
+  let location=new URL("https://example.test/admin/queues?q=x"),listener;
+  const history={pushState(_state,_title,path){location=new URL(path,location);},replaceState(_state,_title,path){location=new URL(path,location);}};
+  const browser={get location(){return location;},history,addEventListener(_type,fn){listener=fn;},removeEventListener(){listener=null;}};
+  const router=createRouter(browser);const unsubscribe=router.subscribe(()=>{});
+  assert.equal(router.setTenant("team-a"),true);
+  assert.equal(location.pathname,"/admin/tenants/team-a/queues");assert.equal(location.search,"?q=x");
+  router.navigate("/admin/settings");assert.equal(location.pathname,"/admin/tenants/team-a/settings");
+  assert.equal(router.snapshot().tenant,"team-a");
+  assert.throws(()=>router.setTenant("bad/id"));unsubscribe();
+});

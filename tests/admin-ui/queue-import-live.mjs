@@ -8,7 +8,7 @@ export async function queueImportChecks({page,api,origin,operator,expect,assert,
   page.on("request",observe);
   try{
     await page.goto(origin+"/admin/queues/new");
-    await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+    await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
     const panel=page.getByRole("region",{name:"Import Queue declaration",exact:true});
     const file=panel.getByLabel("Queue JSON file",{exact:true});
     const prepare=panel.getByRole("button",{name:"Prepare imported creation draft",exact:true});

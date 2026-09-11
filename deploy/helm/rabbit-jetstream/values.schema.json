@@ -39,7 +39,7 @@
     },
     "management": {
       "type": "object", "additionalProperties": false,
-      "required": ["replicaCount", "image", "service", "resources", "telemetry"],
+      "required": ["replicaCount", "image", "service", "resources", "telemetry", "history"],
       "properties": {
         "replicaCount": {"type": "integer", "minimum": 1},
         "image": {"$ref": "#/definitions/image"},
@@ -57,6 +57,17 @@
             "metricsEndpoint": {"type": "string"},
             "metricInterval": {"type": "string", "minLength": 1},
             "sampleRatio": {"type": "number", "minimum": 0, "maximum": 1},
+            "allowInsecure": {"type": "boolean"}
+          }
+        },
+        "history": {
+          "type": "object", "additionalProperties": false,
+          "required": ["prometheusURL", "prometheusPublicURL", "bearerTokenSecret", "bearerTokenKey", "allowInsecure"],
+          "properties": {
+            "prometheusURL": {"type": "string"},
+            "prometheusPublicURL": {"type": "string"},
+            "bearerTokenSecret": {"type": "string"},
+            "bearerTokenKey": {"type": "string", "minLength": 1},
             "allowInsecure": {"type": "boolean"}
           }
         }

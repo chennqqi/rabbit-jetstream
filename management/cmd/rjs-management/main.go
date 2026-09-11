@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/chennqqi/rabbit-jetstream/management/internal/app"
+	managementauth "github.com/chennqqi/rabbit-jetstream/management/internal/auth"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/config"
 )
 
@@ -26,6 +30,15 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		if err := healthcheck(); err != nil {
+			fatal(err)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "hash-password" {
+		if len(os.Args) != 2 {
+			fatal(fmt.Errorf("usage: rjs-management hash-password (read password from stdin)"))
+		}
+		if err := hashPassword(os.Stdin, os.Stdout); err != nil {
 			fatal(err)
 		}
 		return
@@ -47,6 +60,23 @@ func main() {
 	if err := service.Run(ctx); err != nil {
 		fatal(err)
 	}
+}
+
+func hashPassword(input io.Reader, output io.Writer) error {
+	value, err := io.ReadAll(io.LimitReader(input, 1026))
+	if err != nil {
+		return fmt.Errorf("read password: %w", err)
+	}
+	password := strings.TrimSuffix(strings.TrimSuffix(string(value), "\n"), "\r")
+	if len(password) > 1024 {
+		return errors.New("password exceeds 1024 bytes")
+	}
+	hash, err := managementauth.HashLocalPassword(password)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(output, hash)
+	return err
 }
 
 func versionRequested(args []string) bool {

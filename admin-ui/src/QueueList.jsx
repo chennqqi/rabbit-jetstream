@@ -48,9 +48,9 @@ export function QueueList({api, language, route, router, resource = "queues", re
   return <section aria-labelledby="queue-list-heading" className="queue-list">
     <h2 id="queue-list-heading">{text.title}</h2><p>{text.note}</p>
     <p>{paused?(language==="zh"?"标签页隐藏，自动刷新已暂停。":"Tab hidden; automatic refresh paused."):refreshSeconds===0?(language==="zh"?"自动刷新已关闭，仅手动刷新。":"Automatic refresh disabled; manual refresh only."):(language==="zh"?`自动刷新：每次读取完成后 ${refreshSeconds} 秒；失败退避最长 60 秒。`:`Automatic refresh: ${refreshSeconds} seconds after each read; failure backoff up to 60 seconds.`)}</p>
-    <form className="list-controls" onSubmit={event => { event.preventDefault(); changeQuery({q: search, offset: 0}); }}>
+    <form className="list-controls queue-list-controls" onSubmit={event => { event.preventDefault(); changeQuery({q: search, offset: 0}); }}>
       <label htmlFor="queue-search">{text.search}</label>
-      <input id="queue-search" value={search} onChange={event => setSearch(event.target.value)} />
+      <input id="queue-search" name={`${resource}-search`} type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)} />
       <button type="submit">{text.apply}</button>
       <label htmlFor="queue-sort">{text.sort}</label>
       <select id="queue-sort" value={state.query.order} onChange={event => changeQuery({order: event.target.value})}><option value="asc">{text.asc}</option><option value="desc">{text.desc}</option></select>

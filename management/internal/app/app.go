@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
 	adminui "github.com/chennqqi/rabbit-jetstream/admin-ui"
@@ -20,6 +21,7 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/management/internal/observability"
 	prometheusbackend "github.com/chennqqi/rabbit-jetstream/management/internal/prometheus"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/qualification"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/tenant"
 )
 
 type App struct {
@@ -46,11 +48,22 @@ type controllerRunner interface {
 	Run(context.Context)
 }
 
+type controllerRuntime interface {
+	controllerRunner
+	api.ControllerMonitor
+}
+
 func New(cfg config.Config, logger *slog.Logger, version string, revision ...string) (*App, error) {
 	if err := cfg.ValidateDeploymentProfile(); err != nil {
 		return nil, err
 	}
 	if err := cfg.ValidateHTTPAccess(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateLocalAuth(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateTenancy(); err != nil {
 		return nil, err
 	}
 	runtimeRevision := ""
@@ -71,12 +84,69 @@ func New(cfg config.Config, logger *slog.Logger, version string, revision ...str
 	if err != nil {
 		return nil, err
 	}
-	client, err := jetstream.Connect(cfg)
+	definitions, err := tenant.Load(cfg.TenantsFile)
 	if err != nil {
 		_ = shutdownTelemetry(context.Background())
-		return nil, err
+		return nil, fmt.Errorf("configure tenants: %w", err)
 	}
-	control := controller.New(client, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
+	var backend api.Backend
+	var monitor api.Monitor
+	var control controllerRuntime
+	var client appClient
+	defaultTenant := "local"
+	tenantIDs := []string{"local"}
+	if len(definitions) == 0 {
+		connected, connectErr := jetstream.Connect(cfg)
+		if connectErr != nil {
+			_ = shutdownTelemetry(context.Background())
+			return nil, connectErr
+		}
+		backend, client = connected, connected
+		monitor = monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout)
+		control = controller.New(connected, logger, cfg.InstanceID, cfg.ControllerEnabled, cfg.ControllerInterval, cfg.ControllerLeaseTTL)
+	} else {
+		sort.Slice(definitions, func(i, j int) bool { return definitions[i].ID < definitions[j].ID })
+		router := &tenantRouter{clients: make(map[string]*jetstream.Client), monitors: make(map[string]*monitoring.Client), controllers: make(map[string]*controller.Controller), defaultID: definitions[0].ID}
+		for _, definition := range definitions {
+			tenantConfig := definition.Apply(cfg)
+			connected, connectErr := jetstream.Connect(tenantConfig)
+			if connectErr != nil {
+				router.Close()
+				_ = shutdownTelemetry(context.Background())
+				return nil, fmt.Errorf("connect tenant %q: %w", definition.ID, connectErr)
+			}
+			router.clients[definition.ID] = connected
+			router.monitors[definition.ID] = monitoring.New(tenantConfig.NATSMonitorURLs, tenantConfig.ConnectTimeout)
+			router.controllers[definition.ID] = controller.New(connected, logger.With("tenant", definition.ID), tenantConfig.InstanceID, tenantConfig.ControllerEnabled, tenantConfig.ControllerInterval, tenantConfig.ControllerLeaseTTL)
+		}
+		backend, monitor, control, client = router, router, router, router
+		defaultTenant = router.defaultID
+		tenantIDs = make([]string, 0, len(definitions))
+		for _, definition := range definitions {
+			tenantIDs = append(tenantIDs, definition.ID)
+		}
+	}
+	var localAuthenticator *managementauth.LocalAuthenticator
+	if cfg.LocalAccountsFile != "" {
+		localAuthenticator, err = managementauth.NewLocalFromFile(cfg.LocalAccountsFile, []byte(cfg.LocalAuthSigningKey), cfg.LocalAuthTTL)
+		if err != nil {
+			client.Close()
+			_ = shutdownTelemetry(context.Background())
+			return nil, fmt.Errorf("configure local authentication: %w", err)
+		}
+		known := map[string]struct{}{"local": {}}
+		if len(definitions) > 0 {
+			known = make(map[string]struct{}, len(definitions))
+			for _, definition := range definitions {
+				known[definition.ID] = struct{}{}
+			}
+		}
+		if err = localAuthenticator.ValidateTenants(known); err != nil {
+			client.Close()
+			_ = shutdownTelemetry(context.Background())
+			return nil, fmt.Errorf("configure local authentication: %w", err)
+		}
+	}
 	var oidcVerifier identity.Verifier
 	var browserOIDC api.BrowserOIDC
 	if cfg.OIDCIssuer != "" {
@@ -109,12 +179,17 @@ func New(cfg config.Config, logger *slog.Logger, version string, revision ...str
 			return nil, fmt.Errorf("configure Prometheus history: %w", err)
 		}
 	}
-	handler := api.NewWithControllerAuth(client, logger, cfg.Name, version, monitoring.New(cfg.NATSMonitorURLs, cfg.ConnectTimeout), control, api.AuthConfig{
+	handler := api.NewWithControllerAuth(backend, logger, cfg.Name, version, monitor, control, api.AuthConfig{
 		OperatorTokens:  operatorTokens,
 		AuditorTokens:   cfg.AuditTokens,
+		Local:           localAuthenticator,
+		LocalVerifier:   localAuthenticator,
 		OIDC:            oidcVerifier,
 		BrowserOIDC:     browserOIDC,
 		RequireReadAuth: !cfg.LocalDemo,
+		DefaultTenant:   defaultTenant,
+		TenantIDs:       tenantIDs,
+		LocalAccounts:   localAuthenticator,
 	}, api.ConsoleConfig{DeploymentProfile: cfg.DeploymentProfile, RuntimeRevision: runtimeRevision, RuntimeClean: runtimeClean, Qualification: consoleQualification, History: history, Alerts: history})
 	server := newHTTPServer(cfg.HTTPAddr, handler, cfg.ConnectTimeout)
 	closer, _ := handler.(interface{ Close() })

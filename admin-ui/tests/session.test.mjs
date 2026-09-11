@@ -6,10 +6,12 @@ import {createAPI} from "../src/api.mjs";
 const identity = {actor: "verified-actor", role: "operator", permissions: ["resources:read"], expires_at: null, resource_read_policy: "authenticated"};
 function fixture(request = async () => ({body: identity})) {
   let token = "";
+  let tenant = "";
   const calls = [];
-  const api = {setToken(value) { token = value; }, clearToken() { token = ""; },
+  const api = {setToken(value) { token = value;tenant=""; }, clearToken() { token = "";tenant=""; },
+    setTenant(value){tenant=value;},
     request(...args) { calls.push(args); return request(...args); }};
-  return {session: createSession(api), calls, token: () => token};
+  return {session: createSession(api), calls, token: () => token,tenant:()=>tenant};
 }
 
 test("verifies identity through API and keeps token out of snapshots", async () => {
@@ -27,6 +29,52 @@ test("verifies identity through API and keeps token out of snapshots", async () 
   assert.equal(f.session.snapshot().identity, null);
   assert.equal(updates, 3);
   unsubscribe();
+});
+
+test("local password login retains only the returned access token in API memory", async () => {
+  const password="correct horse battery staple",accessToken="signed-short-lived-token";
+  const f=fixture(async(path,options)=>{
+    if(path==="/api/v1/auth/login"){
+      assert.equal(options.method,"POST");
+      assert.deepEqual(options.body,{username:"alice",password});
+      return {body:{access_token:accessToken,token_type:"Bearer",expires_at:"2099-09-11T09:00:00Z",actor:"local:alice",role:"operator",tenants:["local","team-a"]}};
+    }
+    assert.equal(path,"/api/v1/session");
+    return {body:{...identity,actor:"local:alice",expires_at:"2099-09-11T09:00:00Z",tenants:["local","team-a"]}};
+  });
+  await f.session.signInWithPassword(" alice ",password);
+  assert.equal(f.calls.length,2);
+  assert.equal(f.token(),accessToken);
+  assert.equal(f.session.snapshot().phase,"authenticated");
+  assert.deepEqual(f.session.snapshot().identity.tenants,["local","team-a"]);
+  assert.equal(f.session.snapshot().identity.active_tenant,"local");assert.equal(f.tenant(),"local");
+  f.session.selectTenant("team-a");assert.equal(f.session.snapshot().identity.active_tenant,"team-a");assert.equal(f.tenant(),"team-a");
+  assert.throws(()=>f.session.selectTenant("other"),TypeError);
+  assert.equal(JSON.stringify(f.session.snapshot()).includes(password),false);
+  assert.equal(JSON.stringify(f.session.snapshot()).includes(accessToken),false);
+  assert.throws(()=>f.session.snapshot().identity.tenants.push("other"));
+});
+
+test("tenant switching replaces role and permissions instead of merging them",async()=>{
+  const body={...identity,role:"operator",permissions:["resources:read","queue:apply","access:manage"],tenants:["a","b"],tenant_roles:{a:"operator",b:"auditor"},tenant_permissions:{a:["resources:read","queue:apply","access:manage"],b:["resources:read","audit:read","access:manage"]}};
+  const f=fixture(async()=>({body}));await f.session.signIn("token");
+  f.session.selectTenant("b");assert.equal(f.session.snapshot().identity.role,"auditor");assert.deepEqual(f.session.snapshot().identity.permissions,["resources:read","audit:read","access:manage"]);assert.equal(f.session.snapshot().identity.permissions.includes("queue:apply"),false);
+  f.session.selectTenant("a");assert.equal(f.session.snapshot().identity.role,"operator");assert.equal(f.session.snapshot().identity.permissions.includes("queue:apply"),true);
+});
+
+test("local password login rejects missing, failed and malformed responses without retaining secrets",async()=>{
+  const missing=fixture();await missing.session.signInWithPassword("","password");
+  assert.equal(missing.calls.length,0);assert.equal(missing.session.snapshot().failure.kind,"missing-credentials");
+  for(const response of [
+    ()=>{throw Object.assign(new Error("private"),{status:401,code:"invalid_credentials"});},
+    ()=>Promise.resolve({body:{access_token:"secret",token_type:"bearer",expires_at:"2026-09-11T09:00:00Z",tenants:["local"]}}),
+    ()=>Promise.resolve({body:{access_token:"secret",token_type:"Bearer",expires_at:"invalid",tenants:["local"]}}),
+    ()=>Promise.resolve({body:{access_token:"secret",token_type:"Bearer",expires_at:"2026-09-11T09:00:00Z",tenants:[]}}),
+  ]){
+    const f=fixture(response);await f.session.signInWithPassword("alice","private-password");
+    assert.equal(f.token(),"");assert.equal(f.session.snapshot().phase,"signed-out");
+    assert.equal(JSON.stringify(f.session.snapshot()).includes("private"),false);
+  }
 });
 
 test("distinguishes denial, unavailable and disabled without exposing raw error", async () => {

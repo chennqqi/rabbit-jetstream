@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -30,6 +31,7 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/management/internal/identity"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/tenant"
 )
 
 type Backend interface {
@@ -56,6 +58,10 @@ type Monitor interface {
 }
 
 type ControllerMonitor interface{ Status() controller.Status }
+type tenantControllerMonitor interface {
+	StatusFor(context.Context) controller.Status
+}
+type tenantServerURL interface{ ServerURLFor(context.Context) string }
 
 type AuditBackend interface {
 	RecordAudit(context.Context, jetstream.AuditEvent) (uint64, error)
@@ -66,26 +72,32 @@ type AuthConfig struct {
 	RequireReadAuth bool
 	OperatorTokens  []string
 	AuditorTokens   []string
+	Local           identity.PasswordIssuer
+	LocalVerifier   identity.Verifier
 	OIDC            identity.Verifier
 	BrowserOIDC     BrowserOIDC
+	DefaultTenant   string
+	TenantIDs       []string
+	LocalAccounts   identity.LocalAccountManager
 }
 
 type Handler struct {
-	client        Backend
-	monitor       Monitor
-	logger        *slog.Logger
-	name          string
-	version       string
-	started       time.Time
-	auth          AuthConfig
-	controller    ControllerMonitor
-	metrics       *Metrics
-	audit         AuditBackend
-	console       ConsoleConfig
-	consumerIndex *globalConsumerIndex
-	diagnostics   *diagnostics.Store
-	history       HistoryBackend
-	alerts        AlertBackend
+	client          Backend
+	monitor         Monitor
+	logger          *slog.Logger
+	name            string
+	version         string
+	started         time.Time
+	auth            AuthConfig
+	controller      ControllerMonitor
+	metrics         *Metrics
+	audit           AuditBackend
+	console         ConsoleConfig
+	consumerIndexes sync.Map
+	diagnostics     *diagnostics.Store
+	history         HistoryBackend
+	alerts          AlertBackend
+	loginLimiter    *loginLimiter
 }
 
 type managedHandler struct {
@@ -115,7 +127,7 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 	audit, _ := client.(AuditBackend)
 	auth.OperatorTokens = cleanTokens(auth.OperatorTokens)
 	auth.AuditorTokens = cleanTokens(auth.AuditorTokens)
-	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), auth: auth, controller: control, metrics: NewMetrics(), audit: audit, consumerIndex: &globalConsumerIndex{}, diagnostics: diagnostics.NewStore(diagnostics.Config{})}
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), auth: auth, controller: control, metrics: NewMetrics(), audit: audit, diagnostics: diagnostics.NewStore(diagnostics.Config{}), loginLimiter: newLoginLimiter()}
 	if len(console) > 0 {
 		h.console = console[0]
 		h.history = console[0].History
@@ -135,7 +147,13 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		_, _ = w.Write(contract.NativeSDK)
 	})
 	mux.HandleFunc("GET /api/v1/info", h.info)
+	mux.HandleFunc("POST /api/v1/auth/login", h.localLogin)
 	mux.HandleFunc("GET /api/v1/session", h.session)
+	mux.HandleFunc("GET /api/v1/access/tenants", h.accessTenants)
+	mux.HandleFunc("GET /api/v1/access/accounts", h.accessAccounts)
+	mux.HandleFunc("POST /api/v1/access/accounts", h.createAccessAccount)
+	mux.HandleFunc("PUT /api/v1/access/accounts/{username}", h.updateAccessAccount)
+	mux.HandleFunc("DELETE /api/v1/access/accounts/{username}", h.deleteAccessAccount)
 	mux.HandleFunc("GET /api/v1/oidc/config", h.browserOIDCConfig)
 	mux.HandleFunc("POST /api/v1/oidc/token", h.browserOIDCToken)
 	mux.HandleFunc("GET /api/v1/console/capabilities", h.consoleCapabilities)
@@ -229,12 +247,12 @@ func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (h *Handler) controllerStatus(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) controllerStatus(w http.ResponseWriter, r *http.Request) {
 	if h.controller == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "controller_unavailable", "controller is not configured")
 		return
 	}
-	writeJSON(w, http.StatusOK, h.controller.Status())
+	writeJSON(w, http.StatusOK, h.controllerStatusFor(r.Context()))
 }
 
 func (h *Handler) queues(w http.ResponseWriter, r *http.Request) {
@@ -431,7 +449,7 @@ func (h *Handler) authorizeAudit(w http.ResponseWriter, r *http.Request) bool {
 type principalKey struct{}
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, allowed map[string]bool, disabledCode, capability string) bool {
-	if len(h.auth.OperatorTokens) == 0 && len(h.auth.AuditorTokens) == 0 && h.auth.OIDC == nil {
+	if len(h.auth.OperatorTokens) == 0 && len(h.auth.AuditorTokens) == 0 && h.auth.LocalVerifier == nil && h.auth.OIDC == nil {
 		writeAPIError(w, http.StatusNotFound, disabledCode, capability+" is disabled")
 		return false
 	}
@@ -448,25 +466,79 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, allowed map[
 		principal = identity.Principal{Actor: tokenActor(raw), Role: "operator"}
 	} else if matchesToken(raw, h.auth.AuditorTokens) {
 		principal = identity.Principal{Actor: tokenActor(raw), Role: "auditor"}
-	} else if h.auth.OIDC != nil {
-		var err error
-		principal, err = h.auth.OIDC.Verify(r.Context(), raw)
-		if err != nil {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
-			return false
-		}
-	} else {
+	} else if h.auth.LocalVerifier != nil {
+		principal, _ = h.auth.LocalVerifier.Verify(r.Context(), raw)
+	}
+	if principal.Actor == "" && h.auth.OIDC != nil {
+		principal, _ = h.auth.OIDC.Verify(r.Context(), raw)
+	}
+	if principal.Actor == "" {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
 		return false
+	}
+	tenantID, ok := authorizeTenant(w, r, principal, capability == "session API", h.auth.DefaultTenant)
+	if !ok {
+		return false
+	}
+	if tenantID != "" {
+		principal.Role = principal.RoleForTenant(tenantID)
+	} else if len(principal.Tenants) > 0 {
+		principal.Role = principal.RoleForTenant(principal.Tenants[0])
 	}
 	if !allowed[principal.Role] {
 		writeAPIError(w, http.StatusForbidden, "forbidden", "authenticated identity lacks the required role")
 		return false
 	}
-	*r = *r.WithContext(context.WithValue(r.Context(), principalKey{}, principal))
+	ctx := context.WithValue(r.Context(), principalKey{}, principal)
+	if tenantID != "" {
+		ctx = tenant.WithContext(ctx, tenantID)
+	}
+	*r = *r.WithContext(ctx)
 	return true
+}
+
+func authorizeTenant(w http.ResponseWriter, r *http.Request, principal identity.Principal, optional bool, defaultTenant string) (string, bool) {
+	values := r.Header.Values("X-RJS-Tenant")
+	if len(values) > 1 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_tenant", "exactly one tenant header is allowed")
+		return "", false
+	}
+	available := principal.Tenants
+	if len(available) == 0 {
+		fallback := defaultTenant
+		if fallback == "" {
+			fallback = "local"
+		}
+		available = []string{fallback}
+	}
+	requested := ""
+	if len(values) == 1 {
+		requested = strings.TrimSpace(values[0])
+		if requested == "" || len(requested) > 128 || strings.IndexFunc(requested, func(char rune) bool {
+			return !(char == '-' || char == '_' || char == '.' || char >= '0' && char <= '9' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z')
+		}) >= 0 {
+			writeAPIError(w, http.StatusBadRequest, "invalid_tenant", "tenant header is invalid")
+			return "", false
+		}
+	}
+	if requested == "" {
+		if optional {
+			return "", true
+		}
+		if len(available) != 1 {
+			writeAPIError(w, http.StatusBadRequest, "tenant_required", "select one tenant for this request")
+			return "", false
+		}
+		return available[0], true
+	}
+	for _, allowed := range available {
+		if subtle.ConstantTimeCompare([]byte(requested), []byte(allowed)) == 1 {
+			return requested, true
+		}
+	}
+	writeAPIError(w, http.StatusForbidden, "tenant_forbidden", "authenticated identity is not a member of this tenant")
+	return "", false
 }
 
 func matchesToken(provided string, tokens []string) bool {
@@ -504,8 +576,9 @@ func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, acti
 	requestID := auditRequestID(r)
 	w.Header().Set("X-Request-ID", requestID)
 	principal, _ := r.Context().Value(principalKey{}).(identity.Principal)
-	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: principal.Actor, ActorRole: principal.Role, SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	tenantID, _ := tenant.FromContext(r.Context())
+	event := jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Phase: "intent", Action: action, ResourceKind: "Queue", ResourceName: resource, Actor: principal.Actor, ActorRole: principal.Role, Tenant: tenantID, SourceIP: remoteIP(r.RemoteAddr), Outcome: "attempted", Revision: revision, Force: force}
+	ctx, cancel := context.WithTimeout(tenant.WithContext(context.Background(), tenantID), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
 		if h.logger != nil {
@@ -529,7 +602,7 @@ func (h *Handler) recordAuditOutcome(w http.ResponseWriter, intent jetstream.Aud
 	if revision != "" {
 		event.Revision = revision
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(tenant.WithContext(context.Background(), intent.Tenant), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
 		if h.logger != nil {
@@ -620,7 +693,7 @@ func (h *Handler) info(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": h.name, "version": h.version, "uptime_seconds": int64(time.Since(h.started).Seconds()),
-		"nats_url":  redact.URL(h.client.ServerURL()),
+		"nats_url":  redact.URL(h.serverURL(r.Context())),
 		"jetstream": map[string]any{"memory_used": info.MemoryUsed, "storage_used": info.StorageUsed, "streams": info.Streams, "consumers": info.Consumers},
 	})
 }
@@ -633,7 +706,21 @@ func (h *Handler) cluster(w http.ResponseWriter, r *http.Request) {
 		h.writeBackendError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"server_url": redact.URL(h.client.ServerURL()), "account": account})
+	writeJSON(w, http.StatusOK, map[string]any{"server_url": redact.URL(h.serverURL(r.Context())), "account": account})
+}
+
+func (h *Handler) serverURL(ctx context.Context) string {
+	if routed, ok := h.client.(tenantServerURL); ok {
+		return routed.ServerURLFor(ctx)
+	}
+	return h.client.ServerURL()
+}
+
+func (h *Handler) controllerStatusFor(ctx context.Context) controller.Status {
+	if routed, ok := h.controller.(tenantControllerMonitor); ok {
+		return routed.StatusFor(ctx)
+	}
+	return h.controller.Status()
 }
 
 func (h *Handler) streams(w http.ResponseWriter, r *http.Request) {

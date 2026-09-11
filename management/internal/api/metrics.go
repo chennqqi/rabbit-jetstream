@@ -165,7 +165,7 @@ func (h *Handler) prometheus(w http.ResponseWriter, r *http.Request) {
 		metric(&output, "rjs_nats_nodes", map[string]string{"status": "unavailable"}, float64(nodes.Unavailable))
 	}
 	if h.controller != nil {
-		status := h.controller.Status()
+		status := h.controllerStatusFor(ctx)
 		instance := map[string]string{"instance": status.InstanceID}
 		metricHelp(&output, "rjs_controller_leader", "Whether this management instance is controller leader.", "gauge")
 		metric(&output, "rjs_controller_leader", instance, boolFloat(status.Leader))

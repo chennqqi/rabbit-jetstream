@@ -17,6 +17,10 @@
 | `RJS_ADMIN_TOKEN` | 空 | 启用 apply/delete 写 API 的 Bearer Token；为空时写 API 关闭 |
 | `RJS_ADMIN_TOKENS` | 空 | 逗号分隔的 operator Token；全部可 apply/delete 及读取审计，用于重叠轮换 |
 | `RJS_AUDIT_TOKENS` | 空 | 逗号分隔的 auditor Token；只能读取审计 API，不能修改 Queue |
+| `RJS_LOCAL_ACCOUNTS_FILE` | 空 | 严格版本化的本地账户 JSON Secret；设置后启用账号密码登录，详见[本地账户认证](local-auth.zh-CN.md) |
+| `RJS_LOCAL_AUTH_SIGNING_KEY` | 空 | 本地 Access Token 的签名 Secret；启用本地账户时必填且至少 32 字节，所有管理副本必须一致 |
+| `RJS_LOCAL_AUTH_TTL` | `15m` | 本地 Access Token 时效；必须大于零且不超过 `24h` |
+| `RJS_TENANTS_FILE` | 空 | 严格版本化的租户路由 JSON Secret；为每个租户建立独立 NATS Account 连接、监控与控制器，详见[管理面多租户](multi-tenancy.zh-CN.md) |
 | `RJS_OIDC_ISSUER` | 空 | OIDC issuer；设置后启动时执行 discovery，默认要求 HTTPS |
 | `RJS_OIDC_AUDIENCE` | 空 | 管理 API 的预期 audience；启用 OIDC 时必填 |
 | `RJS_OIDC_ROLE_CLAIM` | `roles` | 包含角色的字符串或字符串数组 claim |

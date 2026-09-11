@@ -6,8 +6,9 @@ export async function queueTemplateChecks({page,api,origin,operator,expect,asser
   page.on("request",observe);
   try{
     await page.goto(origin+"/admin/queues/new");
-    await page.getByLabel("Bearer token",{exact:true}).fill(operator);
-    await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+    await page.locator(".recovery-login summary").click();
+    await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);
+    await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
     await page.getByLabel("New Queue name",{exact:true}).fill(name);
     await page.getByLabel("Subjects (one per line)",{exact:true}).fill("template.priority.events");
     await page.getByLabel("Requested replicas",{exact:true}).selectOption("1");

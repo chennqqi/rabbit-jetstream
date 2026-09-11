@@ -56,3 +56,10 @@ test("invalid callback still clears transient state and the URL before failing",
   assert.deepEqual(f.signed,[]);
   assert.equal(f.calls.some(call=>call.path==="/api/v1/oidc/token"),false);
 });
+
+test("an older backend without the OIDC bootstrap route is treated as SSO unavailable",async()=>{
+  const browser={location:{origin:"https://console.example"},sessionStorage:{},crypto:webcrypto};
+  const model=createBrowserOIDC({request:async()=>{throw Object.assign(Error("route missing"),{status:404,code:"not_found"});}},{},{browser,crypto:webcrypto});
+  assert.equal(await model.load(),null);
+  assert.equal(model.config,null);
+});

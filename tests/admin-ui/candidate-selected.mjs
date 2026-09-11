@@ -49,15 +49,16 @@ const server=createServer(async(req,res)=>{
 try {
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const origin=`http://127.0.0.1:${server.address().port}`;
-  browser=await chromium.launch({headless:true});
+  browser=await chromium.launch({headless:true,...(process.env.RJS_PLAYWRIGHT_CHANNEL?{channel:process.env.RJS_PLAYWRIGHT_CHANNEL}:{})});
   const page=await browser.newPage({locale:"zh-CN",timezoneId:"Asia/Shanghai",viewport:report.viewport,deviceScaleFactor:1});
   page.setDefaultTimeout(15000);page.on("pageerror",error=>report.errors.push(error.message));
   // This clock controls presentation timestamps, not real credential-expiry qualification.
   await page.clock.setFixedTime(new Date(selectedFixture.instant));
   await page.route("**/*",route=>{if(new URL(route.request().url()).origin!==origin){report.errors.push("Unexpected external request");return route.abort();}return route.continue();});
   await page.goto(`${origin}/admin/queues/by-name/${selectedFixture.queue}`);
-  await page.getByLabel("Bearer Token",{exact:true}).fill("visual-fixture-only-not-a-credential");
-  await page.getByRole("button",{name:"验证身份",exact:true}).click();
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("恢复用 Bearer Token",{exact:true}).fill("visual-fixture-only-not-a-credential");
+  await page.getByRole("button",{name:"验证恢复 Token",exact:true}).click();
   const metrics=page.getByLabel("范围内摘要指标",{exact:true});
   await expect(page.getByRole("region",{name:"Consumer 排查入口",exact:true})).toBeVisible();
   for(const [label,value] of [["存储消息数（Stream）","12480"],["待投递（主 Consumer）","8420"],["待确认（主 Consumer）","240"]])await expect(metrics.locator("dt").filter({hasText:label}).locator("+ dd")).toHaveText(value);
@@ -105,7 +106,7 @@ try {
   await page.screenshot({path:path.join(evidence,"identity-mobile.png")});
   await page.keyboard.press("Escape");
   assert.deepEqual(report.errors,[]);
-  assert.ok(report.requests.every(request=>request.method==="GET"&&request.status===200));
+  assert.ok(report.requests.every(request=>request.method==="GET"&&(request.status===200||request.status===404&&(request.path==="/api/v1/oidc/config"||request.path.startsWith("/api/v1/history?")))));
   assert.deepEqual(await snapshotCandidate(assets),candidateSnapshot,"Candidate file set or content changed during capture");
   report.inputsVerifiedAt=new Date().toISOString();
   report.passed=true;

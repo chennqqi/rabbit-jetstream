@@ -32,6 +32,7 @@ import {Settings} from "./Settings.jsx";
 import {Compatibility} from "./Compatibility.jsx";
 import {Diagnostics} from "./Diagnostics.jsx";
 import {Alerts} from "./Alerts.jsx";
+import {AccessManagement} from "./AccessManagement.jsx";
 import {readLanguage,saveLanguage} from "./language.mjs";
 import {readRefreshPreference,saveRefreshPreference,validRefreshPreference} from "./refresh-preference.mjs";
 import {consolePageTitle} from "./page-title.mjs";
@@ -46,17 +47,17 @@ const initialLanguage=readLanguage(navigator.language);
 const messages = {
   en: {
     title: "Management console", candidate: "Development candidate — production workflows are still being integrated.",
-    token: "Bearer token", signIn: "Verify identity", verifying: "Verifying…", clear: "Clear local session",
-    privacy: "Your token stays in memory. Reloading clears it. This does not revoke the server credential.",
-    identity: "Verified identity", role: "Role", expires: "Verified expiry", unknown: "Unknown", policy: "Resource-read policy",
-    errors: {"missing-token": "Enter a token.", "credentials-rejected": "Credentials were rejected; this does not necessarily mean expiry.", "role-denied": "This identity has no permitted management role.", "auth-disabled": "Server authentication is not configured.", expired: "The verified credential has expired.", "invalid-response": "The server returned an invalid identity response.", unavailable: "Identity verification is unavailable. Check the server and connection, then retry explicitly."},
+    username: "Username", password: "Password", login: "Sign in", token: "Recovery bearer token", signIn: "Verify recovery token", recovery: "Recovery or automation token", verifying: "Verifying…", clear: "Clear local session",
+    privacy: "The short-lived access token stays in page memory. Reloading clears it. Credentials are never saved in localStorage.",
+    identity: "Verified identity", role: "Role", expires: "Verified expiry", unknown: "Unknown", policy: "Resource-read policy", tenant: "Active tenant",
+    errors: {"missing-token": "Enter a recovery token.", "missing-credentials": "Enter your username and password.", "credentials-rejected": "Username/password or recovery credentials were rejected.", "role-denied": "This identity has no permitted management role.", "auth-disabled": "Local account authentication is not configured.", expired: "The verified credential has expired.", "invalid-response": "The server returned an invalid identity response.", unavailable: "Identity verification is unavailable. Check the server and connection, then retry explicitly."},
   },
   zh: {
     title: "管理控制台", candidate: "开发候选版本 — 生产工作流仍在接入中。",
-    token: "Bearer Token", signIn: "验证身份", verifying: "正在验证…", clear: "清除本机会话",
-    privacy: "Token 仅保存在内存，刷新页面即清除。这不会撤销服务端凭据。",
-    identity: "已验证身份", role: "角色", expires: "已验证到期时间", unknown: "未知", policy: "资源读取策略",
-    errors: {"missing-token": "请输入 Token。", "credentials-rejected": "凭据被拒绝，不一定代表已过期。", "role-denied": "该身份没有允许的管理角色。", "auth-disabled": "服务端尚未配置认证。", expired: "已验证的凭据已过期。", "invalid-response": "服务端返回了无效的身份响应。", unavailable: "身份验证不可用，请检查服务端及连接后手动重试。"},
+    username: "用户名", password: "密码", login: "登录", token: "恢复用 Bearer Token", signIn: "验证恢复 Token", recovery: "恢复或自动化 Token", verifying: "正在验证…", clear: "清除本机会话",
+    privacy: "短时效 Access Token 仅保存在页面内存，刷新即清除；凭据不会保存到 localStorage。",
+    identity: "已验证身份", role: "角色", expires: "已验证到期时间", unknown: "未知", policy: "资源读取策略", tenant: "当前租户",
+    errors: {"missing-token": "请输入恢复 Token。", "missing-credentials": "请输入用户名和密码。", "credentials-rejected": "用户名密码或恢复凭据被拒绝。", "role-denied": "该身份没有允许的管理角色。", "auth-disabled": "服务端尚未配置本地账户认证。", expired: "已验证的凭据已过期。", "invalid-response": "服务端返回了无效的身份响应。", unavailable: "身份验证不可用，请检查服务端及连接后手动重试。"},
   },
 };
 
@@ -77,7 +78,7 @@ function App() {
   const drafts=useRef(new Map());
   const deletions=useRef(new Map());
   const archives=useRef(new Map());
-  const tokenInput=useRef(null),hadIdentity=useRef(false),hadAuthenticatedConsole=useRef(false);
+  const usernameInput=useRef(null),hadIdentity=useRef(false),hadAuthenticatedConsole=useRef(false);
   const [,refreshHandoff]=useState(0);
   const deleting=name=>deletions.current.has(name)&&deletions.current.get(name).snapshot().phase!=="idle";
   const editing=name=>drafts.current.has(name)||drafts.current.has(`create:${name}`);
@@ -96,6 +97,15 @@ function App() {
     for(const model of deletions.current.values())model.discard();deletions.current.clear();session.clear();
     archives.current.clear();creation.current={model:null,form:emptyCreationForm(),completed:[]};return true;
   }
+  function switchTenant(tenant,{syncURL=true}={}){
+    const states=[...drafts.current.values(),...deletions.current.values()].map(model=>model.snapshot());
+    if(states.some(state=>state.phase==="submitting")){window.alert(language==="zh"?"提交正在进行，暂不能切换租户。":"A submission is pending; tenant cannot be changed yet.");return false;}
+    const unresolved=states.some(state=>["uncertain","inspecting"].includes(state.phase));
+    if((dirty()||unresolved)&&!window.confirm(language==="zh"?"切换租户会丢弃当前租户的草稿与内存证据，不会取消或回滚已发出的操作。请先保存必要证据，确认切换？":"Changing tenant discards this tenant's drafts and in-memory evidence without canceling or rolling back dispatched operations. Save required evidence first. Continue?"))return false;
+    for(const model of drafts.current.values())model.discard();drafts.current.clear();
+    for(const model of deletions.current.values())model.discard();deletions.current.clear();
+    archives.current.clear();creation.current={model:null,form:emptyCreationForm(),completed:[]};session.selectTenant(tenant);if(syncURL)router.setTenant(tenant);return true;
+  }
   const [language, setLanguage] = useState(initialLanguage);
   const [languageSaved,setLanguageSaved]=useState(true);
   const [refreshSeconds,setRefreshSeconds]=useState(readRefreshPreference);
@@ -104,14 +114,29 @@ function App() {
   useEffect(()=>{let active=true;(async()=>{try{if(await browserOIDC.complete())return;const config=await browserOIDC.load();if(active)setOIDCAvailable(!!config);}catch{if(active)setOIDCFailure(true);}})();return()=>{active=false;};},[]);
   function changeRefresh(value){if(!validRefreshPreference(value))return;setRefreshSeconds(value);setRefreshSaved(saveRefreshPreference(value));}
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
-  useEffect(()=>{if(hadIdentity.current&&!state.identity)tokenInput.current?.focus();hadIdentity.current=!!state.identity;},[state.identity]);
+  useEffect(()=>{if(hadIdentity.current&&!state.identity)usernameInput.current?.focus();hadIdentity.current=!!state.identity;},[state.identity]);
   const route = useSyncExternalStore(router.subscribe, router.snapshot);
+  useEffect(()=>{
+    if(state.phase!=="authenticated"||!state.identity?.active_tenant)return;
+    const active=state.identity.active_tenant,wanted=route.tenant;
+    if(!wanted){router.setTenant(active);return;}
+    if(wanted===active)return;
+    if(!state.identity.tenants.includes(wanted)||!switchTenant(wanted,{syncURL:false}))router.setTenant(active);
+  },[state.phase,state.identity?.active_tenant,route.tenant]);
   const authenticatedConsole=hasAuthenticatedConsole(state.phase,state.identity);
+  const tenantReady=!state.identity?.active_tenant||route.tenant===state.identity.active_tenant;
   useEffect(()=>{if(!hadAuthenticatedConsole.current&&authenticatedConsole)document.getElementById("console-content")?.focus();hadAuthenticatedConsole.current=authenticatedConsole;},[authenticatedConsole]);
   const pageTitle=consolePageTitle({phase:state.phase,authenticated:authenticatedConsole,route,language});
   useEffect(()=>{document.title=pageTitle;},[pageTitle]);
   const text = messages[language];
   const busy = state.phase === "verifying";
+  function login(event) {
+    event.preventDefault();
+    const form = event.currentTarget, data = new FormData(form);
+    const username = data.get("username"), password = data.get("password");
+    form.reset();
+    void session.signInWithPassword(username, password);
+  }
   function signIn(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -126,22 +151,29 @@ function App() {
     setLanguageSaved(saveLanguage(next));
   }
   return <main className={`session-shell ${state.identity?"console-shell":"login-shell"}`}>
-    {authenticatedConsole&&<button type="button" className="skip-navigation" onClick={()=>document.getElementById("console-content")?.focus()}>{language==="zh"?"跳到页面内容":"Skip to page content"}</button>}
-    {authenticatedConsole&&<p className="visually-hidden route-announcement" role="status" aria-live="polite" aria-atomic="true">{pageTitle}</p>}
+    {authenticatedConsole&&tenantReady&&<button type="button" className="skip-navigation" onClick={()=>document.getElementById("console-content")?.focus()}>{language==="zh"?"跳到页面内容":"Skip to page content"}</button>}
+    {authenticatedConsole&&tenantReady&&<p className="visually-hidden route-announcement" role="status" aria-live="polite" aria-atomic="true">{pageTitle}</p>}
     {state.identity&&<h1 className="visually-hidden">{text.title}</h1>}
     <header className="console-topbar"><span className="brand"><strong>RJS</strong><span>Rabbit JetStream<small>{text.title}</small></span></span>
-      {state.identity && <SessionIdentity identity={state.identity} text={text} onClear={clearSession}/>}
+      {state.identity && <SessionIdentity identity={state.identity} text={text} onClear={clearSession} onTenantChange={switchTenant}/>}
       {state.identity?.actor.startsWith("oidc:")&&browserOIDC.config?.logoutEndpoint&&<button type="button" onClick={()=>{if(clearSession())browserOIDC.logout();}}>{language==="zh"?"退出企业 SSO":"Sign out from SSO"}</button>}
       <button onClick={changeLanguage}>{language === "en" ? "简体中文" : "English"}</button></header>
     {!state.identity&&<h1>{text.title}</h1>}<p className="candidate">{text.candidate}</p>
     {!languageSaved&&<p role="status">{language==="zh"?"本机存储不可用，语言仅在本页生效，无法记住此次选择。":"Local storage is unavailable. Language changed for this page, but this choice could not be saved."}</p>}
-    {!state.identity && <form onSubmit={signIn} aria-busy={busy}>
-      <label htmlFor="token">{text.token}</label>
-      <input ref={tokenInput} id="token" name="token" type="password" autoComplete="off" spellCheck="false" required disabled={busy} aria-describedby="privacy" />
-      <button type="submit" disabled={busy}>{busy ? text.verifying : text.signIn}</button>
+    {!state.identity && <form className="local-login" onSubmit={login} aria-busy={busy}>
+      <label htmlFor="username">{text.username}</label>
+      <input ref={usernameInput} id="username" name="username" autoComplete="username" spellCheck="false" required disabled={busy}/>
+      <label htmlFor="password">{text.password}</label>
+      <input id="password" name="password" type="password" autoComplete="current-password" required disabled={busy} aria-describedby="privacy"/>
+      <button type="submit" disabled={busy}>{busy ? text.verifying : text.login}</button>
       {busy && <button type="button" onClick={() => session.clear()}>{text.clear}</button>}
       {state.failure && <p role="alert">{text.errors[state.failure.kind]}</p>}
     </form>}
+    {!state.identity&&<details className="recovery-login"><summary>{text.recovery}</summary><form onSubmit={signIn} aria-busy={busy}>
+      <label htmlFor="token">{text.token}</label>
+      <input id="token" name="token" type="password" autoComplete="off" spellCheck="false" required disabled={busy} aria-describedby="privacy" />
+      <button type="submit" disabled={busy}>{busy ? text.verifying : text.signIn}</button>
+    </form></details>}
     {!state.identity&&oidcAvailable&&<button type="button" disabled={busy} onClick={()=>{setOIDCFailure(false);void browserOIDC.start().catch(()=>setOIDCFailure(true));}}>{language==="zh"?"使用企业 SSO 登录":"Sign in with SSO"}</button>}
     {!state.identity&&oidcFailure&&<p role="alert">{language==="zh"?"SSO 登录不可用或回调无效，请重新开始登录。":"SSO is unavailable or the callback was invalid. Start sign-in again."}</p>}
     {state.phase === "expired" && <p role="alert">{language === "zh" ? "已验证的凭据已到期，已停止新请求。草稿与请求证据仍保留在本页内存中；已发出的操作不会被取消或回滚。请先保存必要证据，再清除会话并重新登录。" : "The verified credential expired; new requests are blocked. Drafts and request evidence remain in page memory. Already dispatched operations are not canceled or rolled back. Record necessary evidence before clearing the session and signing in again."}</p>}
@@ -149,9 +181,9 @@ function App() {
     {state.phase==="expired"&&<section>{[...deletions.current].map(([name,model])=><RetainedDeletion key={name} model={model} language={language}/>)}</section>}
     {state.phase==="expired"&&<BatchHistory records={creation.current.batchHistory} language={language}/>}
     {state.phase==="expired"&&[...archives.current].map(([name,records])=><ArchivedEditors key={name} records={records} language={language}/>)}
-    {authenticatedConsole && <>
+    {authenticatedConsole && tenantReady && <>
       <ConsoleNavigation language={language} route={route} router={router} permissions={state.identity.permissions}/>
-      <div id="console-content" tabIndex="-1">
+      <div id="console-content" key={state.identity.active_tenant??"legacy"} tabIndex="-1">
       {route.name&&["queue","edit-queue","delete-queue"].includes(route.kind)&&<ArchivedEditors records={archives.current.get(route.name)} language={language}/>}
       {route.kind === "queues" ? <QueueList key={state.identity.actor} api={api} language={language} route={route} router={router} refreshSeconds={refreshSeconds} /> :
         route.kind === "compatibility" ? <Compatibility api={api} language={language}/> :
@@ -164,6 +196,7 @@ function App() {
         ["nodes","node"].includes(route.kind) ? <Nodes api={api} language={language} route={route} router={router} refreshSeconds={refreshSeconds} /> :
         route.kind === "overview" ? <Overview api={api} language={language} router={router} refreshSeconds={refreshSeconds} /> :
         route.kind === "settings" ? <Settings api={api} identity={state.identity} language={language} onLanguage={changeLanguage} onClear={clearSession} refreshSeconds={refreshSeconds} onRefresh={changeRefresh} refreshSaved={refreshSaved}/> :
+        route.kind === "access" && state.identity.permissions.includes("access:manage") ? <AccessManagement api={api} language={language} actor={state.identity.actor}/> :
         route.kind === "audit" && state.identity.permissions.includes("audit:read") ? <Audit api={api} language={language} route={route} router={router} /> :
         route.kind === "stream" ? <StreamDetail key={route.name} api={api} name={route.name} language={language} route={route} router={router} refreshSeconds={refreshSeconds} /> :
         route.kind === "queue" ? <QueueDeclaration key={route.name} api={api} name={route.name} language={language} route={route} router={router} canPreview={state.identity.permissions.includes("queue:preview")} canAudit={state.identity.permissions.includes("audit:read")} canDelete={state.identity.permissions.includes("queue:delete")} refreshSeconds={refreshSeconds} /> :

@@ -127,3 +127,34 @@ func TestInvalidSampleRatioUsesSafeDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalAuthenticationConfig(t *testing.T) {
+	t.Setenv("RJS_LOCAL_ACCOUNTS_FILE", "/run/secrets/rjs-accounts.json")
+	t.Setenv("RJS_LOCAL_AUTH_SIGNING_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("RJS_LOCAL_AUTH_TTL", "20m")
+	cfg := FromEnv()
+	if cfg.LocalAccountsFile != "/run/secrets/rjs-accounts.json" || cfg.LocalAuthSigningKey == "" || cfg.LocalAuthTTL != 20*time.Minute {
+		t.Fatalf("local auth config=%#v", cfg)
+	}
+	if err := cfg.ValidateLocalAuth(); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []Config{
+		{LocalAuthSigningKey: "0123456789abcdef0123456789abcdef"},
+		{LocalAccountsFile: "accounts.json", LocalAuthSigningKey: "short", LocalAuthTTL: time.Minute},
+		{LocalAccountsFile: "accounts.json", LocalAuthSigningKey: "0123456789abcdef0123456789abcdef", LocalAuthTTL: 25 * time.Hour},
+	} {
+		if err := invalid.ValidateLocalAuth(); err == nil {
+			t.Fatalf("invalid local authentication config accepted: %#v", invalid)
+		}
+	}
+}
+
+func TestValidateTenancyRejectsUnscopedPrometheus(t *testing.T) {
+	if err := (Config{TenantsFile: "tenants.json", PrometheusURL: "https://prometheus.example"}).ValidateTenancy(); err == nil {
+		t.Fatal("ValidateTenancy() accepted a shared Prometheus backend")
+	}
+	if err := (Config{TenantsFile: "tenants.json"}).ValidateTenancy(); err != nil {
+		t.Fatalf("ValidateTenancy() = %v", err)
+	}
+}

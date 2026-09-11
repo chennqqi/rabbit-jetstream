@@ -27,6 +27,7 @@ type AuditEvent struct {
 	ResourceName string    `json:"resourceName"`
 	Actor        string    `json:"actor"`
 	ActorRole    string    `json:"actorRole"`
+	Tenant       string    `json:"tenant,omitempty"`
 	SourceIP     string    `json:"sourceIp,omitempty"`
 	Outcome      string    `json:"outcome"`
 	HTTPStatus   int       `json:"httpStatus,omitempty"`

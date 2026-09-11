@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -30,6 +31,10 @@ type Config struct {
 	AdminToken                string
 	AdminTokens               []string
 	AuditTokens               []string
+	LocalAccountsFile         string
+	LocalAuthSigningKey       string
+	LocalAuthTTL              time.Duration
+	TenantsFile               string
 	OIDCIssuer                string
 	OIDCAudience              string
 	OIDCRoleClaim             string
@@ -83,6 +88,10 @@ func FromEnv() Config {
 		AdminToken:                os.Getenv("RJS_ADMIN_TOKEN"),
 		AdminTokens:               tokens(os.Getenv("RJS_ADMIN_TOKEN"), os.Getenv("RJS_ADMIN_TOKENS")),
 		AuditTokens:               tokens("", os.Getenv("RJS_AUDIT_TOKENS")),
+		LocalAccountsFile:         os.Getenv("RJS_LOCAL_ACCOUNTS_FILE"),
+		LocalAuthSigningKey:       os.Getenv("RJS_LOCAL_AUTH_SIGNING_KEY"),
+		LocalAuthTTL:              positiveDuration("RJS_LOCAL_AUTH_TTL", 15*time.Minute),
+		TenantsFile:               os.Getenv("RJS_TENANTS_FILE"),
 		OIDCIssuer:                os.Getenv("RJS_OIDC_ISSUER"),
 		OIDCAudience:              os.Getenv("RJS_OIDC_AUDIENCE"),
 		OIDCRoleClaim:             env("RJS_OIDC_ROLE_CLAIM", "roles"),
@@ -132,6 +141,29 @@ func (c Config) ValidateHTTPAccess() error {
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf("RJS_LOCAL_DEMO requires a literal loopback bind address, got %q", c.HTTPAddr)
+	}
+	return nil
+}
+
+func (c Config) ValidateLocalAuth() error {
+	if c.LocalAccountsFile == "" {
+		if c.LocalAuthSigningKey != "" {
+			return errors.New("RJS_LOCAL_AUTH_SIGNING_KEY requires RJS_LOCAL_ACCOUNTS_FILE")
+		}
+		return nil
+	}
+	if len(c.LocalAuthSigningKey) < 32 {
+		return errors.New("RJS_LOCAL_AUTH_SIGNING_KEY must contain at least 32 bytes when local accounts are enabled")
+	}
+	if c.LocalAuthTTL <= 0 || c.LocalAuthTTL > 24*time.Hour {
+		return errors.New("RJS_LOCAL_AUTH_TTL must be greater than zero and at most 24h")
+	}
+	return nil
+}
+
+func (c Config) ValidateTenancy() error {
+	if c.TenantsFile != "" && c.PrometheusURL != "" {
+		return errors.New("RJS_PROMETHEUS_URL is not tenant-scoped and cannot be combined with RJS_TENANTS_FILE")
 	}
 	return nil
 }

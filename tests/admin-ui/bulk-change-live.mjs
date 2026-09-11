@@ -7,7 +7,7 @@ export async function bulkChangeChecks({page,api,origin,operator,expect,assert,r
   const changed=document("bulk_conflict",150),drift=await api("/api/v1/queues/bulk_conflict",{method:"PUT",headers:{"If-Match":conflict.etag},body:stringifyJSON(changed)});assert.equal(drift.status,200);
   const pack=(name,value,etag)=>({name:`${name}.queue-change.json`,mimeType:"application/json",buffer:Buffer.from(stringifyJSON({schema:"rjs.queue-change.v1",etag,document:value}))});
   await page.goto(origin+"/admin/queues/bulk-change");
-  if(await page.getByLabel("Bearer token",{exact:true}).count()){await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();}
+  if(await page.getByLabel("Recovery bearer token",{exact:true}).count()){await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();}
   const region=page.getByRole("region",{name:"Bulk Queue changes",exact:true}),files=region.getByLabel("Queue change packages",{exact:true});await expect(region).toBeVisible();
   const planningResponses=[];const observe=async response=>{if(new URL(response.url()).pathname==="/api/v1/queues/change-plan")planningResponses.push({status:response.status(),body:await response.text()});};page.on("response",observe);
   await files.setInputFiles([pack("bulk_ready",document("bulk_ready",200),ready.etag),pack("bulk_conflict",document("bulk_conflict",200),conflict.etag)]);await region.getByRole("button",{name:"Preview every target",exact:true}).click();

@@ -112,7 +112,7 @@ export function legacyRouteURL(location) {
   return new Map([["#overview","/admin/overview"],["#queues","/admin/queues"],["#nodes","/admin/nodes"]]).get(location.hash)??null;
 }
 
-export function readRoute(location) {
+function readBaseRoute(location) {
   const pathname=legacyRouteURL(location)??location.pathname, search=location.search??"";
   try {
     if (pathname === "/admin/" || pathname === "/admin/queues") return {kind: "queues", query: readQueueQuery(search)};
@@ -148,6 +148,7 @@ export function readRoute(location) {
     if(connections){const id=decodeURIComponent(connections[1]),query=readConnectionQuery(search);nodeConnectionsURL(id,query);return {kind:"node-connections",id,query};}
     if (search) return {kind: "invalid"};
     if (pathname === "/admin/settings") return {kind:"settings"};
+    if (pathname === "/admin/access") return {kind:"access"};
     if (pathname === "/admin/diagnostics") return search?{kind:"invalid"}:{kind:"diagnostics"};
     if (pathname === "/admin/alerts") return search?{kind:"invalid"}:{kind:"alerts"};
     if (pathname === "/admin/compatibility") return search?{kind:"invalid"}:{kind:"compatibility"};
@@ -168,6 +169,17 @@ export function readRoute(location) {
   } catch { return {kind: "invalid"}; }
 }
 
+export function readRoute(location) {
+  const match=/^\/admin\/tenants\/([^/]+)(\/.*)?$/.exec(location.pathname);
+  if(!match)return readBaseRoute(location);
+  try {
+    const tenant=decodeURIComponent(match[1]);
+    if(!/^[A-Za-z0-9._-]{1,128}$/.test(tenant)||encodeURIComponent(tenant)!==match[1])return {kind:"invalid"};
+    const route=readBaseRoute({pathname:`/admin${match[2]??"/"}`,search:location.search??"",hash:location.hash??""});
+    return ["invalid","not-found"].includes(route.kind)?route:{...route,tenant};
+  } catch { return {kind:"invalid"}; }
+}
+
 export function createRouter(browser = window) {
   const read=()=>{
     const legacy=legacyRouteURL(browser.location);
@@ -186,11 +198,21 @@ export function createRouter(browser = window) {
     },
     navigate(path, {replace = false} = {}) {
       const target = new URL(path, browser.location.origin);
+      if(state.tenant&&!target.pathname.startsWith("/admin/tenants/"))target.pathname=`/admin/tenants/${encodeURIComponent(state.tenant)}${target.pathname.slice("/admin".length)}`;
       if (target.origin !== browser.location.origin || !target.pathname.startsWith("/admin/") || target.username || target.password || target.hash || readRoute(target).kind === "invalid") throw new TypeError("Invalid navigation");
       if (`${browser.location.pathname}${browser.location.search}` === `${target.pathname}${target.search}`) return false;
       browser.history[replace ? "replaceState" : "pushState"](null, "", `${target.pathname}${target.search}`);
       changed();
       return true;
+    },
+    setTenant(tenant,{replace=true}={}) {
+      if(!/^[A-Za-z0-9._-]{1,128}$/.test(tenant))throw new TypeError("Invalid tenant identity");
+      const current=new URL(browser.location.href);
+      const existing=/^\/admin\/tenants\/[^/]+(\/.*)?$/.exec(current.pathname);
+      const inner=existing?existing[1]??"/":current.pathname.slice("/admin".length)||"/";
+      const target=`/admin/tenants/${encodeURIComponent(tenant)}${inner}${current.search}`;
+      if(`${current.pathname}${current.search}`===target)return false;
+      browser.history[replace?"replaceState":"pushState"](null,"",target);changed();return true;
     },
   };
 }

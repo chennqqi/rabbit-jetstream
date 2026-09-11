@@ -6,9 +6,10 @@ if(!["standalone","cluster"].includes(deploymentProfile))throw new Error("Unsupp
 
 async function authenticate(page,value=token) {
   await page.goto("/admin/");
-  await page.getByLabel("Bearer token",{exact:true}).fill(value);
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("Recovery bearer token",{exact:true}).fill(value);
   const sessionResponse=page.waitForResponse(response=>new URL(response.url()).pathname==="/api/v1/session");
-  await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+  await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   const response=await sessionResponse;
   if(value===token)expect(response.status(),await response.text()).toBe(200);
   await page.waitForTimeout(100);
@@ -99,7 +100,8 @@ test("keeps bearer credentials in memory and reports authorization failures",asy
   await expect(page.getByRole("alert")).toContainText(/identity|authorization|credential|401/i);
   expect(await page.evaluate(()=>({local:Object.values(localStorage),session:Object.values(sessionStorage),cookies:document.cookie}))).toEqual({local:[],session:[],cookies:""});
   await page.reload();
-  await expect(page.getByLabel("Bearer token",{exact:true})).toHaveValue("");
+  await page.locator(".recovery-login summary").click();
+  await expect(page.getByLabel("Recovery bearer token",{exact:true})).toHaveValue("");
 });
 
 test("distinguishes an unavailable Node collection on a narrow viewport",async({page})=>{

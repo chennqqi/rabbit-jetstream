@@ -6,6 +6,8 @@ The original planning estimate was 92%; the current engineering estimate is appr
 
 ## Current status: 2026-09-09
 
+- On 2026-09-11 the local WebUI/management development scope added built-in username/password login with page-memory-only short-lived access tokens, recovery-token separation, login throttling, tenant-explicit URLs/API headers, and tenant-isolated NATS connections, monitoring, controllers, Consumer indexes, diagnostics, and audit storage. Go, frontend unit/build/dist checks, a synthetic selected-data Chrome regression, and a dedicated two-tenant Chrome URL/header test passed. This code is newer than rc.2 and therefore increases the exact-candidate regression/freeze obligation; it does not by itself increase the release-approval percentage.
+
 - Subsequent WebUI/management development now exists beyond the frozen rc.2 runtime. Local bounded connection qualification for the current development candidate passed at 1,000 subscriptions and at the 1,000/1,001 identity-search boundary (`artifacts/connections-live-dBLGtC/report.json`), but this does not rebind or extend the older rc.2 24-hour evidence. A new final freeze and exact-candidate regression/qualification remain mandatory.
 
 - The final rc.2 runtime is frozen at `2872e4819f5da873c752a1e06cf186d459a9b594`, with SDK `8c63313efc3f9cefb87744358795a633fa55acc2`. All 31 local Release gates passed for this pair; the final local evidence is `artifacts/rc2-local-release-final.json`. This supersedes the earlier packaging-checksum follow-up below.

@@ -8,7 +8,7 @@ export async function batchImportChecks({page,api,origin,operator,expect,assert,
   const observe=request=>{if(new URL(request.url()).pathname.startsWith("/api/v1/queues/")&&request.method()!=="GET")requests.push({path:new URL(request.url()).pathname,method:request.method(),body:request.postData(),headers:request.headers()});};
   page.on("request",observe);
   try{
-    await page.goto(origin+"/admin/queues/new");await page.getByLabel("Bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify identity",exact:true}).click();
+    await page.goto(origin+"/admin/queues/new");await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
     const panel=page.getByRole("region",{name:"Batch import planning",exact:true}),files=panel.getByLabel("Queue JSON files",{exact:true}),plan=panel.getByRole("button",{name:"Plan import only",exact:true});
     await files.setInputFiles([upload(document("batch_source","batch_target")),{name:"bad.json",mimeType:"application/json",buffer:Buffer.from("{")}]);
     await expect(panel.getByRole("alert")).toContainText("None will be silently skipped");await expect(plan).toBeDisabled();assert.equal(requests.length,0);
@@ -123,7 +123,7 @@ export async function batchImportChecks({page,api,origin,operator,expect,assert,
       const cyclePage=await cycleContext.newPage();
       cyclePage.on("request",request=>{if(new URL(request.url()).pathname.startsWith("/api/v1/queues/cycle_a")&&request.method()!=="GET")cycleRequests.push(request.method());});
       await cyclePage.goto(origin+"/admin/queues/by-name/cycle_a/edit");
-      await cyclePage.getByLabel("Bearer token",{exact:true}).fill(operator);await cyclePage.getByRole("button",{name:"Verify identity",exact:true}).click();
+      await cyclePage.locator(".recovery-login summary").click();await cyclePage.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await cyclePage.getByRole("button",{name:"Verify recovery token",exact:true}).click();
       const cycleDraft=cyclePage.getByLabel("Queue document (JSON)",{exact:true});await expect(cycleDraft).not.toHaveValue("");
       await cycleDraft.fill(stringifyJSON(closed));await cyclePage.getByRole("button",{name:"Preview changes",exact:true}).click();
       await expect(cyclePage.getByText("DLQ dependency cycle detected.",{exact:false})).toBeVisible();
