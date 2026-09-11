@@ -6,6 +6,8 @@ The original planning estimate was 92%; the current engineering estimate is appr
 
 ## Current status: 2026-09-09
 
+- Subsequent WebUI/management development now exists beyond the frozen rc.2 runtime. Local bounded connection qualification for the current development candidate passed at 1,000 subscriptions and at the 1,000/1,001 identity-search boundary (`artifacts/connections-live-dBLGtC/report.json`), but this does not rebind or extend the older rc.2 24-hour evidence. A new final freeze and exact-candidate regression/qualification remain mandatory.
+
 - The final rc.2 runtime is frozen at `2872e4819f5da873c752a1e06cf186d459a9b594`, with SDK `8c63313efc3f9cefb87744358795a633fa55acc2`. All 31 local Release gates passed for this pair; the final local evidence is `artifacts/rc2-local-release-final.json`. This supersedes the earlier packaging-checksum follow-up below.
 - The owner selected `lsb112` for non-container qualification and required all builds on the local workstation. [Real bare-metal mode](baremetal-qualification.md) is implemented. Verification tools are separately frozen at `49f1dbfe43db727022eb2f53aeae7dd98f17a6e7`; runtime binaries remain identical to the frozen candidate. Local Go tests, vet, Linux tool race tests and coverage passed (80.4% overall; critical packages 92.3%/96.1%).
 - The final two-minute calibration passed: 600,001 messages published and consumed, zero missing/duplicate/corrupt messages or retries, approximately 5,000 messages/s, publish P99 1.67 ms, and resource audit passed. Initial launcher/logging and metadata-convergence failures were retained and fixed; those attempts do not count toward the soak.

@@ -1,0 +1,307 @@
+[
+  {
+    "name": "minimal",
+    "schemaValid": true,
+    "parserValid": true,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1
+      }
+    }
+  },
+  {
+    "name": "canonical binding null subjects",
+    "schemaValid": true,
+    "parserValid": true,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": null,
+        "replicas": 1,
+        "bindings": [
+          {
+            "exchange": "events",
+            "type": "topic",
+            "keys": [
+              "orders.*",
+              "sales.#"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "full fields",
+    "schemaValid": true,
+    "parserValid": true,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders",
+        "labels": {
+          "Owner": "ops\nteam"
+        }
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1,
+        "storage": "memory",
+        "maxPriority": 0,
+        "retention": {
+          "maxAge": "1h",
+          "maxBytes": "10MiB",
+          "maxMessages": 100
+        },
+        "delivery": {
+          "ackWait": "500ms",
+          "maxDeliver": 5
+        },
+        "deadLetter": {
+          "queue": "dead"
+        }
+      }
+    }
+  },
+  {
+    "name": "routing missing",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "replicas": 1
+      }
+    }
+  },
+  {
+    "name": "routing mixed",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1,
+        "bindings": [
+          {
+            "exchange": "e",
+            "type": "fanout"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "fanout keys",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": null,
+        "replicas": 1,
+        "bindings": [
+          {
+            "exchange": "e",
+            "type": "fanout",
+            "keys": [
+              "a"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "direct requires keys",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": null,
+        "replicas": 1,
+        "bindings": [
+          {
+            "exchange": "e",
+            "type": "direct"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "unsupported replica",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 2
+      }
+    }
+  },
+  {
+    "name": "unknown field",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1,
+        "magic": true
+      }
+    }
+  },
+  {
+    "name": "duplicate subject",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events",
+          "orders.events"
+        ],
+        "replicas": 1
+      }
+    }
+  },
+  {
+    "name": "negative retained messages",
+    "schemaValid": false,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1,
+        "retention": {
+          "maxMessages": -1
+        }
+      }
+    }
+  },
+  {
+    "name": "legacy label coercion not canonical authoring",
+    "schemaValid": false,
+    "parserValid": true,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders",
+        "labels": {
+          "number": 123
+        }
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1
+      }
+    }
+  },
+  {
+    "name": "custom duration still requires server",
+    "schemaValid": true,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1,
+        "delivery": {
+          "ackWait": "not-a-duration"
+        }
+      }
+    }
+  },
+  {
+    "name": "dead letter self reference still requires server",
+    "schemaValid": true,
+    "parserValid": false,
+    "document": {
+      "apiVersion": "rabbit-jetstream.io/v1alpha1",
+      "kind": "Queue",
+      "metadata": {
+        "name": "orders"
+      },
+      "spec": {
+        "subjects": [
+          "orders.events"
+        ],
+        "replicas": 1,
+        "deadLetter": {
+          "queue": "orders"
+        }
+      }
+    }
+  }
+]

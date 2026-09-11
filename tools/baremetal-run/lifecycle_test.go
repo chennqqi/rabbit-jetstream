@@ -50,6 +50,9 @@ func helperMain() {
 		})
 		_ = http.ListenAndServe(cfg["http"].(string), mux)
 	case "rjs-management":
+		if os.Getenv("RJS_DEPLOYMENT_PROFILE") != "cluster" {
+			os.Exit(2)
+		}
 		_ = http.ListenAndServe(os.Getenv("RJS_HTTP_ADDR"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{}`) }))
 	case "resource-sampler":
 		time.Sleep(6500 * time.Millisecond)
@@ -65,6 +68,23 @@ func helperMain() {
 	}
 	os.Exit(0)
 }
+
+func TestManagementEnvironmentDeclaresClusterIntent(t *testing.T) {
+	env := managementEnvironment(24220, []string{"nats://one:4222", "nats://two:4222", "nats://three:4222"}, []string{"http://one:8222"}, "secret", "/opt/rjs/runtime-manifest.json")
+	want := map[string]bool{
+		"RJS_HTTP_ADDR=127.0.0.1:24229":                       true,
+		"RJS_DEPLOYMENT_PROFILE=cluster":                      true,
+		"RJS_METADATA_REPLICAS=3":                             true,
+		"RJS_RELEASE_MANIFEST=/opt/rjs/runtime-manifest.json": true,
+	}
+	for _, value := range env {
+		delete(want, value)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing management environment entries: %v", want)
+	}
+}
+
 func TestSupervisedLifecycle(t *testing.T) {
 	uid, guard := effectiveUID, hostGuard
 	t.Cleanup(func() { effectiveUID = uid; hostGuard = guard })

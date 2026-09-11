@@ -11,7 +11,9 @@ COPY internal ./internal
 COPY admin-ui ./admin-ui
 COPY api ./api
 ARG VERSION=dev
-RUN --mount=type=cache,target=/go/pkg/mod CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/rjs-management ./management/cmd/rjs-management
+ARG REVISION=
+ARG BUILD_CLEAN=false
+RUN --mount=type=cache,target=/go/pkg/mod CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION} -X main.buildClean=${BUILD_CLEAN}" -o /out/rjs-management ./management/cmd/rjs-management
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
 COPY --from=build /out/rjs-management /usr/local/bin/rjs-management

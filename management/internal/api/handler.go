@@ -26,6 +26,7 @@ import (
 	"github.com/chennqqi/rabbit-jetstream/internal/redact"
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/controller"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/diagnostics"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/identity"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/monitoring"
@@ -38,6 +39,10 @@ type Backend interface {
 	ListStreams(context.Context) ([]jetstream.Stream, error)
 	Stream(context.Context, string) (*jetstream.Stream, error)
 	ListConsumers(context.Context, string) ([]jetstream.Consumer, error)
+	Consumer(context.Context, string, string) (*jetstream.Consumer, error)
+	QueueConsumers(context.Context, string) (*jetstream.QueueConsumerCollection, error)
+	Preview(context.Context, topology.Plan, jetstream.ApplyPrecondition) (*jetstream.PlanPreview, error)
+	PreviewDelete(context.Context, string, jetstream.ApplyPrecondition) (*jetstream.DeletePreview, error)
 	Apply(context.Context, topology.Plan) (topology.ReconcileResult, error)
 	ApplyConditional(context.Context, topology.Plan, jetstream.ApplyPrecondition) (topology.ReconcileResult, error)
 	DeleteQueue(context.Context, string, bool) (topology.DeleteResult, error)
@@ -58,23 +63,37 @@ type AuditBackend interface {
 }
 
 type AuthConfig struct {
-	OperatorTokens []string
-	AuditorTokens  []string
-	OIDC           identity.Verifier
+	RequireReadAuth bool
+	OperatorTokens  []string
+	AuditorTokens   []string
+	OIDC            identity.Verifier
+	BrowserOIDC     BrowserOIDC
 }
 
 type Handler struct {
-	client     Backend
-	monitor    Monitor
-	logger     *slog.Logger
-	name       string
-	version    string
-	started    time.Time
-	auth       AuthConfig
-	controller ControllerMonitor
-	metrics    *Metrics
-	audit      AuditBackend
+	client        Backend
+	monitor       Monitor
+	logger        *slog.Logger
+	name          string
+	version       string
+	started       time.Time
+	auth          AuthConfig
+	controller    ControllerMonitor
+	metrics       *Metrics
+	audit         AuditBackend
+	console       ConsoleConfig
+	consumerIndex *globalConsumerIndex
+	diagnostics   *diagnostics.Store
+	history       HistoryBackend
+	alerts        AlertBackend
 }
+
+type managedHandler struct {
+	http.Handler
+	diagnostics *diagnostics.Store
+}
+
+func (h *managedHandler) Close() { h.diagnostics.Close() }
 
 func New(client Backend, logger *slog.Logger, name, version string, monitor Monitor, adminTokens ...string) http.Handler {
 	var adminToken string
@@ -88,15 +107,20 @@ func NewWithController(client Backend, logger *slog.Logger, name, version string
 	return NewWithControllerAuth(client, logger, name, version, monitor, control, AuthConfig{OperatorTokens: tokenList(adminToken)})
 }
 
-func NewWithControllerAuth(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, auth AuthConfig) http.Handler {
-	return newHandler(client, logger, name, version, monitor, control, auth)
+func NewWithControllerAuth(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, auth AuthConfig, console ...ConsoleConfig) http.Handler {
+	return newHandler(client, logger, name, version, monitor, control, auth, console...)
 }
 
-func newHandler(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, auth AuthConfig) http.Handler {
+func newHandler(client Backend, logger *slog.Logger, name, version string, monitor Monitor, control ControllerMonitor, auth AuthConfig, console ...ConsoleConfig) http.Handler {
 	audit, _ := client.(AuditBackend)
 	auth.OperatorTokens = cleanTokens(auth.OperatorTokens)
 	auth.AuditorTokens = cleanTokens(auth.AuditorTokens)
-	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), auth: auth, controller: control, metrics: NewMetrics(), audit: audit}
+	h := &Handler{client: client, monitor: monitor, logger: logger, name: name, version: version, started: time.Now(), auth: auth, controller: control, metrics: NewMetrics(), audit: audit, consumerIndex: &globalConsumerIndex{}, diagnostics: diagnostics.NewStore(diagnostics.Config{})}
+	if len(console) > 0 {
+		h.console = console[0]
+		h.history = console[0].History
+		h.alerts = console[0].Alerts
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.ready)
@@ -111,17 +135,45 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		_, _ = w.Write(contract.NativeSDK)
 	})
 	mux.HandleFunc("GET /api/v1/info", h.info)
+	mux.HandleFunc("GET /api/v1/session", h.session)
+	mux.HandleFunc("GET /api/v1/oidc/config", h.browserOIDCConfig)
+	mux.HandleFunc("POST /api/v1/oidc/token", h.browserOIDCToken)
+	mux.HandleFunc("GET /api/v1/console/capabilities", h.consoleCapabilities)
+	mux.HandleFunc("GET /api/v1/console/build", h.consoleBuild)
+	mux.HandleFunc("GET /api/v1/console/queue-schema", h.queueSchema)
 	mux.HandleFunc("GET /api/v1/cluster", h.cluster)
 	mux.HandleFunc("GET /api/v1/nodes", h.nodes)
+	mux.HandleFunc("GET /api/v1/nodes/{node}/connections", h.nodeConnections)
+	mux.HandleFunc("POST /api/v1/nodes/{node}/connections/search", h.nodeConnectionIdentitySearch)
+	mux.HandleFunc("GET /api/v1/nodes/{node}/connections/{cid}", h.nodeConnection)
+	mux.HandleFunc("GET /api/v1/nodes/{node}/connections/{cid}/subscriptions", h.nodeConnectionSubscriptions)
 	mux.HandleFunc("GET /api/v1/streams", h.streams)
 	mux.HandleFunc("GET /api/v1/streams/{stream}", h.stream)
 	mux.HandleFunc("GET /api/v1/streams/{stream}/consumers", h.consumers)
+	mux.HandleFunc("GET /api/v1/streams/{stream}/consumers/{consumer}", h.consumer)
+	mux.HandleFunc("GET /api/v1/consumers", h.globalConsumers)
+	mux.HandleFunc("POST /api/v1/consumers/refresh", h.refreshGlobalConsumers)
 	mux.HandleFunc("PUT /api/v1/queues/{queue}", h.applyQueue)
+	mux.HandleFunc("POST /api/v1/queues/{queue}/preview", h.previewQueue)
+	mux.HandleFunc("POST /api/v1/queues/import-plan", h.planQueueImport)
+	mux.HandleFunc("POST /api/v1/queues/change-plan", h.planQueueChanges)
+	mux.HandleFunc("GET /api/v1/queues/{queue}/delete-preview", h.previewDeleteQueue)
 	mux.HandleFunc("DELETE /api/v1/queues/{queue}", h.deleteQueue)
 	mux.HandleFunc("GET /api/v1/queues", h.queues)
 	mux.HandleFunc("GET /api/v1/queues/{queue}", h.queue)
+	mux.HandleFunc("GET /api/v1/queues/{queue}/consumers", h.queueConsumers)
+	mux.HandleFunc("GET /api/v1/queues/{queue}/routing-probe", h.queueRoutingProbe)
+	mux.HandleFunc("GET /api/v1/queues/{queue}/export", h.exportQueue)
 	mux.HandleFunc("GET /api/v1/controller", h.controllerStatus)
 	mux.HandleFunc("GET /api/v1/audit", h.auditEvents)
+	mux.HandleFunc("GET /api/v1/audit/requests/{requestID}", h.auditRequest)
+	mux.HandleFunc("GET /api/v1/audit/windows", h.auditWindow)
+	mux.HandleFunc("POST /api/v1/diagnostics/jobs", h.createDiagnosticJob)
+	mux.HandleFunc("GET /api/v1/diagnostics/jobs/{id}", h.diagnosticJob)
+	mux.HandleFunc("DELETE /api/v1/diagnostics/jobs/{id}", h.cancelDiagnosticJob)
+	mux.HandleFunc("GET /api/v1/diagnostics/jobs/{id}/download", h.downloadDiagnosticJob)
+	mux.HandleFunc("GET /api/v1/history", h.metricHistory)
+	mux.HandleFunc("GET /api/v1/alerts", h.operationalAlerts)
 	mux.HandleFunc("GET /metrics", h.prometheus)
 	mux.Handle("GET /admin/", adminui.Handler())
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +186,7 @@ func newHandler(client Backend, logger *slog.Logger, name, version string, monit
 		}
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
-	return otelhttp.NewHandler(securityHeaders(h.logging(h.instrument(mux))), "rabbit-jetstream.management.http")
+	return &managedHandler{Handler: otelhttp.NewHandler(securityHeaders(h.logging(h.instrument(h.protectResourceReads(mux)))), "rabbit-jetstream.management.http"), diagnostics: h.diagnostics}
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -157,11 +209,24 @@ func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	declaration, err := h.client.Declaration(ctx, r.PathValue("queue"))
 	if err != nil {
-		writeBackendError(w, err)
+		h.writeBackendError(w, err)
 		return
 	}
 	w.Header().Set("ETag", fmt.Sprintf("\"%d\"", declaration.KVRevision))
-	writeJSON(w, http.StatusOK, declaration)
+	document, documentErr := topology.QueueDocument(declaration.Plan)
+	response := struct {
+		*topology.Declaration
+		Document      *topology.Queue `json:"document"`
+		DocumentError string          `json:"document_error,omitempty"`
+	}{Declaration: declaration, Document: document}
+	if documentErr != nil {
+		response.DocumentError = documentErr.Error()
+	}
+	if declaration.Queue != declaration.Plan.Queue || declaration.Revision != declaration.Plan.Revision {
+		response.Document = nil
+		response.DocumentError = "declaration identity or content revision does not match its plan"
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) controllerStatus(w http.ResponseWriter, _ *http.Request) {
@@ -173,6 +238,11 @@ func (h *Handler) controllerStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) queues(w http.ResponseWriter, r *http.Request) {
+	query, err := parseListQuery(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_query", err.Error())
+		return
+	}
 	offset, limit, err := pagination(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_pagination", err.Error())
@@ -182,14 +252,20 @@ func (h *Handler) queues(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	items, err := h.client.ListDeclarations(ctx)
 	if err != nil {
-		writeBackendError(w, err)
+		h.writeBackendError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, page(items, offset, limit))
+	items = queryList(items, query, func(item topology.Declaration) string { return item.Queue })
+	streams, streamErr := h.client.ListStreams(ctx)
+	observed := observeQueueList(items, streams, streamErr)
+	writeJSON(w, http.StatusOK, page(observed, offset, limit))
 }
 
 func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeWrite(w, r) {
+		return
+	}
+	if !h.checkCapabilitiesPrecondition(w, r) {
 		return
 	}
 	name := r.PathValue("queue")
@@ -225,7 +301,8 @@ func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 		if !h.recordAuditOutcome(w, intent, "failed", status, code, "") {
 			return
 		}
-		writeBackendError(w, err)
+		h.logBackendError("Queue deletion failed", err, "queue", name, "request_id", intent.RequestID)
+		writeMutationError(w, status, code, backendPublicMessage(code), "backend", intent.ID)
 		return
 	}
 	status := http.StatusOK
@@ -246,10 +323,13 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeWrite(w, r) {
 		return
 	}
+	if !h.checkCapabilitiesPrecondition(w, r) {
+		return
+	}
 	defer r.Body.Close()
 	queue, err := topology.ParseQueue(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_queue", err.Error())
+		writeQueueValidationError(w, err)
 		return
 	}
 	if queue.Metadata.Name != r.PathValue("queue") {
@@ -258,7 +338,7 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := topology.BuildPlan(*queue)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_queue", err.Error())
+		writeQueueValidationError(w, err)
 		return
 	}
 	precondition, err := applyPrecondition(r)
@@ -280,7 +360,8 @@ func (h *Handler) applyQueue(w http.ResponseWriter, r *http.Request) {
 		if !h.recordAuditOutcome(w, intent, "failed", status, code, plan.Revision) {
 			return
 		}
-		writeBackendError(w, err)
+		h.logBackendError("Queue apply failed", err, "queue", plan.Queue, "request_id", intent.RequestID)
+		writeMutationError(w, status, code, backendPublicMessage(code), "backend", intent.ID)
 		return
 	}
 	if declaration, declarationErr := h.client.Declaration(ctx, plan.Queue); declarationErr == nil {
@@ -317,7 +398,8 @@ func (h *Handler) auditEvents(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	page, err := h.audit.ListAudit(ctx, offset, limit)
 	if err != nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", err.Error())
+		h.logBackendError("audit read failed", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "audit data is unavailable")
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
@@ -416,7 +498,7 @@ func cleanTokens(tokens []string) []string {
 
 func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, action, resource, revision string, force bool) (jetstream.AuditEvent, bool) {
 	if h.audit == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "write rejected because audit backend is unavailable")
+		writeMutationError(w, http.StatusServiceUnavailable, "audit_unavailable", "write rejected because audit backend is unavailable", "audit_intent", "")
 		return jetstream.AuditEvent{}, false
 	}
 	requestID := auditRequestID(r)
@@ -426,8 +508,10 @@ func (h *Handler) recordAuditIntent(w http.ResponseWriter, r *http.Request, acti
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
-		h.logger.Error("audit intent failed; mutation rejected", "request_id", requestID, "action", action, "queue", resource, "error", err)
-		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "write rejected because audit intent could not be persisted")
+		if h.logger != nil {
+			h.logger.Error("audit intent failed; mutation rejected", "request_id", requestID, "action", action, "queue", resource, "error_kind", "audit_unavailable")
+		}
+		writeMutationError(w, http.StatusServiceUnavailable, "audit_unavailable", "write rejected because audit intent could not be persisted", "audit_intent", event.ID)
 		return jetstream.AuditEvent{}, false
 	}
 	return event, true
@@ -448,8 +532,10 @@ func (h *Handler) recordAuditOutcome(w http.ResponseWriter, intent jetstream.Aud
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if _, err := h.audit.RecordAudit(ctx, event); err != nil {
-		h.logger.Error("audit outcome failed after mutation attempt", "request_id", intent.RequestID, "intent_id", intent.ID, "outcome", outcome, "error", err)
-		writeAPIError(w, http.StatusServiceUnavailable, "audit_unavailable", "mutation outcome could not be persisted; inspect resource state before retrying")
+		if h.logger != nil {
+			h.logger.Error("audit outcome failed after mutation attempt", "request_id", intent.RequestID, "intent_id", intent.ID, "outcome", outcome, "error_kind", "audit_unavailable")
+		}
+		writeMutationError(w, http.StatusServiceUnavailable, "audit_unavailable", "mutation outcome could not be persisted; inspect resource state before retrying", "audit_outcome", intent.ID)
 		return false
 	}
 	return true
@@ -516,7 +602,8 @@ func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if err := h.client.Ready(ctx); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "error": err.Error()})
+		h.logBackendError("readiness check failed", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -527,7 +614,8 @@ func (h *Handler) info(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	info, err := h.client.AccountInfo(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		h.logBackendError("account info read failed", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "JetStream is unavailable"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -542,13 +630,18 @@ func (h *Handler) cluster(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	account, err := h.client.AccountInfo(ctx)
 	if err != nil {
-		writeBackendError(w, err)
+		h.writeBackendError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"server_url": redact.URL(h.client.ServerURL()), "account": account})
 }
 
 func (h *Handler) streams(w http.ResponseWriter, r *http.Request) {
+	query, err := parseListQuery(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_query", err.Error())
+		return
+	}
 	offset, limit, err := pagination(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_pagination", err.Error())
@@ -558,9 +651,10 @@ func (h *Handler) streams(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	items, err := h.client.ListStreams(ctx)
 	if err != nil {
-		writeBackendError(w, err)
+		h.writeBackendError(w, err)
 		return
 	}
+	items = queryList(items, query, func(item jetstream.Stream) string { return item.Name })
 	writeJSON(w, http.StatusOK, page(items, offset, limit))
 }
 
@@ -569,13 +663,29 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	item, err := h.client.Stream(ctx, r.PathValue("stream"))
 	if err != nil {
-		writeBackendError(w, err)
+		h.writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) consumer(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	item, err := h.client.Consumer(ctx, r.PathValue("stream"), r.PathValue("consumer"))
+	if err != nil {
+		h.writeBackendError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
 }
 
 func (h *Handler) consumers(w http.ResponseWriter, r *http.Request) {
+	query, mode, err := parseStreamConsumerQuery(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_query", err.Error())
+		return
+	}
 	offset, limit, err := pagination(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_pagination", err.Error())
@@ -585,10 +695,10 @@ func (h *Handler) consumers(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	items, err := h.client.ListConsumers(ctx, r.PathValue("stream"))
 	if err != nil {
-		writeBackendError(w, err)
+		h.writeBackendError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, page(items, offset, limit))
+	writeJSON(w, http.StatusOK, page(queryStreamConsumers(items, query, mode), offset, limit))
 }
 
 func (h *Handler) logging(next http.Handler) http.Handler {
@@ -645,12 +755,36 @@ func page[T any](items []T, offset, limit int) map[string]any {
 	return map[string]any{"items": items[offset:end], "total": total, "offset": offset, "limit": limit}
 }
 
-func writeBackendError(w http.ResponseWriter, err error) {
+func (h *Handler) writeBackendError(w http.ResponseWriter, err error) {
 	status, code := backendErrorDetails(err)
-	writeAPIError(w, status, code, err.Error())
+	h.logBackendError("JetStream request failed", err)
+	writeAPIError(w, status, code, backendPublicMessage(code))
+}
+
+func (h *Handler) logBackendError(message string, err error, attributes ...any) {
+	if h.logger != nil {
+		_, code := backendErrorDetails(err)
+		h.logger.Warn(message, append(attributes, "error_kind", code)...)
+	}
+}
+
+func backendPublicMessage(code string) string {
+	switch code {
+	case "dlq_dependency_cycle":
+		return "DLQ dependency cycle"
+	case "conflict":
+		return "resource conflict"
+	case "not_found":
+		return "resource not found"
+	default:
+		return "JetStream is unavailable"
+	}
 }
 
 func backendErrorDetails(err error) (int, string) {
+	if errors.Is(err, jetstream.ErrDeadLetterCycle) {
+		return http.StatusBadRequest, "dlq_dependency_cycle"
+	}
 	if errors.Is(err, jetstream.ErrConflict) {
 		return http.StatusConflict, "conflict"
 	}

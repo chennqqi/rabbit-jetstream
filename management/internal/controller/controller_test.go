@@ -119,13 +119,45 @@ func TestControllerStopsWhenLeaseIsLostDuringReconcile(t *testing.T) {
 }
 
 func TestControllerAccumulatesDeadLetterCounters(t *testing.T) {
-	backend := &fakeBackend{leader: true, dlqResult: topology.DeadLetterProcessResult{Processed: 2, Moved: 1, Failed: 1}}
+	backend := &fakeBackend{leader: true, dlqResult: topology.DeadLetterProcessResult{Processed: 3, Moved: 1, Failed: 1, Ignored: 1}}
 	control := testController(backend)
 	control.runOnce(context.Background())
 	control.runOnce(context.Background())
 	status := control.Status()
-	if status.DLQProcessed != 4 || status.DLQMoved != 2 || status.DLQFailed != 2 {
+	if status.DLQProcessed != 6 || status.DLQMoved != 2 || status.DLQFailed != 2 || status.DLQIgnored != 2 {
 		t.Fatalf("status=%#v", status)
+	}
+}
+
+func TestControllerRetainsPartialDeadLetterResults(t *testing.T) {
+	for _, batchErr := range []error{errors.New("ack DLQ advisory: unavailable"), errors.New("read DLQ advisory batch: unavailable"), context.DeadlineExceeded} {
+		t.Run(batchErr.Error(), func(t *testing.T) {
+			backend := &fakeBackend{leader: true, declarations: []topology.Declaration{{Queue: "a"}}, dlqResult: topology.DeadLetterProcessResult{Processed: 3, Moved: 1, Failed: 1, Ignored: 1}}
+			control := testController(backend)
+			control.runOnce(context.Background())
+			lastSuccess := control.Status().LastSuccess
+			backend.dlqResult = topology.DeadLetterProcessResult{Processed: 4, Moved: 2, Failed: 1, Ignored: 1}
+			backend.dlqErr = batchErr
+			control.runOnce(context.Background())
+			status := control.Status()
+			if status.DLQProcessed != 7 || status.DLQMoved != 3 || status.DLQFailed != 2 || status.DLQIgnored != 2 {
+				t.Fatalf("partial batch counters lost: %#v", status)
+			}
+			if status.LastError != batchErr.Error() || !status.LastSuccess.Equal(lastSuccess) || !status.Leader || status.Reconciled != 1 {
+				t.Fatalf("partial batch must retain failure and prior success: %#v", status)
+			}
+			backend.dlqResult = topology.DeadLetterProcessResult{}
+			control.runOnce(context.Background())
+			if got := control.Status(); got.DLQProcessed != 7 || got.DLQMoved != 3 || got.DLQFailed != 2 || got.DLQIgnored != 2 {
+				t.Fatalf("empty failed batch changed counters: %#v", got)
+			}
+			backend.dlqErr = nil
+			backend.dlqResult = topology.DeadLetterProcessResult{Processed: 1, Moved: 1}
+			control.runOnce(context.Background())
+			if got := control.Status(); got.DLQProcessed != 8 || got.DLQMoved != 4 || got.DLQFailed != 2 || got.DLQIgnored != 2 || got.LastError != "" || !got.LastSuccess.Equal(got.LastRun) {
+				t.Fatalf("recovered batch did not accumulate exactly once: %#v", got)
+			}
+		})
 	}
 }
 

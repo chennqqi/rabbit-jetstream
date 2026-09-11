@@ -24,6 +24,12 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	t.Setenv("RJS_OIDC_OPERATOR_ROLE", "platform-ops")
 	t.Setenv("RJS_OIDC_AUDITOR_ROLE", "platform-audit")
 	t.Setenv("RJS_OIDC_ALLOW_INSECURE_ISSUER", "true")
+	t.Setenv("RJS_OIDC_BROWSER_CLIENT_ID", "management")
+	t.Setenv("RJS_OIDC_BROWSER_REDIRECT_ORIGIN", "https://console.example.com")
+	t.Setenv("RJS_PROMETHEUS_URL", "https://prometheus.example")
+	t.Setenv("RJS_PROMETHEUS_PUBLIC_URL", "https://metrics.example")
+	t.Setenv("RJS_PROMETHEUS_TOKEN", "history-secret")
+	t.Setenv("RJS_PROMETHEUS_ALLOW_INSECURE", "true")
 	t.Setenv("RJS_OTEL_TRACES_ENDPOINT", "https://collector.example/v1/traces")
 	t.Setenv("RJS_OTEL_METRICS_ENDPOINT", "https://collector.example/v1/metrics")
 	t.Setenv("RJS_OTEL_METRIC_INTERVAL", "15s")
@@ -34,6 +40,7 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	t.Setenv("RJS_INSTANCE_ID", "management-2")
 	t.Setenv("RJS_CONTROLLER_INTERVAL", "2s")
 	t.Setenv("RJS_CONTROLLER_LEASE_TTL", "3s")
+	t.Setenv("RJS_RELEASE_MANIFEST", "/opt/rjs/release-manifest.json")
 	cfg := FromEnv()
 	if cfg.NATSURL != "nats://nats-1:4222" || cfg.NATSMonitorURLs != "http://nats-1:8222,http://nats-2:8222" {
 		t.Fatalf("unexpected config: %#v", cfg)
@@ -50,8 +57,11 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	if len(cfg.AdminTokens) != 2 || cfg.AdminTokens[0] != "secret" || cfg.AdminTokens[1] != "next-secret" || len(cfg.AuditTokens) != 2 {
 		t.Fatalf("role tokens were not normalized: admins=%v auditors=%v", cfg.AdminTokens, cfg.AuditTokens)
 	}
-	if cfg.OIDCIssuer != "https://id.example.com" || cfg.OIDCAudience != "management" || cfg.OIDCRoleClaim != "groups" || cfg.OIDCOperatorRole != "platform-ops" || cfg.OIDCAuditorRole != "platform-audit" || !cfg.OIDCAllowInsecure {
+	if cfg.OIDCIssuer != "https://id.example.com" || cfg.OIDCAudience != "management" || cfg.OIDCRoleClaim != "groups" || cfg.OIDCOperatorRole != "platform-ops" || cfg.OIDCAuditorRole != "platform-audit" || !cfg.OIDCAllowInsecure || cfg.OIDCBrowserClientID != "management" || cfg.OIDCBrowserRedirectOrigin != "https://console.example.com" {
 		t.Fatalf("OIDC config = %#v", cfg)
+	}
+	if cfg.PrometheusURL != "https://prometheus.example" || cfg.PrometheusPublicURL != "https://metrics.example" || cfg.PrometheusToken != "history-secret" || !cfg.PrometheusInsecure {
+		t.Fatalf("Prometheus config=%#v", cfg)
 	}
 	if cfg.OTLPTraceEndpoint != "https://collector.example/v1/traces" || cfg.OTLPMetricEndpoint != "https://collector.example/v1/metrics" || cfg.OTELMetricInterval != 15*time.Second || cfg.OTELSampleRatio != 0.25 || !cfg.OTELAllowInsecure {
 		t.Fatalf("telemetry config = %#v", cfg)
@@ -61,6 +71,9 @@ func TestFromEnvIncludesMonitoringEndpoints(t *testing.T) {
 	}
 	if cfg.InstanceID != "management-2" || cfg.ControllerInterval != 2*time.Second || cfg.ControllerLeaseTTL != 6*time.Second {
 		t.Fatalf("controller config = %#v", cfg)
+	}
+	if cfg.ReleaseManifest != "/opt/rjs/release-manifest.json" {
+		t.Fatalf("release manifest = %q", cfg.ReleaseManifest)
 	}
 }
 

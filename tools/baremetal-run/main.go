@@ -48,6 +48,18 @@ type supervisor struct {
 var effectiveUID = os.Geteuid
 var hostGuard = checkHost
 
+func managementEnvironment(port int, urls, monitors []string, password, manifest string) []string {
+	return []string{
+		"RJS_HTTP_ADDR=127.0.0.1:" + strconv.Itoa(port+9),
+		"RJS_DEPLOYMENT_PROFILE=cluster",
+		"RJS_NATS_URL=" + strings.Join(urls, ","),
+		"RJS_NATS_MONITOR_URLS=" + strings.Join(monitors, ","),
+		"RJS_METADATA_REPLICAS=3",
+		"RJS_ADMIN_TOKEN=" + password,
+		"RJS_RELEASE_MANIFEST=" + manifest,
+	}
+}
+
 func main() {
 	o := options{}
 	flag.StringVar(&o.bundle, "bundle", "", "read-only bare-metal bundle")
@@ -163,7 +175,7 @@ func run(ctx context.Context, o options) (err error) {
 		case <-time.After(time.Second):
 		}
 	}
-	s.env = append(s.env, "RJS_HTTP_ADDR=127.0.0.1:"+strconv.Itoa(o.port+9), "RJS_NATS_URL="+strings.Join(urls, ","), "RJS_NATS_MONITOR_URLS="+strings.Join(monitors, ","), "RJS_METADATA_REPLICAS=3", "RJS_ADMIN_TOKEN="+password)
+	s.env = append(s.env, managementEnvironment(o.port, urls, monitors, password, filepath.Join(o.bundle, "runtime-manifest.json"))...)
 	c, e := s.start("management", "rjs-management")
 	if e != nil {
 		return e

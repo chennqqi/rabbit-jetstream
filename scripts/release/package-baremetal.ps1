@@ -14,6 +14,7 @@ $Verifier = (& git -C $Repo rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $Verifier -notmatch '^[a-f0-9]{40}$') { throw 'invalid verification revision' }
 if (& git -C $Repo status --porcelain) { throw 'freeze verification tools in a clean worktree before packaging' }
 $Manifest = Get-Content -Raw -LiteralPath (Join-Path $Frozen 'release-manifest.json') | ConvertFrom-Json
+if ($Manifest.webui.algorithm -ne 'sha256-framed-files-v1' -or $Manifest.webui.digest -notmatch '^[a-f0-9]{64}$' -or $Manifest.webui.file_count -lt 1) { throw 'frozen runtime manifest lacks a valid WebUI identity' }
 foreach ($Line in Get-Content -LiteralPath (Join-Path $Frozen 'SHA256SUMS')) {
     if ($Line -notmatch '^([a-f0-9]{64})  ([A-Za-z0-9_./-]+)$') { throw 'invalid frozen checksum entry' }
     $Expected = $Matches[1]; $Relative = $Matches[2]
@@ -80,7 +81,7 @@ $Artifacts = @(Get-ChildItem -LiteralPath $Destination -File -Recurse | Sort-Obj
 $BareManifest = [ordered]@{
     schema='rabbit-jetstream.io/release-bundle/v1alpha1'; deployment_mode='bare-metal'; version=$Manifest.version
     server_revision=$Manifest.server_revision; verification_revision=$Verifier; sdk=$Manifest.sdk; contract_version=$Manifest.contract_version
-    nats_version=$Manifest.nats_version; platforms=@('linux/amd64'); generated_at=[DateTime]::UtcNow.ToString('o')
+    nats_version=$Manifest.nats_version; webui=$Manifest.webui; platforms=@('linux/amd64'); generated_at=[DateTime]::UtcNow.ToString('o')
     qualification='native-linux-soak-and-canary-required'; runtime_manifest_sha256=(Digest (Join-Path $Frozen 'release-manifest.json'))
     nats_oci_platform_digest=$PlatformDigest; nats_oci_config_digest=$ConfigDigest; artifacts=$Artifacts
 }

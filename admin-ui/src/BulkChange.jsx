@@ -1,0 +1,19 @@
+import React,{useEffect,useMemo,useState,useSyncExternalStore} from "react";
+import {createBulkChange} from "./bulk-change.mjs";
+import {QueueEditor} from "./QueueEditor.jsx";
+
+export function BulkChange({api,language,prepare}){
+  const model=useMemo(()=>createBulkChange(api),[api]),state=useSyncExternalStore(model.subscribe,model.snapshot),[selected,setSelected]=useState(null),[prepareFailure,setPrepareFailure]=useState(null),t=(en,zh)=>language==="zh"?zh:en;
+  useEffect(()=>()=>model.clear(),[model]);
+  const failures={bounds:t("Choose 1–100 nonempty packages, at most 2 MiB each and 4 MiB total; each contained Queue document remains limited to 1 MiB.","请选择 1–100 个非空更新包，每个不超过 2 MiB，总计不超过 4 MiB；其中 Queue 文档仍不得超过 1 MiB。"),files:t("Every file must be a valid rjs.queue-change.v1 package. Nothing was planned.","每个文件都必须是有效的 rjs.queue-change.v1 更新包；尚未执行规划。"),denied:t("Bulk change planning was denied.","批量变更规划被拒绝。"),changed:t("Console capabilities changed. Reload before planning again.","控制台能力已变化，请重新读取后再规划。"),invalid:t("Server returned inconsistent itemized preview evidence.","服务端返回的逐项预览证据不一致。"),unavailable:t("Bulk change planning is unavailable. Retry explicitly.","批量变更规划不可用，请明确重试。")};
+  async function open(item){setPrepareFailure(null);try{setSelected(await prepare(item.document,item.etag));}catch(error){setPrepareFailure(error.code??"unavailable");}}
+  return <section aria-label={t("Bulk Queue changes","批量 Queue 变更")}><h2>{t("Plan bounded Queue updates","规划有界 Queue 更新")}</h2>
+    <p>{t("Upload versioned change packages containing a Queue document and its original ETag. Planning previews every valid target but performs no writes. Ready items still require a fresh target read, another server preview and separate confirmation. There is no apply-all, automatic retry, rollback or atomic batch.","上传包含 Queue 文档及其原始 ETag 的版本化更新包。规划会预览每个有效目标，但不执行写入。就绪项仍须重新读取目标、再次服务端预览并分别确认。不存在全部提交、自动重试、回滚或原子批次。")}</p>
+    <label htmlFor="bulk-change-files">{t("Queue change packages","Queue 更新包")}</label><input id="bulk-change-files" type="file" accept="application/json,.json" multiple onChange={event=>void model.read(event.target.files)}/>
+    <button type="button" disabled={state.phase==="planning"||!state.packages.length||state.packages.some(item=>item.status!=="loaded")} onClick={()=>void model.plan()}>{t("Preview every target","预览全部目标")}</button><button type="button" onClick={()=>{setSelected(null);model.clear();}}>{t("Clear local batch","清除本地批次")}</button>
+    {state.phase==="planning"&&<p role="status">{t("Reading itemized server previews…","正在读取服务端逐项预览…")}</p>}{state.failure&&<p role="alert">{failures[state.failure]}</p>}
+    {!!state.packages.length&&<ol>{state.packages.map((item,index)=><li key={index}>{item.filename} — {item.document?.metadata?.name??t("Invalid package","无效更新包")} — {item.status}</li>)}</ol>}
+    {state.result&&<section aria-label={t("Bulk preview results","批量预览结果")}><p role="status">{state.result.ready?t("Every item has an unblocked preview; each still needs separate review.","每项均有未阻塞预览；仍须分别审阅。") : t("Some items are not ready. Successful siblings remain independently reviewable.","部分项目未就绪；成功的其他项目仍可独立审阅。")}</p><ol>{state.result.items.map(item=><li key={item.index}><strong>{item.document.metadata.name}</strong> — {item.status}{item.code&&<> — {item.code}</>}{item.status==="ready"&&<button type="button" onClick={()=>void open(item)}>{t("Prepare independent review","准备独立审阅")}: {item.document.metadata.name}</button>}</li>)}</ol></section>}
+    {prepareFailure&&<p role="alert">{prepareFailure==="changed"?t("The target changed since batch preview. Re-plan the batch; no draft was prepared.","目标在批次预览后已变化，请重新规划；未准备草稿。") : t("This target cannot be prepared because another retained operation owns it or the current read failed.","由于其他保留操作占用该目标或当前读取失败，无法准备此目标。")}</p>}
+    {selected&&<QueueEditor model={selected} language={language}/>}</section>;
+}

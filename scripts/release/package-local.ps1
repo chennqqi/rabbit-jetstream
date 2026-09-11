@@ -57,14 +57,14 @@ $HostGoModCache = (& go env GOMODCACHE).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'cannot locate Go module cache' }
 foreach ($Architecture in @('amd64', 'arm64')) {
     $BuildArgs = @('run', '--rm', '-e', 'GOOS=linux', '-e', "GOARCH=$Architecture", '-e', 'CGO_ENABLED=0', '-e', 'GOPROXY=off', '-v', "${RepositoryRoot}:/src:ro", '-v', "${Destination}:/out", '-v', "${HostGoModCache}:/go/pkg/mod", '-w', '/src', $GoImage, 'go', 'build', '-buildvcs=false', '-trimpath')
-    Invoke-Checked 'docker' ($BuildArgs + @("-ldflags=-s -w -X main.version=$Version", '-o', "/out/bin/linux-$Architecture/rjs-management", './management/cmd/rjs-management'))
+    Invoke-Checked 'docker' ($BuildArgs + @("-ldflags=-s -w -X main.version=$Version -X main.revision=$ServerRevision -X main.buildClean=true", '-o', "/out/bin/linux-$Architecture/rjs-management", './management/cmd/rjs-management'))
     Invoke-Checked 'docker' ($BuildArgs + @("-ldflags=-s -w -X main.version=$Version", '-o', "/out/bin/linux-$Architecture/rjsctl", './tools/rjsctl'))
     Invoke-Checked 'docker' ($BuildArgs + @('-ldflags=-s -w', '-o', "/out/bin/linux-$Architecture/nativequal", './tools/nativequal'))
 }
 
 $Images = @(
     @{ Name = 'nats'; File = 'packaging/Dockerfile.nats-server'; Tag = "rabbit-jetstream/nats:$Version"; Args = @() },
-    @{ Name = 'management'; File = 'packaging/Dockerfile.management'; Tag = "rabbit-jetstream/management:$Version"; Args = @('--build-arg', "VERSION=$Version") },
+    @{ Name = 'management'; File = 'packaging/Dockerfile.management'; Tag = "rabbit-jetstream/management:$Version"; Args = @('--build-arg', "VERSION=$Version", '--build-arg', "REVISION=$ServerRevision", '--build-arg', 'BUILD_CLEAN=true') },
     @{ Name = 'operator'; File = 'packaging/Dockerfile.operator'; Tag = "rabbit-jetstream/operator:$Version"; Args = @('--build-arg', "VERSION=$Version") }
 )
 foreach ($Image in $Images) {
@@ -87,6 +87,13 @@ Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'docs/release-license-records.
 $Artifacts = Get-ChildItem -LiteralPath $Destination -Recurse -File | Sort-Object FullName | ForEach-Object {
     [ordered]@{ path = (Get-RelativePath $Destination $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
+Push-Location $RepositoryRoot
+try {
+    $WebUIRaw = & go run ./tools/uiidentity
+    if ($LASTEXITCODE -ne 0) { throw 'cannot identify embedded WebUI assets' }
+} finally { Pop-Location }
+$WebUIIdentity = ($WebUIRaw -join "`n") | ConvertFrom-Json
+if ($WebUIIdentity.algorithm -ne 'sha256-framed-files-v1' -or $WebUIIdentity.digest -notmatch '^[a-f0-9]{64}$' -or $WebUIIdentity.fileCount -lt 1) { throw 'invalid embedded WebUI identity' }
 $Manifest = [ordered]@{
     schema = 'rabbit-jetstream.io/release-bundle/v1alpha1'
     version = $Version
@@ -95,6 +102,7 @@ $Manifest = [ordered]@{
     sdk = [ordered]@{ version = $SDKVersion; revision = $SDKRevision }
     contract_version = $ContractVersion
     nats_version = $NATSLock.tag
+    webui = [ordered]@{ algorithm = $WebUIIdentity.algorithm; digest = $WebUIIdentity.digest; file_count = $WebUIIdentity.fileCount }
     platforms = @('linux/amd64', 'linux/arm64')
     qualification = 'local-release-gates-passed; native-linux-soak-and-canary-required'
     artifacts = $Artifacts

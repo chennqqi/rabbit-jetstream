@@ -36,7 +36,7 @@ Evidence is indexed in [the native Linux qualification report](native-linux-qual
 
 ## Current Baseline and Remaining Blockers
 
-The obsolete CRLF claim in the previous assessment is incorrect. The production-value contract test passes, and repository-wide tests pass in normal CI. In this managed Windows session, `go test ./...` reached every package but `tools/upstreamcheck`, whose fixture was affected by denied access to the host-global Git ignore file; this is an environment isolation issue, not the former line-ending failure.
+The obsolete CRLF claim in the previous assessment is incorrect. The production-value contract test passes. `tools/upstreamcheck` now separates successful stdout from warning-only stderr, and repository-wide `go test ./...` plus `go vet ./...` pass in this managed Windows session without weakening subtree checks.
 
 The latest recorded CI run for revision `a85b839f` passed every job except `rabbitmq-migration`. Definition conversion passed, RabbitMQ and NATS became ready, and both three-message dual-write attempts succeeded. The remaining failure is Linux file ownership on the generated `dualwrite.ndjson` when the host PowerShell process reads a file created by the non-root distroless container. This is a test-harness portability defect, not a Queue semantic or migration correctness failure, but CI must be green before release.
 

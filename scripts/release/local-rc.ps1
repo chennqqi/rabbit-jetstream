@@ -66,6 +66,11 @@ $NATSLock = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'upstream/nats-s
 if (-not $SDKVersion -or -not $ContractVersion) { throw 'Unable to read SDK or contract version.' }
 if ($NATSLock.tag -ne 'v2.14.1') { throw "Unexpected NATS pin $($NATSLock.tag)" }
 
+$NpmCommand = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'npm.cmd' } else { 'npm' }
+Invoke-Checked 'admin-ui-clean-install' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('ci', '--ignore-scripts')
+Invoke-Checked 'admin-ui-module-tests' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('test')
+Invoke-Checked 'admin-ui-candidate-build' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('run', 'build')
+Invoke-Checked 'admin-ui-embedded-assets' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('run', 'verify:dist')
 Invoke-Checked 'server-test' $RepositoryRoot 'go' @('test', './...')
 Invoke-Checked 'server-vet' $RepositoryRoot 'go' @('vet', './...')
 Invoke-Checked 'server-build' $RepositoryRoot 'go' @('build', './...')
@@ -74,7 +79,8 @@ Invoke-Checked 'sdk-vet' $SDKPath 'go' @('vet', './...')
 Invoke-Checked 'sdk-build' $SDKPath 'go' @('build', './...')
 
 if ($Mode -in @('Full', 'Release')) {
-    Invoke-Checked 'admin-ui-browser-e2e' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/admin-ui/run.ps1')
+    Invoke-Checked 'admin-ui-browser-standalone-e2e' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/admin-ui/run.ps1', '-Project', 'rjs-admin-ui-standalone-e2e', '-DeploymentProfile', 'standalone')
+    Invoke-Checked 'admin-ui-browser-cluster-e2e' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/admin-ui/run.ps1', '-Project', 'rjs-admin-ui-cluster-e2e', '-DeploymentProfile', 'cluster')
     Invoke-Checked 'sdk-docker-integration' $SDKPath 'pwsh' @('-NoProfile', '-File', './scripts/test-integration.ps1')
     Invoke-Checked 'server-sdk-contract' $RepositoryRoot 'pwsh' @('-NoProfile', '-File', './tests/integration/native-sdk.ps1', '-SDKPath', $SDKPath)
     foreach ($Scenario in @('standalone', 'api', 'reconcile', 'apply', 'delete', 'audit', 'auth', 'routing', 'dlq', 'metrics', 'diagnostics', 'controller', 'fault')) {

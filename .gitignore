@@ -9,3 +9,7 @@
 /coverage.out
 /outlink/
 /performance-*.json*
+/admin-ui/node_modules/
+/admin-ui/build-candidate/
+/.cache/
+/.tmp/

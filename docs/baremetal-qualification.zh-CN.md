@@ -2,7 +2,7 @@
 
 [English](baremetal-qualification.md) | [简体中文](baremetal-qualification.zh-CN.md)
 
-这是原生 Linux/AMD64、单物理机稳定性配置，不是容器配置，也不证明跨主机高可用。三个带认证的 JetStream 进程采用 R3 存储，同时监测管理进程。Kubernetes 验收与应用 Canary 审批仍是独立门槛。
+这是原生 Linux/AMD64、单物理机稳定性配置，不是容器配置，也不证明跨主机高可用。三个带认证的 JetStream 进程采用 R3 存储，同时监测管理进程，并显式传入 `RJS_DEPLOYMENT_PROFILE=cluster`；这是验收拓扑声明，不是根据可达节点进行推断，也不代表验收结论。Kubernetes 验收与应用 Canary 审批仍是独立门槛。
 
 ## 构建与来源
 

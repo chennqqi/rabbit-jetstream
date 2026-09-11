@@ -173,6 +173,25 @@ func (c *Client) Stream(ctx context.Context, name string) (*Stream, error) {
 	return ptr(streamFromInfo(stream.CachedInfo())), nil
 }
 
+// Consumer reads one exact identity without enumerating streams or consumers.
+func (c *Client) Consumer(ctx context.Context, streamName, name string) (*Consumer, error) {
+	var consumer interface{ CachedInfo() *jsapi.ConsumerInfo }
+	pull, err := c.js.Consumer(ctx, streamName, name)
+	consumer = pull
+	if errors.Is(err, jsapi.ErrNotPullConsumer) {
+		// The SDK separates pull and push lookups. Do not enumerate or retry
+		// indefinitely if the resource changes type between these two reads.
+		consumer, err = c.js.PushConsumer(ctx, streamName, name)
+	}
+	if errors.Is(err, jsapi.ErrStreamNotFound) || errors.Is(err, jsapi.ErrConsumerNotFound) {
+		return nil, fmt.Errorf("%w: consumer %s on stream %s", ErrNotFound, name, streamName)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get consumer %s on stream %s: %w", name, streamName, err)
+	}
+	return ptr(consumerFromInfo(consumer.CachedInfo())), nil
+}
+
 func (c *Client) ListConsumers(ctx context.Context, streamName string) ([]Consumer, error) {
 	stream, err := c.js.Stream(ctx, streamName)
 	if errors.Is(err, jsapi.ErrStreamNotFound) {
@@ -209,23 +228,30 @@ func (c *Client) ApplyConditional(ctx context.Context, plan topology.Plan, preco
 		return topology.ReconcileResult{}, err
 	}
 	defer release()
-	declaration, err := c.Declaration(ctx, plan.Queue)
+	if err := c.checkApplyPrecondition(ctx, plan.Queue, precondition); err != nil {
+		return topology.ReconcileResult{}, err
+	}
+	return c.applyUnlocked(ctx, plan)
+}
+
+func (c *Client) checkApplyPrecondition(ctx context.Context, name string, precondition ApplyPrecondition) error {
+	declaration, err := c.Declaration(ctx, name)
 	if precondition.CreateOnly {
 		if err == nil {
-			return topology.ReconcileResult{}, fmt.Errorf("%w: Queue %s already exists", ErrConflict, plan.Queue)
+			return fmt.Errorf("%w: Queue %s already exists", ErrConflict, name)
 		}
 		if !errors.Is(err, ErrNotFound) {
-			return topology.ReconcileResult{}, err
+			return err
 		}
 	} else {
 		if err != nil {
-			return topology.ReconcileResult{}, err
+			return err
 		}
 		if precondition.ExpectedRevision == nil || declaration.KVRevision != *precondition.ExpectedRevision {
-			return topology.ReconcileResult{}, fmt.Errorf("%w: Queue %s revision changed", ErrConflict, plan.Queue)
+			return fmt.Errorf("%w: Queue %s revision changed", ErrConflict, name)
 		}
 	}
-	return c.applyUnlocked(ctx, plan)
+	return nil
 }
 
 func (c *Client) ApplyDeclaration(ctx context.Context, declaration topology.Declaration) (topology.ReconcileResult, error) {
@@ -243,14 +269,7 @@ func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topolog
 		return result, nil
 	}
 	if plan.DeadLetter != nil {
-		target, dependencyErr := c.Declaration(ctx, plan.DeadLetter.Queue)
-		if dependencyErr != nil {
-			return result, fmt.Errorf("DLQ dependency %s is not applied: %w", plan.DeadLetter.Queue, dependencyErr)
-		}
-		if target.Plan.DeadLetter != nil && target.Plan.DeadLetter.Queue == plan.Queue {
-			return result, fmt.Errorf("DLQ dependency cycle between %s and %s", plan.Queue, plan.DeadLetter.Queue)
-		}
-		if err := validateDeadLetterPriority(plan, target.Plan); err != nil {
+		if err := c.checkDeadLetterDependency(ctx, plan); err != nil {
 			return result, err
 		}
 		if err := c.ensureDeadLetterInfrastructure(ctx); err != nil {
@@ -260,23 +279,33 @@ func (c *Client) applyUnlocked(ctx context.Context, plan topology.Plan) (topolog
 	if result.Status == "noop" {
 		return result, c.persistDeclaration(ctx, plan)
 	}
+	var observedStreamMetadata map[string]string
+	if observed.Stream != nil {
+		observedStreamMetadata = observed.Stream.Metadata
+	}
 	streamConfig := jsapi.StreamConfig{
 		Name: plan.Stream.Name, Subjects: plan.Stream.Subjects, Storage: storageType(plan.Stream.Storage),
 		Replicas: plan.Stream.Replicas, Retention: jsapi.WorkQueuePolicy, Discard: jsapi.DiscardOld,
 		MaxAge: time.Duration(plan.Stream.MaxAgeNanos), MaxBytes: plan.Stream.MaxBytes,
-		MaxMsgs: plan.Stream.MaxMessages, Metadata: cloneMetadata(plan.Stream.Metadata),
+		MaxMsgs: plan.Stream.MaxMessages, Metadata: topology.DesiredMetadata(observedStreamMetadata, plan.Stream.Metadata),
 	}
 	if _, err := c.js.CreateOrUpdateStream(ctx, streamConfig); err != nil {
 		return result, fmt.Errorf("apply stream %s: %w", plan.Stream.Name, err)
 	}
 	consumers := append([]topology.ConsumerPlan{plan.Consumer}, plan.PriorityConsumers...)
 	for _, consumer := range consumers {
+		var observedConsumerMetadata map[string]string
+		if consumer.Name == plan.Consumer.Name && observed.Consumer != nil {
+			observedConsumerMetadata = observed.Consumer.Metadata
+		} else if item := observed.PriorityConsumers[consumer.Name]; item != nil {
+			observedConsumerMetadata = item.Metadata
+		}
 		consumerConfig := jsapi.ConsumerConfig{
 			Name: consumer.Name, Durable: consumer.Name,
 			FilterSubjects: consumer.FilterSubjects, DeliverPolicy: jsapi.DeliverAllPolicy,
 			AckPolicy: jsapi.AckExplicitPolicy, AckWait: time.Duration(consumer.AckWaitNanos),
 			MaxDeliver: consumer.MaxDeliver, ReplayPolicy: jsapi.ReplayInstantPolicy,
-			Metadata: cloneMetadata(consumer.Metadata),
+			Metadata: topology.DesiredMetadata(observedConsumerMetadata, consumer.Metadata),
 		}
 		if _, err := c.js.CreateOrUpdateConsumer(ctx, plan.Stream.Name, consumerConfig); err != nil {
 			return result, fmt.Errorf("apply consumer %s: %w", consumer.Name, err)
@@ -541,7 +570,7 @@ func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topo
 	if err != nil {
 		return observed, err
 	}
-	observed.Stream = &topology.ObservedStream{Name: stream.Name, Subjects: stream.Subjects, Storage: stream.Storage, Replicas: stream.Replicas, Retention: stream.Retention, Discard: stream.Discard, MaxAgeNanos: stream.MaxAgeNanos, MaxBytes: stream.MaxBytes, MaxMessages: stream.MaxMessages, Metadata: stream.Metadata}
+	observed.Stream = observedStream(stream)
 	consumers, err := c.ListConsumers(ctx, plan.Stream.Name)
 	if err != nil {
 		return observed, err
@@ -559,6 +588,10 @@ func (c *Client) observedTopology(ctx context.Context, plan topology.Plan) (topo
 		}
 	}
 	return observed, nil
+}
+
+func observedStream(stream *Stream) *topology.ObservedStream {
+	return &topology.ObservedStream{Name: stream.Name, Subjects: stream.Subjects, Storage: stream.Storage, Replicas: stream.Replicas, Retention: stream.Retention, Discard: stream.Discard, MaxAgeNanos: stream.MaxAgeNanos, MaxBytes: stream.MaxBytes, MaxMessages: stream.MaxMessages, Metadata: stream.Metadata}
 }
 
 func storageType(value string) jsapi.StorageType {
@@ -586,8 +619,9 @@ func consumerFromInfo(info *jsapi.ConsumerInfo) Consumer {
 		Mode: consumerMode(info.Config.DeliverSubject), DeliverPolicy: deliverPolicyLabel(info.Config.DeliverPolicy),
 		AckPolicy: ackPolicyLabel(info.Config.AckPolicy), AckWaitNanos: info.Config.AckWait.Nanoseconds(),
 		MaxDeliver: info.Config.MaxDeliver, ReplayPolicy: replayPolicyLabel(info.Config.ReplayPolicy),
-		Metadata: cloneMetadata(info.Config.Metadata),
-		Pending:  info.NumPending, AckPending: info.NumAckPending, Redelivered: info.NumRedelivered,
+		MaxAckPending: info.Config.MaxAckPending,
+		Metadata:      cloneMetadata(info.Config.Metadata),
+		Pending:       info.NumPending, AckPending: info.NumAckPending, Redelivered: info.NumRedelivered,
 		Waiting: info.NumWaiting, Delivered: info.Delivered.Consumer, Cluster: clusterFromInfo(info.Cluster),
 	}
 }

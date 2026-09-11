@@ -168,8 +168,16 @@ func TestOpenAPIOperationsAndLocalReferencesAreComplete(t *testing.T) {
 				t.Errorf("%s %s has missing or duplicate operationId %q", method, path, operationID)
 			}
 			operationIDs[operationID] = true
-			if asObject(operation["responses"])["200"] == nil {
-				t.Errorf("%s %s has no documented 200 response", method, path)
+			responses := asObject(operation["responses"])
+			hasSuccess := false
+			for status := range responses {
+				if len(status) == 3 && status[0] == '2' {
+					hasSuccess = true
+					break
+				}
+			}
+			if !hasSuccess {
+				t.Errorf("%s %s has no documented 2xx response", method, path)
 			}
 		}
 	}

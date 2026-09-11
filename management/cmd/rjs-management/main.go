@@ -16,6 +16,8 @@ import (
 )
 
 var version = "dev"
+var revision = ""
+var buildClean = "false"
 
 func main() {
 	if versionRequested(os.Args[1:]) {
@@ -37,7 +39,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: config.LogLevel(cfg.LogLevel)}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	service, err := app.New(cfg, logger, version)
+	service, err := app.New(cfg, logger, version, revision, buildClean)
 	if err != nil {
 		fatal(err)
 	}

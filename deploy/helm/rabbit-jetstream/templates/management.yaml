@@ -56,6 +56,7 @@ spec:
           image: "{{ include "rabbit-jetstream.managementImage" . }}"
           imagePullPolicy: {{ .Values.management.image.pullPolicy }}
           env:
+            - {name: RJS_DEPLOYMENT_PROFILE, value: {{ ternary "standalone" "cluster" (eq (int .Values.nats.replicaCount) 1) | quote }}}
             - {name: RJS_NATS_URL, value: "{{ if .Values.nats.tls.enabled }}tls{{ else }}nats{{ end }}://{{ include "rabbit-jetstream.fullname" . }}-nats:4222"}
             - name: RJS_NATS_MONITOR_URLS
               value: {{ include "rabbit-jetstream.monitorURLs" . | quote }}
@@ -89,6 +90,18 @@ spec:
             - {name: RJS_OIDC_OPERATOR_ROLE, value: {{ .Values.auth.oidc.operatorRole | quote }}}
             - {name: RJS_OIDC_AUDITOR_ROLE, value: {{ .Values.auth.oidc.auditorRole | quote }}}
             - {name: RJS_OIDC_ALLOW_INSECURE_ISSUER, value: {{ .Values.auth.oidc.allowInsecureIssuer | quote }}}
+            - {name: RJS_OIDC_BROWSER_CLIENT_ID, value: {{ .Values.auth.oidc.browserClientID | quote }}}
+            - {name: RJS_OIDC_BROWSER_REDIRECT_ORIGIN, value: {{ .Values.auth.oidc.browserRedirectOrigin | quote }}}
+            - {name: RJS_PROMETHEUS_URL, value: {{ .Values.management.history.prometheusURL | quote }}}
+            - {name: RJS_PROMETHEUS_PUBLIC_URL, value: {{ .Values.management.history.prometheusPublicURL | quote }}}
+            - {name: RJS_PROMETHEUS_ALLOW_INSECURE, value: {{ .Values.management.history.allowInsecure | quote }}}
+            {{- if .Values.management.history.bearerTokenSecret }}
+            - name: RJS_PROMETHEUS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.management.history.bearerTokenSecret | quote }}
+                  key: {{ .Values.management.history.bearerTokenKey | quote }}
+            {{- end }}
             - {name: RJS_OTEL_TRACES_ENDPOINT, value: {{ .Values.management.telemetry.tracesEndpoint | quote }}}
             - {name: RJS_OTEL_METRICS_ENDPOINT, value: {{ .Values.management.telemetry.metricsEndpoint | quote }}}
             - {name: RJS_OTEL_METRIC_INTERVAL, value: {{ .Values.management.telemetry.metricInterval | quote }}}

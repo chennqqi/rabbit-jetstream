@@ -120,6 +120,8 @@ auth_before="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.
 helm_upgrade
 auth_after="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.data}')"
 test "$auth_before" = "$auth_after"
+admin_token="$(kubectl -n "$namespace" get secret "$auth_secret" -o jsonpath='{.data.admin-token}' | base64 -d)"
+test -n "$admin_token"
 
 management_ip="$(kubectl -n "$namespace" get service "${release}-rabbit-jetstream-management" -o jsonpath='{.spec.clusterIP}')"
 kubectl -n "$namespace" run network-allowed --image="$busybox_image" --restart=Never --attach --rm --command -- \
@@ -154,6 +156,10 @@ ready='false'
 for _ in $(seq 1 30); do
   if curl --fail --silent --show-error "http://127.0.0.1:$local_port/readyz" | grep -F '"status":"ready"' >/dev/null; then
     curl --fail --silent --show-error "http://127.0.0.1:$local_port/admin/" | grep -F '<title>Rabbit JetStream · Operations</title>' >/dev/null
+    capabilities="$(curl --fail --silent --show-error \
+      -H "Authorization: Bearer $admin_token" \
+      "http://127.0.0.1:$local_port/api/v1/console/capabilities")"
+    printf '%s\n' "$capabilities" | grep -F '"deployment":{"profile":"cluster","source":"configuration"}' >/dev/null
     ready='true'
     break
   fi

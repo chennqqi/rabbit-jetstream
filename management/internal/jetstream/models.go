@@ -62,6 +62,7 @@ type Consumer struct {
 	AckPolicy      string            `json:"ack_policy"`
 	AckWaitNanos   int64             `json:"ack_wait_nanos"`
 	MaxDeliver     int               `json:"max_deliver"`
+	MaxAckPending  int               `json:"max_ack_pending"`
 	ReplayPolicy   string            `json:"replay_policy"`
 	Metadata       map[string]string `json:"metadata"`
 	Pending        uint64            `json:"pending"`

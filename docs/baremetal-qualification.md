@@ -2,7 +2,7 @@
 
 [English](baremetal-qualification.md) | [简体中文](baremetal-qualification.zh-CN.md)
 
-This is a native Linux/AMD64, single-physical-host stability profile, not a container profile or proof of multi-host availability. Three authenticated JetStream processes use R3 storage. The management process is also monitored. Kubernetes qualification and application Canary approval remain separate gates.
+This is a native Linux/AMD64, single-physical-host stability profile, not a container profile or proof of multi-host availability. Three authenticated JetStream processes use R3 storage. The management process is also monitored and explicitly receives `RJS_DEPLOYMENT_PROFILE=cluster`; this is declared qualification topology, not an inference from reachable nodes or a qualification verdict. Kubernetes qualification and application Canary approval remain separate gates.
 
 ## Build and provenance
 

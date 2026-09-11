@@ -6,7 +6,7 @@
 
 ## Admin UI 浏览器资格验证
 
-`make test-admin-ui` 使用 Docker Compose 启动真实的单节点 JetStream 和管理服务，再通过 Playwright 在 Linux Chromium 与 Firefox 中操作内嵌控制台。测试覆盖仪表盘加载、筛选、键盘操作、优先级 Queue 创建/更新/删除、精确删除确认、Bearer 认证失败、revision 冲突、部分 API 故障、窄屏行为、凭据不持久化，以及 WCAG A/AA serious/critical 自动检查。本地 RC 的 `Full` 和 `Release` 模式均包含此门禁。静态资源或仅 HTTP Smoke 不能替代真实浏览器测试。
+`make test-admin-ui` 使用 Docker Compose 启动真实 standalone JetStream 与管理服务，再通过 Playwright 在 Linux Chromium 和 Firefox 中操作内嵌控制台。`make test-admin-ui-cluster` 对官方三节点 cluster 执行同一工作流并验证规范 R3 Queue；`make test-admin-ui-all` 同时运行两种部署模式，是 CI 及本地 RC `Full`/`Release` 的门禁。测试覆盖认证导航、经审阅的 Queue 创建/修改/删除、精确删除确认、清除会话并重新认证、授权失败、部分 API 故障、窄屏行为、凭据不持久化、声明的部署意图，以及 WCAG A/AA serious/critical 自动检查。静态资源或仅 HTTP Smoke 不能替代真实浏览器测试。
 
 ## 测试分层
 

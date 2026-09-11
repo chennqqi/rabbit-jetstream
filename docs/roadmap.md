@@ -22,6 +22,7 @@ Milestones are accepted by evidence, not by unreviewed dates. The first stable r
 
 ## v0.2 Operations and Scale
 
+- Integrate and qualify browser SSO against a real external OIDC/IdP deployment, including provider-specific client registration, login/callback, role mapping, expiry, logout, key rotation, failure handling, and operator runbooks. This work is explicitly deferred and is not a blocker for completing the current local WebUI/backend development scope; the existing static operator/auditor bearer-token path remains supported.
 - Expand workload and namespace tenancy policies, quota reporting, and safe self-service workflows.
 - Add longer capacity baselines, storage/CNI qualification matrices, and automated disaster-recovery objectives.
 - Improve dashboards, alert routing, audit export, and fleet-level diagnostics.
@@ -34,3 +35,5 @@ Full AMQP 0-9-1 compatibility is explicitly outside the first release. Future re
 ## Quality Policy
 
 Every milestone requires public compatibility notes, automated tests, security review, performance evidence, observability, and tested upgrade/rollback steps. Claims relative to RabbitMQ must publish workload, durability, replica count, message size, and hardware; unmeasured superiority is not a release claim.
+
+The repository already contains OIDC bearer verification and a locally tested browser Authorization Code + PKCE implementation. The roadmap item above covers further real-provider integration and qualification only. Until that item is resumed, do not treat external IdP availability or production IdP acceptance as part of the active development completion criteria.

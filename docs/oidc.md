@@ -1,8 +1,10 @@
 # OIDC Federation
 
-管理 API 可同时接受静态 Token 和 OIDC ID Token，便于平滑迁移及紧急回退。服务启动时通过 issuer discovery 获取 JWKS；每次请求校验签名、issuer、audience、有效期，并在遇到未知 `kid` 时刷新密钥缓存。
+[English](oidc.md) | [简体中文](oidc.zh-CN.md)
 
-最小配置：
+The management API accepts static bearer tokens and verified OIDC ID tokens. At startup it discovers the provider and its JWKS, then validates signature, issuer, audience, expiry, and the configured role claim on every request. Unknown signing key IDs cause the provider key cache to refresh.
+
+## API bearer validation
 
 ```sh
 export RJS_OIDC_ISSUER=https://id.example.com/realms/platform
@@ -12,6 +14,19 @@ export RJS_OIDC_OPERATOR_ROLE=rabbit-jetstream-operator
 export RJS_OIDC_AUDITOR_ROLE=rabbit-jetstream-auditor
 ```
 
-`operator` 可 apply/delete Queue 并读取审计；`auditor` 只能读取审计。合法 Token 但缺少所需角色返回 403，签名或声明无效返回 401。审计记录使用 `oidc:<issuer>#<sub>`，不保存原始 Token 或个人资料 claim。
+`operator` can preview/apply/delete Queues and read audit records; `auditor` has read-only operational and audit access. A valid token without either mapped role returns 403. Invalid signatures or claims return 401. Audit actors use `oidc:<issuer>#<sub>`; raw tokens and personal claims are not persisted.
 
-生产 issuer 必须使用 HTTPS，并限制管理 Pod 仅访问受信任 IdP。`RJS_OIDC_ALLOW_INSECURE_ISSUER=true` 只用于隔离的本地集成测试。轮换 IdP 签名密钥时应先发布新 JWKS，再签发新 `kid`，最后等待旧 Token 过期后移除旧密钥。
+## Browser SSO
+
+The optional Admin UI login uses Authorization Code with PKCE S256:
+
+```sh
+export RJS_OIDC_BROWSER_CLIENT_ID=rabbit-jetstream-management
+export RJS_OIDC_BROWSER_REDIRECT_ORIGIN=https://console.example.com
+```
+
+Register the exact callback `https://console.example.com/admin/oidc/callback` as a public-client redirect URI. The browser client ID must equal `RJS_OIDC_AUDIENCE`. Both browser variables must be set together. The UI requests only `openid profile`; it stores the one-time state and PKCE verifier in `sessionStorage`, deletes them at callback, and removes the authorization code from the URL before exchange. The management service exchanges the code against the discovered fixed token endpoint, verifies the returned ID token, and returns only that verified token. It does not create cookies, a server session, or expose a refresh token or token endpoint.
+
+The verified bearer remains in page memory. Reloading or clearing the page requires a new login. If the provider advertises `end_session_endpoint`, the UI offers provider logout after the existing draft/in-flight evidence safety checks; provider-specific logout parameters are not inferred.
+
+Production issuers, redirect origins, and discovered endpoints must use HTTPS. `RJS_OIDC_ALLOW_INSECURE_ISSUER=true` permits HTTP only for isolated local testing. Restrict management egress to the trusted IdP. During signing-key rotation publish the new JWKS key first, issue tokens with the new `kid`, then remove the old key after old tokens expire.

@@ -23,6 +23,12 @@
 | `RJS_OIDC_OPERATOR_ROLE` | `rabbit-jetstream-operator` | 映射为 operator 的 IdP 角色 |
 | `RJS_OIDC_AUDITOR_ROLE` | `rabbit-jetstream-auditor` | 映射为 auditor 的 IdP 角色 |
 | `RJS_OIDC_ALLOW_INSECURE_ISSUER` | `false` | 仅本地测试允许 HTTP issuer；生产环境不得开启 |
+| `RJS_OIDC_BROWSER_CLIENT_ID` | 空 | 可选 Admin UI 公共客户端 ID；必须与 `RJS_OIDC_AUDIENCE` 相同并与回调 origin 同时配置 |
+| `RJS_OIDC_BROWSER_REDIRECT_ORIGIN` | 空 | Admin UI 的精确外部 origin；固定回调为该 origin 下的 `/admin/oidc/callback`，生产必须为 HTTPS |
+| `RJS_PROMETHEUS_URL` | 空 | 供受保护历史 API 使用的 Prometheus origin；为空时历史功能关闭，不接受路径、查询或 URL 凭据 |
+| `RJS_PROMETHEUS_PUBLIC_URL` | 空 | 可选的浏览器可访问 Prometheus origin；仅用于生成 `/alerts` 外链，不从内部抓取地址推断 |
+| `RJS_PROMETHEUS_TOKEN` | 空 | 管理服务访问 Prometheus 使用的 Bearer Token；绝不返回浏览器或写入诊断包 |
+| `RJS_PROMETHEUS_ALLOW_INSECURE` | `false` | 仅隔离测试／内部 Compose 允许 HTTP Prometheus；生产环境不得开启 |
 | `RJS_OTEL_TRACES_ENDPOINT` | 空 | OTLP/HTTP traces 完整 URL；为空时 tracing 关闭 |
 | `RJS_OTEL_METRICS_ENDPOINT` | 空 | OTLP/HTTP metrics 完整 URL；为空时 OTLP metrics 关闭 |
 | `RJS_OTEL_METRIC_INTERVAL` | `30s` | OTLP metrics 周期导出间隔 |

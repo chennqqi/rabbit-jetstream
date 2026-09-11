@@ -1,4 +1,4 @@
-.PHONY: build build-upstream build-operator verify-upstream verify-upstream-online test test-race test-admin-ui test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak verify-native-bundle verify-release-approval test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
+.PHONY: build build-admin-ui verify-admin-ui-dist build-upstream build-operator verify-upstream verify-upstream-online test test-race test-admin-ui test-admin-ui-cluster test-admin-ui-all test-linux-smoke test-linux-fault test-performance test-scale test-soak verify-soak verify-native-bundle verify-release-approval test-helm test-kubernetes test-rolling test-security test-local-rc test-local-release package-local-rc coverage coverage-check fmt run
 
 BUNDLE ?= dist/v0.1.0-rc.2
 NATIVE_QUAL_OUTPUT ?= native-linux-preflight.json
@@ -7,6 +7,12 @@ RELEASE_APPROVAL ?= release-approval.json
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
 	go build -o bin/rjsctl ./tools/rjsctl
+
+build-admin-ui:
+	cd admin-ui && npm ci --ignore-scripts && npm test && npm run build && npm run promote
+
+verify-admin-ui-dist:
+	cd admin-ui && npm run verify:dist
 
 build-upstream:
 	cd upstream/nats-server && go build -o ../../bin/nats-server .
@@ -28,6 +34,11 @@ test-race:
 
 test-admin-ui:
 	pwsh -NoProfile -File tests/admin-ui/run.ps1
+
+test-admin-ui-cluster:
+	pwsh -NoProfile -File tests/admin-ui/run.ps1 -Project rjs-admin-ui-cluster-e2e -DeploymentProfile cluster
+
+test-admin-ui-all: test-admin-ui test-admin-ui-cluster
 
 test-linux-smoke:
 	bash tests/integration/linux-smoke.sh
