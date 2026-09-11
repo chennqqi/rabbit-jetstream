@@ -30,3 +30,23 @@ separately frozen repaired verification tools. It does not qualify uncommitted
 WebUI or management changes. Those changes are preserved outside the isolated
 local build worktree. Use the existing bounded bare-metal launcher without
 changing its resource limits or the host's existing services.
+
+## Restart record — 2026-09-11
+
+- Repair commit: `aea1c2077c6e`. Local bundle archive SHA-256:
+  `52fb4a8961a9479b315e6cadc28b9da812cea7ef79155405d95bc91937e5befa`.
+- Local full Go tests and vet passed; Linux verification-tool race tests passed.
+  Coverage: 80.5% overall, critical packages 92.3% and 96.1%. An initial Windows
+  fixture run safely rejected an unavailable temporary port; the full rerun passed.
+- New two-minute calibration and resource audit passed: 600,001 messages,
+  zero loss/duplicates/corruption/retries, approximately 5,000 messages/s,
+  publish P99 2.12 ms.
+- New unit: `rjs-qual-rc2-20260911-soak01.service`. Workload started at
+  **2026-09-11 15:28:52 Asia/Shanghai**; expected workload finish is
+  **2026-09-12 15:28:52**, followed by final sampling and audit.
+- Initial checks show the service running and samples increasing. This is
+  **in progress, not passed**. Raw evidence stays on the qualification host.
+
+```bash
+ssh lsb112 'systemctl status rjs-qual-rc2-20260911-soak01.service --no-pager'
+```
