@@ -3,4 +3,4 @@ const labels=Object.freeze({
   zh:Object.freeze({deletion:"Queue 删除",handoff:"编辑器转删除交接"}),
 });
 
-export function deletionLabels(language){return language==="zh"?labels.zh:labels.en;}
+export function deletionLabels(language){return labels[language]??labels.en;}

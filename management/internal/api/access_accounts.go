@@ -1,8 +1,7 @@
 package api
 
 import (
-	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -53,7 +52,7 @@ func (h *Handler) createAccessAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.auth.LocalAccounts.CreateAccount(r.Context(), accountChange(request))
 	if err != nil {
-		writeAPIError(w, http.StatusConflict, "account_create_rejected", "account could not be created")
+		h.writeAccountStoreError(w, http.StatusConflict, "account_create_rejected", "account could not be created", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
@@ -70,7 +69,7 @@ func (h *Handler) updateAccessAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.auth.LocalAccounts.UpdateAccount(r.Context(), accountChange(request))
 	if err != nil {
-		writeAPIError(w, http.StatusConflict, "account_update_rejected", "account could not be updated")
+		h.writeAccountStoreError(w, http.StatusConflict, "account_update_rejected", "account could not be updated", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -90,10 +89,34 @@ func (h *Handler) deleteAccessAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.auth.LocalAccounts.DeleteAccount(r.Context(), username); err != nil {
-		writeAPIError(w, http.StatusConflict, "account_delete_rejected", "account could not be deleted")
+		h.writeAccountStoreError(w, http.StatusConflict, "account_delete_rejected", "account could not be deleted", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeAccountStoreError maps local account store outcomes to distinct
+// responses: 404 unknown account, 409 existing username or protection policy,
+// 400 store-side validation, 503 persistence failure. Anything unrecognized
+// keeps the historical 409 conflict bucket so callers never misread an
+// unknown failure as success-adjacent.
+func (h *Handler) writeAccountStoreError(w http.ResponseWriter, conflictStatus int, conflictCode, conflictMessage string, err error) {
+	switch {
+	case errors.Is(err, identity.ErrAccountNotFound):
+		writeAPIError(w, http.StatusNotFound, "account_not_found", "account does not exist")
+	case errors.Is(err, identity.ErrAccountExists):
+		writeAPIError(w, http.StatusConflict, "account_already_exists", "account already exists")
+	case errors.Is(err, identity.ErrAccountPolicy):
+		writeAPIError(w, http.StatusConflict, "account_policy_rejected", "account change violates an account protection policy")
+	case errors.Is(err, identity.ErrAccountValidation):
+		writeAPIError(w, http.StatusBadRequest, "invalid_account_request", "invalid account request")
+	case errors.Is(err, identity.ErrAccountStoreUnavailable):
+		h.logBackendError("local account store write failed", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "local_account_store_unavailable", "local account store is unavailable")
+	default:
+		h.logBackendError("local account store write failed", err)
+		writeAPIError(w, conflictStatus, conflictCode, conflictMessage)
+	}
 }
 
 func (h *Handler) readAccessAccount(w http.ResponseWriter, r *http.Request, pathUsername string) (accessAccountRequest, bool) {
@@ -105,13 +128,9 @@ func (h *Handler) readAccessAccount(w http.ResponseWriter, r *http.Request, path
 		writeAPIError(w, http.StatusBadRequest, "invalid_account_request", "invalid account request")
 		return accessAccountRequest{}, false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	var request accessAccountRequest
-	if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeAPIError(w, http.StatusBadRequest, "invalid_account_request", "invalid account request")
-		return request, false
+	request, ok := decodeStrict[accessAccountRequest](w, r, 16<<10, "invalid_account_request", "invalid account request")
+	if !ok {
+		return accessAccountRequest{}, false
 	}
 	if pathUsername != "" {
 		if request.Username != "" && request.Username != pathUsername {

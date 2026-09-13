@@ -158,3 +158,21 @@ func TestValidateTenancyRejectsUnscopedPrometheus(t *testing.T) {
 		t.Fatalf("ValidateTenancy() = %v", err)
 	}
 }
+
+func TestFromEnvParsesTrustedProxyHops(t *testing.T) {
+	t.Setenv("RJS_TRUSTED_PROXY_HOPS", "2")
+	if got := FromEnv().TrustedProxyHops; got != 2 {
+		t.Fatalf("TrustedProxyHops=%d want 2", got)
+	}
+	t.Setenv("RJS_TRUSTED_PROXY_HOPS", "-3")
+	if got := FromEnv().TrustedProxyHops; got != 0 {
+		t.Fatalf("negative hops must fall back to the default, got %d", got)
+	}
+	t.Setenv("RJS_TRUSTED_PROXY_HOPS", "many")
+	if got := FromEnv().TrustedProxyHops; got != 0 {
+		t.Fatalf("non-numeric hops must fall back to the default, got %d", got)
+	}
+	if got := FromEnv().TrustedProxyHops; got != 0 {
+		t.Fatalf("unset hops must default to zero, got %d", got)
+	}
+}

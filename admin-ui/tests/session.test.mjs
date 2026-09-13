@@ -78,7 +78,7 @@ test("local password login rejects missing, failed and malformed responses witho
 });
 
 test("distinguishes denial, unavailable and disabled without exposing raw error", async () => {
-  for (const [status, code, expected] of [[401, "", "credentials-rejected"], [403, "", "role-denied"], [404, "session_api_disabled", "auth-disabled"], [404, "", "unavailable"], [503, "", "unavailable"]]) {
+  for (const [status, code, expected] of [[401, "", "credentials-rejected"], [401, "token_expired", "expired"], [403, "", "role-denied"], [404, "session_api_disabled", "auth-disabled"], [404, "", "unavailable"], [503, "", "unavailable"]]) {
     const f = fixture(async () => { throw Object.assign(new Error("secret-server-detail"), {status, code}); });
     await f.session.signIn("secret");
     assert.equal(f.session.snapshot().failure.kind, expected);

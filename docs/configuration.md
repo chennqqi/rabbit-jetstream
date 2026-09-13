@@ -4,6 +4,7 @@
 |---|---|---|
 | `RJS_NAME` | `rabbit-jetstream` | 实例名称 |
 | `RJS_HTTP_ADDR` | `:8223` | 管理 HTTP 监听地址 |
+| `RJS_TRUSTED_PROXY_HOPS` | `0` | 管理服务与网络边界之间的可信反向代理跳数；大于 0 时按 `X-Forwarded-For` 从右向左剥离可信跳，解析客户端 IP 用于登录限流与审计归属。链长不足或非 IP 值回退为直接对端地址。前提是仅可信代理可直接访问本服务，客户端无法绕过边界伪造该头 |
 | `RJS_NATS_URL` | `nats://127.0.0.1:4222` | NATS 地址，多个地址以逗号分隔 |
 | `RJS_NATS_USER` | 空 | 用户名 |
 | `RJS_NATS_PASSWORD` | 空 | 密码 |

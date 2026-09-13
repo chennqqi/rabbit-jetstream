@@ -62,7 +62,10 @@ export function createSession(api, {now = Date.now, schedule = setTimeout, unsch
   function reject(current, error) {
     if (current !== generation) return;
     api.clearToken();
-    const kind = error.status === 401 ? "credentials-rejected" :
+    // Expiry is only ever derived from the server's explicit `token_expired`
+    // signal; a generic 401 must not be labeled as expiry.
+    const kind = error.code === "token_expired" ? "expired" :
+      error.status === 401 ? "credentials-rejected" :
       error.status === 403 ? "role-denied" :
       error.status === 404 && ["session_api_disabled", "local_auth_disabled"].includes(error.code) ? "auth-disabled" :
       error.message === "expired-session" ? "expired" :

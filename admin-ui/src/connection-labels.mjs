@@ -4,5 +4,5 @@ const labels=Object.freeze({
 });
 
 export function connectionLabels(language){
-  return language==="zh"?labels.zh:labels.en;
+  return labels[language]??labels.en;
 }

@@ -191,7 +191,7 @@ func (h *Handler) newDiagnosticAudit(r *http.Request, action, id string) jetstre
 	requestID := auditRequestID(r)
 	principal, _ := r.Context().Value(principalKey{}).(identity.Principal)
 	tenantID, _ := tenant.FromContext(r.Context())
-	return jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Action: action, ResourceKind: "DiagnosticJob", ResourceName: id, Actor: principal.Actor, ActorRole: principal.Role, Tenant: tenantID, SourceIP: remoteIP(r.RemoteAddr)}
+	return jetstream.AuditEvent{ID: randomAuditID(), RequestID: requestID, Time: time.Now().UTC(), Action: action, ResourceKind: "DiagnosticJob", ResourceName: id, Actor: principal.Actor, ActorRole: principal.Role, Tenant: tenantID, SourceIP: h.clientIP(r)}
 }
 
 func (h *Handler) recordDiagnosticAudit(base jetstream.AuditEvent, phase, outcome, code string, status int) bool {

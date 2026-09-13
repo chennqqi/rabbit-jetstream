@@ -76,8 +76,7 @@ test("creates, updates, finds and deletes a Queue through reviewed workflows",as
   await page.getByRole("button",{name:"Apply reviewed draft",exact:true}).click();
   await expect(page.getByText(/^Apply accepted\./)).toBeVisible();
 
-  page.once("dialog",dialog=>dialog.accept());
-  await page.getByRole("button",{name:"Clear local session",exact:true}).click();
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
   await authenticate(page);
   await navigate(page,"Queue list");
   await page.getByRole("link",{name:queueName,exact:true}).click();
@@ -94,8 +93,7 @@ test("creates, updates, finds and deletes a Queue through reviewed workflows",as
 });
 
 test("keeps bearer credentials in memory and reports authorization failures",async({page})=>{
-  page.once("dialog",dialog=>dialog.accept());
-  await page.getByRole("button",{name:"Clear local session",exact:true}).click();
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
   await authenticate(page,"invalid-token");
   await expect(page.getByRole("alert")).toContainText(/identity|authorization|credential|401/i);
   expect(await page.evaluate(()=>({local:Object.values(localStorage),session:Object.values(sessionStorage),cookies:document.cookie}))).toEqual({local:[],session:[],cookies:""});

@@ -11,8 +11,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "${RJS_NATS_CLIENT_PORT:-4222}:4222"
+      - "${RJS_NATS_MONITOR_PORT:-8222}:8222"
     volumes:
       - ../nats/standalone.conf:/etc/nats/nats.conf:ro
       - nats-data:/data
@@ -59,7 +59,7 @@ services:
       RJS_CONTROLLER_INTERVAL: ${RJS_CONTROLLER_INTERVAL:-5s}
       RJS_CONTROLLER_LEASE_TTL: ${RJS_CONTROLLER_LEASE_TTL:-15s}
     ports:
-      - "8223:8223"
+      - "${RJS_MANAGEMENT_PORT:-8223}:8223"
     depends_on:
       nats:
         condition: service_healthy

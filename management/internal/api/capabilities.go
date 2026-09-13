@@ -92,7 +92,7 @@ func (h *Handler) capabilitiesContract() consoleCapabilities {
 	result.Queue.Defaults.Storage, result.Queue.Defaults.Delivery = defaults.Spec.Storage, defaults.Spec.Delivery
 	// These identify implemented contracts, not permission, runtime readiness,
 	// deployment capacity, complete JSON schema, or release qualification.
-	result.Features = []string{"queue-document", "queue-preview", "queue-delete-preview", "conditional-queue-writes", "filtered-resource-lists", "request-audit-windows", "capability-preconditions", "queue-schema", "diagnostics-metadata-jobs", "prometheus-metric-history", "prometheus-operational-alerts"}
+	result.Features = []string{"queue-document", "queue-preview", "queue-delete-preview", "conditional-queue-writes", "filtered-resource-lists", "request-audit-windows", "capability-preconditions", "queue-schema", "diagnostics-metadata-jobs", "prometheus-metric-history", "prometheus-operational-alerts", "authenticated-sse-invalidations"}
 	result.Qualification.Status = "unreported"
 	if h.console.Qualification != nil {
 		result.Qualification.Status = "reported"

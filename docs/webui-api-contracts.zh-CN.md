@@ -28,7 +28,7 @@
 | `GET /api/v1/audit` | 意图/结果事件分页，序号由新到旧 | 无资源/请求/操作者/时间筛选或精确事件查找 |
 | `GET /api/v1/controller` | 控制器级状态 | 不是逐 Queue 收敛证据 |
 
-资源读取默认要求 operator 或 auditor 认证；只有显式启用且仅绑定 loopback 的本地演示模式允许匿名读取。写入要求 operator，审计允许 operator 或 auditor。所有静态角色 Token 和 OIDC verifier 均未配置时，受保护能力返回相应的 404 禁用响应；否则缺失/无效 bearer 返回 401 `unauthorized`，角色不符返回 403 `forbidden`。配置后，公开的 `/api/v1/oidc/config` 与 `/api/v1/oidc/token` 提供无状态浏览器 Authorization Code + PKCE 入口/回调契约；不创建 Cookie 或服务端会话，也不返回 refresh token。
+资源读取默认要求 operator 或 auditor 认证；只有显式启用且仅绑定 loopback 的本地演示模式允许匿名读取。写入要求 operator，审计允许 operator 或 auditor。所有静态角色 Token 和 OIDC verifier 均未配置时，受保护能力返回相应的 404 禁用响应；否则缺失/无效 bearer 返回 401 `unauthorized`；格式正确但已过期的本地 Access Token 返回 401 `token_expired`，使控制台能够精确标注过期而不是凭空假定；角色不符返回 403 `forbidden`。配置后，公开的 `/api/v1/oidc/config` 与 `/api/v1/oidc/token` 提供无状态浏览器 Authorization Code + PKCE 入口/回调契约；不创建 Cookie 或服务端会话，也不返回 refresh token。
 
 默认分页 offset=0、limit=50，limit 范围 1–200。资源分页将超出总量的 offset 收敛到 total；审计分页保留请求 offset。目前不校验未知查询参数是否为受支持筛选。不能向旧服务发送 `q` 就宣称已全局搜索。
 

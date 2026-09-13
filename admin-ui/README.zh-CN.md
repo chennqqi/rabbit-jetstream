@@ -8,6 +8,10 @@
 
 候选版本已接入 Bearer 身份、Queue/Stream/Consumer 读取、节点证据、审计查询、经审阅的 Queue 变更、总览刷新偏好及兼容性元数据。Queue 配置页包含[只读 DLQ 诊断](../docs/webui-dlq-diagnostics.zh-CN.md)，进程级计数不代表逐 Queue 转移证明。凭据和草稿仍仅在内存。这不是已完成的管理控制台，完整需求范围和证据见开发记录。集成时须与管理 API 同源，单独运行 Vite preview 没有后端。`npm run dev` 绑定回环端口 18225；`npm run preview` 使用 18226。两者均不会启动或修改管理服务。
 
+## 视觉语言
+
+所有颜色、线条与状态色都集中在 `src/shell.css` 顶部的 token 层；新增色值必须加在 token 层，不得内联。浅色值即已审计调色板；`prefers-color-scheme: dark` 块通过同一组 token 切换暗色，并已在暗色偏好下用 axe 色彩对比度验证。图标刻意只用于主导航（Tabler，固定版本）；正文操作保持纯文字以保证双语清晰——把图标扩展到操作按钮属于设计决策，不得顺手修改。间距与密度遵循 `docs/webui-selected-design.zh-CN.md` 的目标，进一步收紧前仍需视觉 QA 遍。
+
 已验收候选制品会原样复制到 `dist/`，嵌入 `rjs-management` 并通过 `/admin/` 提供服务。内嵌控制台只访问版本化管理 HTTP API，不直接连接 NATS。测试会解析构建入口，并要求其中引用的每个带哈希脚本和样式都存在且可由 Go Handler 返回。不得手工修改生成的 `dist/` 资源；应重新构建并验收 `build-candidate/`，再晋升完全相同的文件集。
 
 2026-09-11 的晋升已通过本机构建的真实 Go 二进制在 Chromium 中执行，覆盖 127 项真实服务检查和 23 个 axe 快照。其余生产页面、待批准架构项和发布资格仍记录在[开发记录](../docs/webui-development.zh-CN.md)中；完成内嵌晋升不等于控制台全部完成或版本获准发布。默认资源读取认证由[访问策略](../docs/webui-access.zh-CN.md)定义。

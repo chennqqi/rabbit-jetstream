@@ -1122,12 +1122,22 @@ try {
   report.checks.push("real-concurrent-declaration-three-way-merge-confirmation-fresh-preview-no-write");
   await draft.fill("{broken");await expect(page.getByRole("button",{name:"Preview changes",exact:true})).toBeDisabled();
   await navigate("Access and settings");
-  page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("button",{name:"Clear this session",exact:true}).click();
+  await page.getByRole("button",{name:"Clear this session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
+  // Dynamic accessibility behavior (L-08): a dialog must pull focus into
+  // itself on open and hand it back to the triggering control on close.
+  await page.getByRole("button",{name:"Clear this session",exact:true}).click();
+  const focusDialog=page.getByRole("alertdialog");
+  await focusDialog.waitFor();
+  assert.equal(await focusDialog.evaluate(element=>element.contains(document.activeElement)),true,"dialog open must move focus inside the dialog");
+  await focusDialog.getByRole("button",{name:"Cancel",exact:true}).click();
+  await expect(focusDialog).toHaveCount(0);
+  assert.equal(await page.getByRole("button",{name:"Clear this session",exact:true}).evaluate(element=>element===document.activeElement),true,"dialog close must restore focus to the trigger");
   await page.goBack();await expect(draft).toHaveValue("{broken");
   await expect(page.getByRole("heading",{name:"Advisory preview — not applied",exact:true})).toHaveCount(0);
-  page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(draft).toHaveValue("{broken");
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(page.getByLabel("Username",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();await expect(draft).toHaveValue("{broken");
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();await expect(page.getByLabel("Username",{exact:true})).toBeVisible();
   report.checks.push("operator-draft-preview-no-write-route-retention-invalid-json-confirmed-clear");
+  report.checks.push("dialog-focus-moves-inside-on-open-and-restores-to-trigger-on-close");
   let initialReadCalls=0;
   const failInitialRead=route=>{initialReadCalls++;return route.fulfill({status:503,contentType:"application/json",body:'{"error":{"code":"unavailable","message":"Injected initial read failure"}}'});};
   await page.route("**/api/v1/queues/live_candidate",failInitialRead);
@@ -1159,13 +1169,13 @@ try {
   report.checks.push("unsupported-schema-label-type-disables-collection-controls-preserves-draft-reload-no-write");
   const mixedRouting=JSON.parse(routingOriginal);mixedRouting.spec.bindings=[{exchange:"other",type:"fanout"}];
   await draft.fill(JSON.stringify(mixedRouting));await expect(routingMode).toHaveValue("mixed");
-  page.once("dialog",dialog=>dialog.accept());await routingMode.selectOption("subjects");
+  await routingMode.selectOption("subjects");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   const selectedRouting=JSON.parse(await draft.inputValue());
   assert.deepEqual(selectedRouting.spec.subjects,mixedRouting.spec.subjects);assert.equal(selectedRouting.spec.bindings,undefined);
   await draft.fill(routingOriginal);
-  page.once("dialog",dialog=>dialog.dismiss());await routingMode.selectOption("bindings");
+  await routingMode.selectOption("bindings");await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
   await expect(routingMode).toHaveValue("subjects");assert.equal(await draft.inputValue(),routingOriginal);
-  page.once("dialog",dialog=>dialog.accept());await routingMode.selectOption("bindings");
+  await routingMode.selectOption("bindings");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   await page.getByRole("button",{name:"Add Binding",exact:true}).click();
   await page.getByLabel("Exchange 1",{exact:true}).fill("events");
   await page.getByLabel("Binding type 1",{exact:true}).selectOption("topic");
@@ -1173,9 +1183,9 @@ try {
   await page.getByRole("button",{name:"Add key to Binding 1",exact:true}).click();
   await page.getByLabel("Routing key 1.1",{exact:true}).fill("orders.#");
   const beforeFanout=await draft.inputValue();
-  page.once("dialog",dialog=>dialog.dismiss());await page.getByLabel("Binding type 1",{exact:true}).selectOption("fanout");
+  await page.getByLabel("Binding type 1",{exact:true}).selectOption("fanout");await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
   assert.equal(await draft.inputValue(),beforeFanout);
-  page.once("dialog",dialog=>dialog.accept());await page.getByLabel("Binding type 1",{exact:true}).selectOption("fanout");
+  await page.getByLabel("Binding type 1",{exact:true}).selectOption("fanout");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   assert.equal(JSON.parse(await draft.inputValue()).spec.bindings[0].keys,undefined);
   await expect(page.getByText("Schema key count: 0.",{exact:true})).toBeVisible();
   await expect(page.getByRole("button",{name:"Add key to Binding 1",exact:true})).toHaveCount(0);
@@ -1188,24 +1198,24 @@ try {
   report.checks.push("routing-mode-fanout-confirm-cancel-real-preview-shared-json-no-put");
   const labelsOriginal=await draft.inputValue(),labelsPuts=forwardedPuts;
   const addLabel=page.getByRole("button",{name:"Add label",exact:true});
-  page.once("dialog",dialog=>dialog.dismiss());await addLabel.click();assert.equal(await draft.inputValue(),labelsOriginal);
-  page.once("dialog",dialog=>dialog.accept("owner"));await addLabel.click();
+  await addLabel.click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();assert.equal(await draft.inputValue(),labelsOriginal);
+  await addLabel.click();await page.getByRole("alertdialog").getByRole("textbox").fill("owner");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   const ownerValue=page.getByLabel("Label value: owner",{exact:true});await expect(ownerValue).toBeFocused();
   await ownerValue.fill("team\nsecond line");
   const afterAddLabel=await draft.inputValue();
-  page.once("dialog",dialog=>dialog.accept("owner"));await addLabel.click();
+  await addLabel.click();await page.getByRole("alertdialog").getByRole("textbox").fill("owner");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   await expect(page.getByRole("alert").filter({hasText:"That label key already exists"})).toBeVisible();assert.equal(await draft.inputValue(),afterAddLabel);
-  page.once("dialog",dialog=>dialog.accept("concurrent"));await page.getByRole("button",{name:"Rename label: owner",exact:true}).click();
+  await page.getByRole("button",{name:"Rename label: owner",exact:true}).click();await page.getByRole("alertdialog").getByRole("textbox").fill("concurrent");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   assert.equal(await draft.inputValue(),afterAddLabel);
-  page.once("dialog",dialog=>dialog.accept("Owner"));await page.getByRole("button",{name:"Rename label: owner",exact:true}).click();
+  await page.getByRole("button",{name:"Rename label: owner",exact:true}).click();await page.getByRole("alertdialog").getByRole("textbox").fill("Owner");await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   await expect(page.getByLabel("Label value: Owner",{exact:true})).toBeFocused();
   assert.equal(JSON.parse(await draft.inputValue()).metadata.labels.Owner,"team\nsecond line");
   await page.getByRole("button",{name:"Preview changes",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Advisory preview — not applied",exact:true})).toBeVisible();
   await page.screenshot({path:path.join(evidence,"structured-queue-labels.png"),fullPage:true});
-  page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("button",{name:"Remove label: Owner",exact:true}).click();
+  await page.getByRole("button",{name:"Remove label: Owner",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
   await expect(page.getByLabel("Label value: Owner",{exact:true})).toHaveValue("team\nsecond line");
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Remove label: Owner",exact:true}).click();
+  await page.getByRole("button",{name:"Remove label: Owner",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   await expect(addLabel).toBeFocused();await expect(page.getByRole("heading",{name:"Advisory preview — not applied",exact:true})).toHaveCount(0);
   assert.deepEqual(JSON.parse(await draft.inputValue()),JSON.parse(labelsOriginal));assert.equal(forwardedPuts,labelsPuts);
   report.checks.push("labels-exact-multiline-duplicate-rename-refused-confirmed-delete-focus-real-preview-no-put");
@@ -1496,11 +1506,11 @@ try {
     const expiredEvidence=JSON.parse(await readFile(expiredPath,"utf8"));
     assert.equal(expiredEvidence.requestId,requestID);assert.equal(expiredEvidence.phase,"uncertain");
     assert.equal(forwardedPuts,putsBeforeExpiry);
-    page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("button",{name:"Clear local session",exact:true}).click();
+    await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
     await expect(retained).toBeVisible();
     report.checks.push("synthetic-session-expiry-real-unknown-write-retained-evidence-no-extra-put");
   }
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();await expect(page.getByLabel("Username",{exact:true})).toBeFocused();
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();await expect(page.getByLabel("Username",{exact:true})).toBeFocused();
   report.checks.push("confirmed-browser-apply-real-write",`${faultMode}-apply-response-unknown-locked-inspection-no-additional-put`);
   await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
   await navigate("Create Queue");
@@ -1591,9 +1601,9 @@ try {
   await expect(parked.getByRole("heading",{name:"new",exact:true})).toBeVisible();
   await page.getByLabel("New Queue name",{exact:true}).fill("unsaved_form");
   const resumeDraft=page.getByRole("button",{name:"Resume creation draft: new",exact:true});
-  page.once("dialog",dialog=>dialog.dismiss());await resumeDraft.click();
+  await resumeDraft.click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
   await expect(page.getByLabel("New Queue name",{exact:true})).toHaveValue("unsaved_form");
-  page.once("dialog",dialog=>dialog.accept());await resumeDraft.click();
+  await resumeDraft.click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
   await expect(draft).toHaveValue(conflictedRaw);await expect(draft).toBeFocused();
   await expect(page.getByRole("heading",{name:"Advisory preview — not applied",exact:true})).toHaveCount(0);
   await expect(applyButton).toHaveCount(0);assert.equal(forwardedPuts,beforeParkPuts);
@@ -1612,7 +1622,7 @@ try {
   await expect(page.getByRole("button",{name:"Keep draft and choose another name",exact:true})).toHaveCount(0);
   await page.screenshot({path:path.join(evidence,"creation-conflict-recovered.png"),fullPage:true});
   report.checks.push("pre-write-create-conflict-parked-readonly-evidence-name-change-fresh-preview-no-overwrite");
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
   report.checks.push("browser-create-new-name-explicit-settings-preview-no-write-duplicate-no-overwrite");
   // Destructive verification is restricted to these two newly created fixtures
   // inside this harness's isolated loopback broker, never an existing service.
@@ -1643,9 +1653,9 @@ try {
     await page.getByRole("button",{name:"English",exact:true}).click();
     const preflight=page.getByRole("button",{name:"Read deletion preflight",exact:true});await expect(preflight).toBeDisabled();
     const handoff=page.getByRole("button",{name:"Archive this Queue editor for fresh preflight",exact:true});
-    page.once("dialog",dialog=>dialog.dismiss());await handoff.click();await expect(preflight).toBeDisabled();
+    await handoff.click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();await expect(preflight).toBeDisabled();
     const handoffBefore=await api(endpoint),handoffETag=handoffBefore.headers.get("etag");await handoffBefore.arrayBuffer();
-    page.once("dialog",dialog=>dialog.accept());await handoff.click();await expect(preflight).toBeEnabled();
+    await handoff.click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();await expect(preflight).toBeEnabled();
     assert.equal((await api(endpoint)).headers.get("etag"),handoffETag);
     await page.getByText("Archived editor evidence: 1",{exact:true}).click();
     const handoffDownloadPending=page.waitForEvent("download");await page.getByRole("link",{name:"Download editor evidence JSON",exact:true}).click();
@@ -1834,7 +1844,7 @@ try {
   await page.screenshot({path:path.join(evidence,"dlq-diagnostics.png"),fullPage:true});
   await auditAccessibility(page,"dlq-diagnostics");
   report.checks.push("dlq-real-target-declaration-stream-one-hop-missing-injection-recovery-process-counter-scope-no-write");
-  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:"Clear local session",exact:true}).click();
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
   if(metadataDrift){
     const name="live_metadata_check",endpoint=`/api/v1/queues/${name}`;
     const metadataDocument={apiVersion:"rabbit-jetstream.io/v1alpha1",kind:"Queue",metadata:{name,labels:{empty:""}},spec:{subjects:[`${name}.events`],replicas:1,maxPriority:2,storage:"file",retention:{maxMessages:100}}};
@@ -1908,7 +1918,9 @@ try {
   assert.deepEqual(await snapshotCandidate(assets),candidateSnapshot,"Candidate file set or content changed during regression");
   for(const input of report.inputs)assert.deepEqual(await fingerprint(path.join(root,input.path)),input,"Candidate input changed during regression");
   report.inputsVerifiedAt=new Date().toISOString();report.passed=true;
-}catch(error){report.error=error.message.replaceAll(operator,"[redacted]").replaceAll(auditor,"[redacted]");throw new Error(report.error);}
+}catch(error){report.error=error.message.replaceAll(operator,"[redacted]").replaceAll(auditor,"[redacted]");
+  try{const livePage=browser?.contexts()?.[0]?.pages()?.[0];report.failureURL=livePage?.url();await livePage?.screenshot({path:path.join(evidence,"failure.png"),fullPage:true});report.dialogContext=await livePage?.evaluate(()=>({backdrops:document.querySelectorAll(".dialog-backdrop").length,panels:[...document.querySelectorAll(".dialog-panel")].map(panel=>panel.textContent)}));}catch{}
+  throw new Error(report.error);}
 finally {
   await browser?.close();
   if(front){front.closeAllConnections();await new Promise(resolve=>front.close(resolve));}

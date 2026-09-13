@@ -180,16 +180,17 @@ func New(cfg config.Config, logger *slog.Logger, version string, revision ...str
 		}
 	}
 	handler := api.NewWithControllerAuth(backend, logger, cfg.Name, version, monitor, control, api.AuthConfig{
-		OperatorTokens:  operatorTokens,
-		AuditorTokens:   cfg.AuditTokens,
-		Local:           localAuthenticator,
-		LocalVerifier:   localAuthenticator,
-		OIDC:            oidcVerifier,
-		BrowserOIDC:     browserOIDC,
-		RequireReadAuth: !cfg.LocalDemo,
-		DefaultTenant:   defaultTenant,
-		TenantIDs:       tenantIDs,
-		LocalAccounts:   localAuthenticator,
+		OperatorTokens:   operatorTokens,
+		AuditorTokens:    cfg.AuditTokens,
+		Local:            localAuthenticator,
+		LocalVerifier:    localAuthenticator,
+		OIDC:             oidcVerifier,
+		BrowserOIDC:      browserOIDC,
+		RequireReadAuth:  !cfg.LocalDemo,
+		DefaultTenant:    defaultTenant,
+		TenantIDs:        tenantIDs,
+		LocalAccounts:    localAuthenticator,
+		TrustedProxyHops: cfg.TrustedProxyHops,
 	}, api.ConsoleConfig{DeploymentProfile: cfg.DeploymentProfile, RuntimeRevision: runtimeRevision, RuntimeClean: runtimeClean, Qualification: consoleQualification, History: history, Alerts: history})
 	server := newHTTPServer(cfg.HTTPAddr, handler, cfg.ConnectTimeout)
 	closer, _ := handler.(interface{ Close() })

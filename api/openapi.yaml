@@ -361,7 +361,7 @@ paths:
                       required: [cid]
                       additionalProperties: false
                       properties:
-                        cid: {type: integer, minimum: 1, maximum: 18446744073709551615, description: Exact uint64; use lossless JSON decoding.}
+                        cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615, description: Exact uint64; use lossless JSON decoding.}
                         pending_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
                         in_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
                         out_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
@@ -418,7 +418,7 @@ paths:
                       additionalProperties: false
                       required: [cid]
                       properties:
-                        cid: {type: integer, minimum: 1, maximum: 18446744073709551615}
+                        cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615}
                         pending_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
                         in_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
                         out_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
@@ -459,7 +459,7 @@ paths:
                     required: [cid]
                     additionalProperties: false
                     properties:
-                      cid: {type: integer, minimum: 1, maximum: 18446744073709551615}
+                      cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615}
                       pending_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
                       in_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
                       out_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
@@ -491,7 +491,7 @@ paths:
                 required: [node_id, cid, observed_at, read_at, items]
                 properties:
                   node_id: {type: string}
-                  cid: {type: integer, minimum: 1, maximum: 18446744073709551615, description: Decode losslessly.}
+                  cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615, description: Decode losslessly.}
                   observed_at: {type: string, format: date-time}
                   read_at: {type: string, format: date-time}
                   items:
@@ -759,7 +759,7 @@ paths:
       parameters:
         - {name: from, in: query, schema: {type: string, format: date-time}, description: Inclusive event time lower bound, RFC3339 with timezone and at most nine fractional digits. Empty means unbounded.}
         - {name: until, in: query, schema: {type: string, format: date-time}, description: Exclusive event time upper bound. Must be after from when both supplied. Zero/unknown event times are excluded when either bound is supplied. Sequence traversal continues independently of event time order.}
-        - {name: before, in: query, schema: {type: integer, minimum: 0, maximum: 18446744073709551615}, description: Exclusive sequence cursor; omitted starts at current last sequence.}
+        - {name: before, in: query, schema: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}, description: Exclusive sequence cursor; omitted starts at current last sequence.}
         - {name: requestId, in: query, schema: {type: string}, description: Exact request ID; at most 256 UTF-8 bytes and no control characters.}
         - {name: resource, in: query, schema: {type: string}, description: Exact resource name; at most 256 UTF-8 bytes and no control characters.}
         - {name: actor, in: query, schema: {type: string}, description: Exact actor; at most 256 UTF-8 bytes and no control characters.}
@@ -777,11 +777,11 @@ paths:
                 properties:
                   items: {type: array, maxItems: 256, items: {type: object}}
                   streamPresent: {type: boolean}
-                  firstSequence: {type: integer, minimum: 0, maximum: 18446744073709551615}
-                  lastSequence: {type: integer, minimum: 0, maximum: 18446744073709551615}
+                  firstSequence: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
+                  lastSequence: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
                   scanned: {type: integer, minimum: 0, maximum: 256}
                   missing: {type: integer, minimum: 0, maximum: 256}
-                  nextBefore: {type: [integer, 'null'], minimum: 0, maximum: 18446744073709551615}
+                  nextBefore: {type: [integer, 'null'], format: uint64, minimum: 0, maximum: 18446744073709551615}
                   filter:
                     type: object
                     required: [requestId, resource, actor, phase, action, outcome, from, until]
@@ -806,7 +806,7 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {name: requestID, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$'}}
-        - {name: before, in: query, schema: {type: integer, minimum: 0, maximum: 18446744073709551615}, description: Exclusive sequence cursor; omitted starts at current last sequence.}
+        - {name: before, in: query, schema: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}, description: Exclusive sequence cursor; omitted starts at current last sequence.}
       responses:
         '200':
           description: Bounded evidence window, never an operation verdict.
@@ -828,6 +828,32 @@ paths:
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/events:
+    get:
+      operationId: streamInvalidations
+      security: [{bearerAuth: []}]
+      summary: Stream tenant-scoped read invalidations
+      description: Authenticated, read-only, instance-local SSE stream. Authorization and X-RJS-Tenant use the same rules as audit reads; credentials never appear in the URL. Each tenant has an independent monotonically increasing event ID and a 256-event replay window. Last-Event-ID outside that window returns 409 and requires a bounded refresh before reconnecting without it. Events are invalidation hints, not mutation outcomes or exact alert delivery. Clients reconnect with exponential backoff and retain polling/manual refresh as fallback. Limits are two connections per actor, 32 per tenant and 256 per instance; overflow returns 429 or closes a slow stream. A comment heartbeat is emitted every 15 seconds. Reverse proxies must disable response buffering and allow idle intervals beyond the heartbeat.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          schema: {type: string, pattern: '^[1-9][0-9]*$'}
+          description: Last tenant-local decimal event ID fully processed by this client.
+      responses:
+        '200':
+          description: Standard SSE wire stream. `invalidate` data is a JSON object whose resource is `audit` or `alerts`.
+          headers:
+            X-Accel-Buffering: {schema: {type: string, const: 'no'}}
+          content:
+            text/event-stream:
+              schema: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '406': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
   /api/v1/diagnostics/jobs:
     post:
@@ -931,8 +957,8 @@ components:
     Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
     Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
     Stream: {name: stream, in: path, required: true, schema: {type: string}}
-    Consumer: {name: consumer, in: path, required: true, schema: {type: string}}
-    Queue: {name: queue, in: path, required: true, schema: {type: string}}
+    Consumer: {name: consumer, in: path, required: true, x-go-name: ConsumerName, schema: {type: string}}
+    Queue: {name: queue, in: path, required: true, x-go-name: QueueName, schema: {type: string}}
     IfMatch: {name: If-Match, in: header, schema: {type: string}}
     CapabilitiesMatch:
       name: X-RJS-If-Capabilities-Match
@@ -1251,7 +1277,7 @@ components:
         observed_at: {type: string, format: date-time, description: Management-side read completion time, not an atomic snapshot time.}
         stream_present: {type: boolean}
         ownership: {type: string, enum: [matching, unmarked, different, unobserved]}
-        messages: {type: integer, minimum: 0, maximum: 18446744073709551615, description: Omitted for missing Stream; decode losslessly.}
+        messages: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615, description: Omitted for missing Stream; decode losslessly.}
         consumers: {type: integer, minimum: 0, description: Omitted for missing Stream; includes all observed Stream Consumers and is not an unused guard.}
         requires_force: {type: boolean, description: Observed messages are nonzero; force does not bypass ownership protection.}
         blocked: {type: boolean, description: Default force=false deletion would be blocked by observed ownership or messages.}
@@ -1366,7 +1392,7 @@ components:
         mode: {type: string, enum: [pull, push]}
         status: {type: string, enum: [present, missing, mismatched]}
         ownership: {type: string, enum: [matching, different, external, unknown]}
-        pending: {type: [integer, 'null'], minimum: 0, maximum: 18446744073709551615}
+        pending: {type: [integer, 'null'], format: uint64, minimum: 0, maximum: 18446744073709551615}
         ack_pending: {type: [integer, 'null'], minimum: 0}
     QueueOwnership:
       type: string
@@ -1404,11 +1430,11 @@ components:
         max_ack_pending: {type: integer, description: Observed broker configuration; only positive values are a finite ACK-pending limit. Absent on older management versions.}
         replay_policy: {type: string}
         metadata: {type: [object, 'null'], additionalProperties: {type: string}}
-        pending: {type: integer, minimum: 0, maximum: 18446744073709551615}
+        pending: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
         ack_pending: {type: integer}
         redelivered: {type: integer}
         waiting: {type: integer}
-        delivered: {type: integer, minimum: 0, maximum: 18446744073709551615}
+        delivered: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
         cluster: {$ref: '#/components/schemas/ClusterInfo'}
     ClusterInfo:
       type: object
@@ -1425,7 +1451,7 @@ components:
               name: {type: string}
               current: {type: boolean}
               offline: {type: boolean}
-              lag: {type: integer, minimum: 0, maximum: 18446744073709551615}
+              lag: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
               active_nanos: {type: integer, format: int64}
     ErrorEnvelope:
       type: object

@@ -8,12 +8,39 @@ import (
 
 	"github.com/chennqqi/rabbit-jetstream/internal/topology"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/jetstream"
+	"github.com/chennqqi/rabbit-jetstream/management/internal/tenant"
 )
 
 type blockingGlobalConsumerSource struct {
 	*globalConsumerFixture
 	entered chan struct{}
 	release chan struct{}
+}
+
+func TestGlobalConsumerIndexesAreTenantScopedAndReplicaLocal(t *testing.T) {
+	handlerA := &Handler{}
+	handlerB := &Handler{}
+	teamA := tenant.WithContext(context.Background(), "team-a")
+	teamB := tenant.WithContext(context.Background(), "team-b")
+
+	teamAIndex := handlerA.consumerIndex(teamA)
+	if teamAIndex == handlerA.consumerIndex(teamB) {
+		t.Fatal("different tenants shared a global Consumer index")
+	}
+	if teamAIndex != handlerA.consumerIndex(teamA) {
+		t.Fatal("the same tenant did not reuse its global Consumer index")
+	}
+	if teamAIndex == handlerB.consumerIndex(teamA) {
+		t.Fatal("different management replicas shared an in-memory index")
+	}
+
+	teamAIndex.generation = &globalConsumerGeneration{ID: "replica-a-generation"}
+	if got := handlerA.consumerIndex(teamB).status(); got.Generation != nil {
+		t.Fatalf("tenant B observed tenant A generation: %#v", got)
+	}
+	if got := handlerB.consumerIndex(teamA).status(); got.Generation != nil {
+		t.Fatalf("replica B observed replica A generation: %#v", got)
+	}
 }
 
 func (source *blockingGlobalConsumerSource) ListStreams(ctx context.Context) ([]jetstream.Stream, error) {

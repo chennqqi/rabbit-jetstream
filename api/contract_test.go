@@ -118,7 +118,7 @@ func TestOpenAPIMatchesRegisteredV1Routes(t *testing.T) {
 	if err := yaml.Unmarshal(OpenAPI, &document); err != nil {
 		t.Fatal(err)
 	}
-	source, err := os.ReadFile("../management/internal/api/handler.go")
+	source, err := os.ReadFile("../management/internal/api/routes.go")
 	if err != nil {
 		t.Fatal(err)
 	}

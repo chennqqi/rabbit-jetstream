@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,15 +35,15 @@ func (h *Handler) localLogin(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusUnsupportedMediaType, "invalid_content_type", "login requires application/json")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	var request localLoginRequest
-	if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF || request.Username == "" || len(request.Username) > 128 || request.Password == "" || len(request.Password) > 1024 {
+	request, ok := decodeStrict[localLoginRequest](w, r, 8<<10, "invalid_login_request", "invalid login request")
+	if !ok {
+		return
+	}
+	if request.Username == "" || len(request.Username) > 128 || request.Password == "" || len(request.Password) > 1024 {
 		writeAPIError(w, http.StatusBadRequest, "invalid_login_request", "invalid login request")
 		return
 	}
-	ip := remoteIP(r.RemoteAddr)
+	ip := h.clientIP(r)
 	if allowed, retry := h.loginLimiter.allowed(ip, request.Username); !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Round(time.Second)/time.Second))))
 		writeAPIError(w, http.StatusTooManyRequests, "login_rate_limited", "too many login attempts; retry later")

@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -53,4 +55,36 @@ func queryList[T any](items []T, query listQuery, name func(T) string) []T {
 		return name(filtered[i]) < name(filtered[j])
 	})
 	return filtered
+}
+
+func pagination(r *http.Request) (int, int, error) {
+	offset, err := queryInt(r, "offset", 0)
+	if err != nil || offset < 0 {
+		return 0, 0, errors.New("offset must be a non-negative integer")
+	}
+	limit, err := queryInt(r, "limit", 50)
+	if err != nil || limit < 1 || limit > 200 {
+		return 0, 0, errors.New("limit must be an integer between 1 and 200")
+	}
+	return offset, limit, nil
+}
+
+func queryInt(r *http.Request, key string, fallback int) (int, error) {
+	value := r.URL.Query().Get(key)
+	if value == "" {
+		return fallback, nil
+	}
+	return strconv.Atoi(value)
+}
+
+func page[T any](items []T, offset, limit int) map[string]any {
+	total := len(items)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return map[string]any{"items": items[offset:end], "total": total, "offset": offset, "limit": limit}
 }

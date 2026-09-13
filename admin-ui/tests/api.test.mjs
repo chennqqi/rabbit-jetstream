@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {parseJSON, stringifyJSON, createAPI, latestRead, APIError} from "../src/api.mjs";
+import {parseJSON, stringifyJSON, createAPI, latestRead, APIError, parseEventStream} from "../src/api.mjs";
 
 test("Go integer boundaries survive decode, edit and encode", () => {
   const text = '{"signed":9223372036854775807,"unsigned":18446744073709551615,"min":-9223372036854775808,"safe":9007199254740991,"decimal":0.125}';
@@ -67,6 +67,22 @@ test("timeout cancels request and is not retried", async () => {
   const api = createAPI({origin: "http://localhost", fetch: (_, options) => { calls++; return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason))); }});
   await assert.rejects(api.request("/api/v1/queues", {timeout: 5}), error => error.kind === "aborted" && !error.uncertain);
   assert.equal(calls, 1);
+});
+
+test("authenticated tenant event stream uses headers and parses fragmented SSE",async()=>{
+  let request;
+  const bytes=new TextEncoder().encode('retry: 3000\n\nid: 7\r\nevent: invalidate\r\ndata: {"resource":"audit"}\r\n\r\n');
+  const body=new ReadableStream({start(controller){controller.enqueue(bytes.slice(0,19));controller.enqueue(bytes.slice(19));controller.close();}});
+  const api=createAPI({origin:"http://localhost",fetch:async(url,options)=>{request={url,options};return new Response(body,{headers:{"Content-Type":"text/event-stream; charset=utf-8"}});}});
+  api.setToken("secret");api.setTenant("team-a");
+  const stream=await api.events({lastEventID:"6"}),events=[];for await(const event of stream.events)events.push(event);
+  assert.equal(request.url,"http://localhost/api/v1/events");assert.equal(request.options.headers.get("Authorization"),"Bearer secret");assert.equal(request.options.headers.get("X-RJS-Tenant"),"team-a");assert.equal(request.options.headers.get("Last-Event-ID"),"6");assert.deepEqual(events,[{id:"7",type:"invalidate",resource:"audit"}]);
+});
+
+test("event parser rejects oversized and invalid payloads",async()=>{
+  const stream=text=>new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(text));controller.close();}});
+  await assert.rejects(async()=>{for await(const event of parseEventStream(stream('id: 1\nevent: invalidate\ndata: {"resource":"secret"}\n\n')))void event;},error=>error instanceof APIError&&error.kind==="invalid-response");
+  await assert.rejects(async()=>{for await(const event of parseEventStream(stream(`data: ${"x".repeat(65537)}`)))void event;},error=>error instanceof APIError&&error.kind==="invalid-response");
 });
 
 test("late resource response cannot replace newer navigation", async () => {

@@ -1,0 +1,46 @@
+const catalogs = Object.freeze({
+  en: Object.freeze({
+    "blocked_by_original_plan_correct_files_and": "Blocked by original plan; correct files and plan separately.",
+    "a_request_is_active_or_its_write": "A request is active or its write outcome is unknown. Resolve it before switching items.",
+    "an_in_batch_prerequisite_has_not_been": "An in-batch prerequisite has not been accepted. Acceptance still does not prove live health.",
+    "the_draft_dependency_differs_from_this_plan": "The draft dependency differs from this plan. Restore it or plan a new batch.",
+    "select_this_item_before_acting": "Select this item before acting.",
+    "prepare_this_item_first": "Prepare this item first.",
+    "this_name_already_has_a_retained_creation": "This name already has a retained creation/deletion request. It was not overwritten.",
+    "preparation_failed_reload_creation_rules_and_check": "Preparation failed. Reload creation rules and check imported settings.",
+    "batch_execution": "Batch execution",
+    "review_and_apply_one_queue_at_a": "Review and apply one Queue at a time",
+    "each_item_reuses_create_only_preview_and": "Each item reuses create-only preview and separate apply confirmation. No automatic writes, retries or rollback. Files and outcomes stay in session memory across in-app navigation; reload loses them. External prerequisites require current server validation, regardless of their planning observation. Invalid/duplicate/cyclic items remain blocked. Accepted prerequisites still require live checks in each dependent's server preview.",
+    "keep_batch_and_return_to_creation": "Keep batch and return to creation",
+    "archive_batch_and_start_another": "Archive batch and start another",
+    "archiving_stops_this_batch_locally_and_keeps": "Archiving stops this batch locally and keeps a read-only snapshot. It does not cancel or undo resources, release retained Queue names, or authorize retries. Active or unknown requests must be resolved first.",
+    "unknown_queue": "Unknown Queue",
+    "external_dependency_unresolved_in_the_plan_prepare": "External dependency unresolved in the plan; prepare only for server preview, not immediate apply.",
+    "prepare_item": "Prepare item",
+    "review_item": "Review item",
+  }),
+  zh: Object.freeze({
+    "blocked_by_original_plan_correct_files_and": "原规划阻塞，请修正文件后重新规划。",
+    "a_request_is_active_or_its_write": "请求进行中或写入结果未知，请先处理再切换项。",
+    "an_in_batch_prerequisite_has_not_been": "批次内前置项尚未接受；接受也不证明实时健康。",
+    "the_draft_dependency_differs_from_this_plan": "草稿依赖与本规划不同，请恢复依赖或重新规划批次。",
+    "select_this_item_before_acting": "操作前请选择此项。",
+    "prepare_this_item_first": "请先准备此项。",
+    "this_name_already_has_a_retained_creation": "此名称已有保留的创建／删除请求，未覆盖。",
+    "preparation_failed_reload_creation_rules_and_check": "准备失败，请重新读取创建规则并检查导入设置。",
+    "batch_execution": "批次执行",
+    "review_and_apply_one_queue_at_a": "逐项审阅并提交 Queue",
+    "each_item_reuses_create_only_preview_and": "每项复用仅创建预览及独立提交确认，不自动写入、重试或回滚。文件与结果在站内导航时保留于会话内存，刷新会丢失。不论规划观测如何，外部前置依赖均须当前服务端验证。无效／重复／循环项仍阻塞。即使前置项已接受，依赖项的服务端预览仍须检查实时状态。",
+    "keep_batch_and_return_to_creation": "保留批次并返回创建页",
+    "archive_batch_and_start_another": "归档批次并开始新批次",
+    "archiving_stops_this_batch_locally_and_keeps": "归档仅在本地结束此批次并保留只读快照，不取消或撤销资源、不释放保留的 Queue 名称，也不授权重试。进行中或结果未知的请求须先处理。",
+    "unknown_queue": "未知 Queue",
+    "external_dependency_unresolved_in_the_plan_prepare": "规划中的外部依赖未解决，仅可准备服务端预览，不能直接提交。",
+    "prepare_item": "准备此项",
+    "review_item": "审阅此项",
+  }),
+});
+
+export function batchExecutionLabels(language) {
+  return catalogs[language] ?? catalogs.en;
+}

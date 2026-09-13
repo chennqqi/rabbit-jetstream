@@ -56,8 +56,8 @@ export async function batchImportChecks({page,api,origin,operator,expect,assert,
     report.checks.push("batch-execution-prerequisite-first-independent-confirmations-two-create-only-writes-exact-values");
     report.checks.push("batch-execution-switch-invalidates-preview-navigation-resume-accepted-results-bilingual-mobile");
     const archive=execution.getByRole("button",{name:"Archive batch and start another",exact:true}),beforeArchive=requests.length;
-    page.once("dialog",dialog=>dialog.dismiss());await archive.click();await expect(execution).toBeVisible();assert.equal(requests.length,beforeArchive);
-    page.once("dialog",dialog=>dialog.accept());await archive.click();await expect(execution).toHaveCount(0);assert.equal(requests.length,beforeArchive,"archival must not call Queue APIs");
+    await archive.click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();await expect(execution).toBeVisible();assert.equal(requests.length,beforeArchive);
+    await archive.click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();await expect(execution).toHaveCount(0);assert.equal(requests.length,beforeArchive,"archival must not call Queue APIs");
     const history=page.getByRole("region",{name:"Archived batches",exact:true});await expect(history).toBeVisible();await history.locator("summary").first().click();await history.getByText("Read-only files, plan and outcome evidence",{exact:true}).click();
     const evidenceText=await history.locator("pre").innerText(),record=parseJSON(evidenceText);assert.equal(record.schema,"rjs.batch-execution-evidence.v1");assert.equal(record.scope,"archived-batch-not-write-authorization");assert.deepEqual(record.items.map(item=>item.outcome.phase),["accepted","accepted"]);assert.equal(record.items[0].document.spec.retention.maxMessages,9223372036854775807n);assert.ok(record.items.every(item=>item.outcome.requestId));
     const pendingEvidence=page.waitForEvent("download");await history.getByRole("link",{name:"Download itemized batch evidence JSON",exact:true}).click();const evidenceDownload=await pendingEvidence;
@@ -67,7 +67,7 @@ export async function batchImportChecks({page,api,origin,operator,expect,assert,
     await files.setInputFiles([upload(target),upload(document("batch_next"))]);await plan.click();await expect(panel.getByRole("status")).toContainText("Internally ordered only");await panel.getByRole("checkbox").check();await start.click();
     await execution.getByRole("button",{name:"Prepare item: batch_target",exact:true}).click();await expect(execution.getByRole("alert")).toContainText("already has a retained");assert.equal(requests.filter(row=>row.method==="PUT").length,2);
     await execution.getByRole("button",{name:"Prepare item: batch_next",exact:true}).click();await expect(page.getByLabel("Queue document (JSON)",{exact:true})).toBeVisible();assert.equal((await api("/api/v1/queues/batch_next")).status,404);
-    page.once("dialog",dialog=>dialog.accept());await archive.click();await expect(history.locator(":scope > details")).toHaveCount(2);
+    await archive.click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();await expect(history.locator(":scope > details")).toHaveCount(2);
     await history.locator(":scope > details").first().locator(":scope > summary").click();await history.getByText("Read-only files, plan and outcome evidence",{exact:true}).first().click();assert.equal(await history.locator("pre").first().innerText(),evidenceText,"earlier archive must remain unchanged");
     await history.locator(":scope > details").first().locator("details > summary").click();
     await page.getByRole("button",{name:"简体中文",exact:true}).click();await page.setViewportSize({width:375,height:900});await page.getByRole("region",{name:"已归档批次",exact:true}).screenshot({path:path.join(evidence,"batch-history-mobile-zh.png")});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"batch history mobile overflow");
@@ -88,7 +88,7 @@ export async function batchImportChecks({page,api,origin,operator,expect,assert,
     for(const name of ["batch_external_root","batch_external_child"]){const saved=await api(`/api/v1/queues/${name}`);assert.equal(saved.status,200);assert.equal(parseJSON(await saved.text()).document.spec.retention.maxMessages,9223372036854775807n);}
     report.checks.push("batch-external-missing-preview-rejected-no-put-target-repaired-fresh-preview-separate-confirmation");
     report.checks.push("batch-external-transitive-prerequisite-gate-two-create-only-writes-exact-values");
-    page.once("dialog",dialog=>dialog.accept());await archive.click();
+    await archive.click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
     await files.setInputFiles([upload(document("batch_unknown_child","batch_unknown_root")),upload(document("batch_unknown_root"))]);await plan.click();await expect(panel.getByRole("status")).toContainText("Internally ordered only");await panel.getByRole("checkbox").check();await start.click();
     const unknownChild=execution.getByRole("button",{name:"Prepare item: batch_unknown_child",exact:true});await execution.getByRole("button",{name:"Prepare item: batch_unknown_root",exact:true}).click();await preview.click();await expect(apply).toBeDisabled();
     let intercepted=0;

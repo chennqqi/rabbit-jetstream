@@ -1,22 +1,93 @@
-import React,{useEffect,useMemo,useState,useSyncExternalStore} from "react";
+import React, {useEffect, useMemo, useState, useSyncExternalStore} from "react";
 import {createGlobalConsumers} from "./global-consumers.mjs";
-import {consumerDetailURL,globalConsumersURL} from "./routes.mjs";
+import {globalConsumerLabels} from "./global-consumer-labels.mjs";
+import {consumerDetailURL, globalConsumersURL} from "./routes.mjs";
+import {ReadOnlyCollectionTable,OffsetPagination} from "./collection-table.jsx";
 
-export function GlobalConsumers({api,language,route,router,canRefresh}){
-  const zh=language==="zh",model=useMemo(()=>createGlobalConsumers(api),[api]),state=useSyncExternalStore(model.subscribe,model.snapshot),[draft,setDraft]=useState({q:route.query.q,queue:route.query.queue,stream:route.query.stream}),[collecting,setCollecting]=useState(false),[collectionFailure,setCollectionFailure]=useState(null);
-  useEffect(()=>{setDraft({q:route.query.q,queue:route.query.queue,stream:route.query.stream});void model.load(route.query);return()=>model.clear();},[model,route.query.q,route.query.queue,route.query.stream,route.query.mode,route.query.state,route.query.order,route.query.offset,route.query.limit,route.query.generation]);
-  const navigate=changes=>{const resets=["q","queue","stream","mode","state","order","limit"].some(key=>Object.hasOwn(changes,key));router.navigate(globalConsumersURL({...route.query,...changes,...(resets?{offset:0,generation:""}:{})}));};
-  const collect=async()=>{setCollecting(true);setCollectionFailure(null);const result=await model.refreshCollection();setCollecting(false);if(!result.ok){setCollectionFailure(result.kind);return;}void model.load({...route.query,offset:0,generation:""});};
-  const unknown=zh?"未知":"Unknown",counter=value=>value===null?unknown:String(value),failure={unavailable:zh?"Consumer 索引不可用；这不是空列表。":"Consumer index unavailable; this is not an empty list.",collecting:zh?"正在采集首个完整代次，请稍后重试查询。":"The first complete generation is collecting; retry the query shortly.","generation-changed":zh?"Consumer 代次已替换，分页必须从第一页重新开始。":"Consumer generation changed; pagination must restart from the first page.","invalid-response":zh?"服务端返回了无效 Consumer 页面，不显示部分数据。":"The server returned an invalid Consumer page; partial data is hidden.","invalid-query":zh?"Consumer 筛选条件无效。":"Invalid Consumer filters.","credentials-rejected":zh?"凭据被拒绝。":"Credentials rejected.","role-denied":zh?"当前角色无权执行此操作。":"Current role cannot perform this operation."}[state.failure?.kind]??(zh?"Consumer 查询失败。":"Consumer query failed.");
-  const page=state.page;
-  return <section aria-labelledby="global-consumers-heading"><h2 id="global-consumers-heading">{zh?"Consumer 列表":"Consumers"}</h2><p>{zh?"先展示完整采集代次，再在服务端筛选和分页。日常查询不会触发 broker 全量扫描；同名 Consumer 以 Stream + 名称区分。":"The page starts from one complete collected generation, then filters and pages on the server. Routine queries never trigger a full broker scan; Stream plus name is the identity."}</p>
-    <form className="list-controls consumer-list-controls" autoComplete="off" onSubmit={event=>{event.preventDefault();navigate(draft)}}><label htmlFor="consumer-search">{zh?"Queue、Stream、Consumer 或 durable 包含":"Queue, Stream, Consumer or durable contains"}</label><input id="consumer-search" name="consumer-search" type="search" value={draft.q} onChange={event=>setDraft({...draft,q:event.target.value})}/><label htmlFor="consumer-queue">Queue</label><input id="consumer-queue" name="consumer-queue" type="search" value={draft.queue} onChange={event=>setDraft({...draft,queue:event.target.value})}/><label htmlFor="consumer-stream">Stream</label><input id="consumer-stream" name="consumer-stream" type="search" value={draft.stream} onChange={event=>setDraft({...draft,stream:event.target.value})}/><button>{zh?"筛选":"Filter"}</button>
-    <label htmlFor="consumer-mode">{zh?"模式":"Mode"}</label><select id="consumer-mode" value={route.query.mode} onChange={event=>navigate({mode:event.target.value})}><option value="">{zh?"全部":"All"}</option><option value="pull">Pull</option><option value="push">Push</option></select><label htmlFor="consumer-state">{zh?"状态":"State"}</label><select id="consumer-state" value={route.query.state} onChange={event=>navigate({state:event.target.value})}><option value="">{zh?"全部":"All"}</option><option value="present">Present</option><option value="missing">Missing</option><option value="mismatched">Mismatched</option></select><label htmlFor="consumer-order">{zh?"身份排序":"Identity order"}</label><select id="consumer-order" value={route.query.order} onChange={event=>navigate({order:event.target.value})}><option value="asc">{zh?"升序":"Ascending"}</option><option value="desc">{zh?"降序":"Descending"}</option></select><label htmlFor="consumer-limit">{zh?"每页条数":"Page size"}</label><select id="consumer-limit" value={route.query.limit} onChange={event=>navigate({limit:Number(event.target.value)})}>{[25,50,100,200].map(value=><option key={value}>{value}</option>)}</select></form>
-    {canRefresh?<button disabled={collecting} onClick={()=>void collect()}>{collecting?(zh?"正在采集…":"Collecting…"):(zh?"采集新代次":"Collect new generation")}</button>:<p>{zh?"当前 auditor 可查询已有代次；只有 operator 可以启动新采集。":"Auditors can query an existing generation; only operators can start collection."}</p>}
-    {collectionFailure&&<p role="alert">{collectionFailure==="collection-failed"?(zh?"采集失败；若有旧代次会保留为 stale。":"Collection failed; an older generation is retained as stale when available."):failure}</p>}{state.phase==="loading"&&<p role="status">{zh?"正在读取 Consumer 列表…":"Loading Consumers…"}</p>}{state.failure&&<p role="alert">{failure}</p>}
-    {state.failure?.kind==="generation-changed"&&<button onClick={()=>router.navigate(globalConsumersURL({...route.query,offset:0,generation:""}))}>{zh?"重置到第一页":"Reset to first page"}</button>}
-    {page&&<><p role="status">{zh?"筛选后总数":"Filtered total"}: {page.total} · {zh?"代次":"Generation"}: <code>{page.generation_id}</code> · <time dateTime={page.completed_at}>{page.completed_at}</time> · {page.state}</p>{page.state==="stale"&&<p role="alert">{zh?"显示的是旧完整代次；最近一次采集失败，没有混入部分结果。":"Showing an older complete generation; the latest collection failed and no partial rows were mixed in."}</p>}
-    {page.items.length?<div className="table-scroll" tabIndex="0" role="region" aria-label={zh?"Consumer 列表":"Consumer list"}><table className="consumer-table"><thead><tr><th>Consumer</th><th>Stream</th><th>Queue</th><th>{zh?"模式":"Mode"}</th><th>{zh?"状态":"State"}</th><th>{zh?"归属":"Ownership"}</th><th>{zh?"待投递":"Pending"}</th><th>{zh?"待确认":"Ack pending"}</th></tr></thead><tbody>{page.items.map(row=><tr key={`${row.stream}\0${row.name}`}><th scope="row"><a href={consumerDetailURL(row.stream,row.name)} onClick={event=>{if(event.button===0&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.altKey){event.preventDefault();router.navigate(event.currentTarget.getAttribute("href"));}}}>{row.name}</a></th><td>{row.stream}</td><td>{row.queue||"—"}</td><td>{row.mode}</td><td>{row.status}</td><td>{row.ownership}</td><td>{counter(row.pending)}</td><td>{counter(row.ack_pending)}</td></tr>)}</tbody></table></div>:<p>{page.total===0?(zh?"没有匹配的 Consumer。":"No matching Consumers."):(zh?"当前页没有数据，请返回上一页。":"This page is empty; return to the previous page.")}</p>}
-    <nav className="pagination" aria-label={zh?"Consumer 分页":"Consumer pagination"}><button disabled={page.offset===0} onClick={()=>navigate({offset:Math.max(0,page.offset-page.limit),generation:page.generation_id})}>{zh?"上一页":"Previous"}</button><span>{page.items.length?`${page.offset+1}–${page.offset+page.items.length}`:"0"} / {page.total}</span><button disabled={page.offset+page.items.length>=page.total} onClick={()=>navigate({offset:page.offset+page.limit,generation:page.generation_id})}>{zh?"下一页":"Next"}</button></nav></>}
+export function GlobalConsumers({api, language, route, router, canRefresh}) {
+  const text = globalConsumerLabels(language);
+  const model = useMemo(() => createGlobalConsumers(api), [api]);
+  const state = useSyncExternalStore(model.subscribe, model.snapshot);
+  const [draft, setDraft] = useState({q: route.query.q, queue: route.query.queue, stream: route.query.stream});
+  const [collecting, setCollecting] = useState(false);
+  const [collectionFailure, setCollectionFailure] = useState(null);
+
+  useEffect(() => {
+    setDraft({q: route.query.q, queue: route.query.queue, stream: route.query.stream});
+    void model.load(route.query);
+    return () => model.clear();
+  }, [model, route.query.q, route.query.queue, route.query.stream, route.query.mode, route.query.state, route.query.order, route.query.offset, route.query.limit, route.query.generation]);
+
+  const navigate = changes => {
+    const resets = ["q", "queue", "stream", "mode", "state", "order", "limit"].some(key => Object.hasOwn(changes, key));
+    router.navigate(globalConsumersURL({...route.query, ...changes, ...(resets ? {offset: 0, generation: ""} : {})}));
+  };
+  const collect = async () => {
+    setCollecting(true);
+    setCollectionFailure(null);
+    const result = await model.refreshCollection();
+    setCollecting(false);
+    if (!result.ok) {
+      setCollectionFailure(result.kind);
+      return;
+    }
+    void model.load({...route.query, offset: 0, generation: ""});
+  };
+  const counter = value => value === null ? text.unknown : String(value);
+  const failureFor = kind => text.failures[kind] ?? text.failures.fallback;
+  const page = state.page;
+  const columns = [{key:"consumer",label:"Consumer"},{key:"stream",label:"Stream"},{key:"queue",label:"Queue"},{key:"mode",label:text.mode},{key:"state",label:text.state},{key:"ownership",label:text.ownership},{key:"pending",label:text.pending},{key:"ack",label:text.ackPending}];
+
+  return <section aria-labelledby="global-consumers-heading">
+    <h2 id="global-consumers-heading">{text.title}</h2>
+    <p>{text.description}</p>
+    <form className="list-controls consumer-list-controls" autoComplete="off" onSubmit={event => { event.preventDefault(); navigate(draft); }}>
+      <label htmlFor="consumer-search">{text.contains}</label>
+      <input id="consumer-search" name="consumer-search" type="search" value={draft.q} onChange={event => setDraft({...draft, q: event.target.value})}/>
+      <label htmlFor="consumer-queue">Queue</label>
+      <input id="consumer-queue" name="consumer-queue" type="search" value={draft.queue} onChange={event => setDraft({...draft, queue: event.target.value})}/>
+      <label htmlFor="consumer-stream">Stream</label>
+      <input id="consumer-stream" name="consumer-stream" type="search" value={draft.stream} onChange={event => setDraft({...draft, stream: event.target.value})}/>
+      <button>{text.filter}</button>
+      <label htmlFor="consumer-mode">{text.mode}</label>
+      <select id="consumer-mode" value={route.query.mode} onChange={event => navigate({mode: event.target.value})}>
+        <option value="">{text.all}</option><option value="pull">Pull</option><option value="push">Push</option>
+      </select>
+      <label htmlFor="consumer-state">{text.state}</label>
+      <select id="consumer-state" value={route.query.state} onChange={event => navigate({state: event.target.value})}>
+        <option value="">{text.all}</option><option value="present">Present</option><option value="missing">Missing</option><option value="mismatched">Mismatched</option>
+      </select>
+      <label htmlFor="consumer-order">{text.identityOrder}</label>
+      <select id="consumer-order" value={route.query.order} onChange={event => navigate({order: event.target.value})}>
+        <option value="asc">{text.ascending}</option><option value="desc">{text.descending}</option>
+      </select>
+      <label htmlFor="consumer-limit">{text.pageSize}</label>
+      <select id="consumer-limit" value={route.query.limit} onChange={event => navigate({limit: Number(event.target.value)})}>
+        {[25, 50, 100, 200].map(value => <option key={value}>{value}</option>)}
+      </select>
+    </form>
+    {canRefresh
+      ? <button disabled={collecting} onClick={() => void collect()}>{collecting ? text.collectingAction : text.collectNewGeneration}</button>
+      : <p>{text.auditorCollection}</p>}
+    {collectionFailure && <p role="alert">{failureFor(collectionFailure)}</p>}
+    {state.phase === "loading" && <p role="status">{text.loading}</p>}
+    {state.failure && <p role="alert">{failureFor(state.failure.kind)}</p>}
+    {state.failure?.kind === "generation-changed" && <button onClick={() => router.navigate(globalConsumersURL({...route.query, offset: 0, generation: ""}))}>{text.resetFirst}</button>}
+    {page && <>
+      <p role="status">{text.filteredTotal}: {page.total} · {text.generation}: <code>{page.generation_id}</code> · <time dateTime={page.completed_at}>{page.completed_at}</time> · {page.state}</p>
+      {page.state === "stale" && <p role="alert">{text.stale}</p>}
+      {page.items.length
+        ? <ReadOnlyCollectionTable label={text.list} caption={text.caption} columns={columns} className="consumer-table">{page.items.map(row => <tr key={`${row.stream}\0${row.name}`}>
+              <th scope="row"><a href={consumerDetailURL(row.stream, row.name)} onClick={event => {
+                if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+                  event.preventDefault();
+                  router.navigate(event.currentTarget.getAttribute("href"));
+                }
+              }}>{row.name}</a></th>
+              <td>{row.stream}</td><td>{row.queue || "—"}</td><td>{row.mode}</td><td>{row.status}</td><td>{row.ownership}</td><td>{counter(row.pending)}</td><td>{counter(row.ack_pending)}</td>
+            </tr>)}</ReadOnlyCollectionTable>
+        : <p>{page.total === 0 ? text.noMatches : text.emptyPage}</p>}
+      <OffsetPagination label={text.pagination} offset={page.offset} limit={page.limit} returned={page.items.length} total={page.total} previousLabel={text.previous} nextLabel={text.next} onPrevious={() => navigate({offset: Math.max(0, page.offset - page.limit), generation: page.generation_id})} onNext={() => navigate({offset: page.offset + page.limit, generation: page.generation_id})}/>
+    </>}
   </section>;
 }

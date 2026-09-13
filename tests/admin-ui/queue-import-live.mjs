@@ -20,14 +20,14 @@ export async function queueImportChecks({page,api,origin,operator,expect,assert,
     await expect(panel).toContainText("Loaded file: queue.json");
     await expect(prepare).toBeDisabled();await panel.getByRole("checkbox").check();await expect(prepare).toBeEnabled();
     assert.equal(requests.length,0,"file selection must not read or write the Queue API");
-    page.once("dialog",dialog=>dialog.dismiss());await prepare.click();
+    await prepare.click();await page.getByRole("alertdialog").getByRole("button",{name:"Cancel",exact:true}).click();
     await expect(page.getByLabel("New Queue name",{exact:true})).toHaveValue("keep_this_form");await expect(prepare).toBeVisible();
     await page.getByRole("button",{name:"简体中文",exact:true}).click();
     const chinese=page.getByRole("region",{name:"导入 Queue 声明",exact:true});
     await page.setViewportSize({width:375,height:900});await chinese.screenshot({path:path.join(evidence,"queue-import-mobile-zh.png")});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"import mobile overflow");
     await page.getByRole("button",{name:"English",exact:true}).click();await page.setViewportSize({width:1440,height:1000});
-    page.once("dialog",dialog=>dialog.accept());await prepare.click();
+    await prepare.click();await page.getByRole("alertdialog").getByRole("button",{name:"Confirm",exact:true}).click();
     const draft=page.getByLabel("Queue document (JSON)",{exact:true});await expect(draft).toBeVisible();await expect(draft).toBeFocused();
     assert.equal(parseJSON(await draft.inputValue()).spec.retention.maxMessages,9223372036854775807n);
     assert.equal(requests.length,0,"draft preparation must not dispatch Queue IO");

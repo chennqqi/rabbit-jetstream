@@ -2,25 +2,32 @@
 
 [English](webui-global-consumer-scale.md) | [简体中文](webui-global-consumer-scale.zh-CN.md)
 
-本记录测量约定上限 10,000 个 Stream／100,000 个 Consumer 下的进程内采集、合并与查询算法。它**不包含** NATS 请求延迟、浏览器渲染、生产并发流量或多轮 p95 分布，因此不能认定端到端延迟要求已达标。
+本文记录约定的 10,000 Stream / 100,000 Consumer 上限下，进程内采集、关联和查询算法的测量结果。它不包含 NATS 请求延迟、浏览器渲染、生产并发流量或多轮 p95 分布，因此不能单独认定端到端延迟验收通过。
 
-环境：Windows 11 build 26100、AMD64、Intel Core Ultra 7 155H、22 个逻辑基准线程、Go 1.25.13。本机 WMI 权限拒绝读取主机内存，因此不猜测该数据。
+环境：Windows 11 build 26100、AMD64、Intel Core Ultra 7 155H、22 个逻辑基准线程、Go 1.25.13。由于本机 WMI 权限拒绝了内存查询，本文不猜测主机内存。
 
-在仓库根目录复现：
-
-```powershell
-$env:GOCACHE = "$PWD\.tmp\gocache"
-go test ./management/internal/api -run '^$' -bench 'Benchmark(Collect|Query)GlobalConsumers100k$' -benchtime=1x -benchmem -count=3
-```
-
-初始结果：
+完整的可重复门禁（包含带鉴权 HTTP 路径）为 `make test-consumer-scale`。初始结果如下：
 
 | 操作 | 行数 | 单轮耗时 | 分配字节 | 分配次数 |
 | --- | ---: | ---: | ---: | ---: |
-| 完整代次采集／合并 | 100,000 | 149.55–184.85 ms | 258.01–258.08 MB | 1,510,391–1,510,595 |
+| 完整代次采集/合并 | 100,000 | 149.55–184.85 ms | 258.01–258.08 MB | 1,510,391–1,510,595 |
 | 优化前筛选 `consumer-09` 得到 10,000 行 | 扫描 100,000 | 10.50–10.93 ms | 10.45 MB | 100,022 |
 | 移除逐行拼接后的同一查询 | 扫描 100,000 | 八个单次样本为 7.15–12.11 ms | 5.65 MB | 22 |
 
-查询优化消除了 100,000 个临时 haystack 分配，没有改变大小写不敏感的字面匹配或确定性身份排序。剩余查询分配包含 10,000 行结果切片。采集内存包含生成的 Consumer 投影、合并 map、精确编码行预算核算，以及基准数据源逐 Stream 响应的分配。
+查询优化消除了 100,000 个临时字符串分配，未改变不区分大小写的字面匹配或确定性身份排序。剩余查询分配包含 10,000 行结果切片；采集内存包含 Consumer 投影、关联映射、精确编码行预算核算及基准数据源的逐 Stream 响应分配。
 
-该实现已在此原型中执行算法规模上限；单次计时不构成统计有效的 p95。端到端验收仍需要：在注明硬件的真实 broker 数据集上重复采集和查询、观察 management RSS/GC、统计 broker API 请求成本、测量 UI 首次可用时间并计算 p95。已尝试 Windows race 测试，但本机默认未启用 CGO 且没有 C 编译器，无法执行；仍要求 Linux CI race 作为最终证据。
+该原型已覆盖算法规模上限，但单次计时不构成统计有效的 p95。端到端验收仍需要真实 broker 数据集、重复采集和查询、management RSS/GC、broker API 成本、UI 首次可用时间及 p95。Windows race 因本机未启用 CGO 且没有 C 编译器而无法执行，仍需 Linux CI race 证据。
+
+## Docker Desktop Linux 复测（2026-09-12）
+
+在 Docker Desktop 固定 Linux/AMD64 Go 容器中对当前工作树重复五次（4 CPU，Intel Core Ultra 7 155H），主机模块缓存只读挂载，并设置 `GOPROXY=off`。
+
+| 操作 | 五个单次样本 | 分配字节 | 分配次数 |
+| --- | ---: | ---: | ---: |
+| 完整 100,000 行采集/合并 | 246.18–305.19 ms | 257.98–258.00 MB | 1,510,271–1,510,433 |
+| 查询/筛选 100,000 行 | 10.82–20.83 ms | 5.65 MB | 22 |
+| 带鉴权 HTTP 查询，10,000 条归属匹配/200 行 JSON 页 | 11.58–15.37 ms（10 个样本；最近秩观测 p95 为 15.37 ms） | 5.92 MB | 140–240 |
+
+全部采集和查询均通过。`BenchmarkHTTPGlobalConsumers100k` 还经过真实 HTTP 路由、Bearer 鉴权、租户索引、筛选、排序、200 行分页和 JSON 编码；它会断言归属为 `matching`、筛选总数为 10,000，响应为 35,607–35,610 字节。该结果确认了模拟 management/API 路径及分配上限，但数据源仍在进程内，不是真实创建 10,000 个 Stream 的 broker 数据集。另有 `artifacts/docker-desktop-scale-20260912.json` 记录三节点、100 万消息且完整性错误为零的 Docker 测试；两类证据不得混为一谈。
+
+DOM 规模夹具使用 100,000 总数和最大 200 行页面驱动真实 `GlobalConsumers` 组件，断言 200 条数据行及表头、精确总数和一秒首次可用上限。Docker Desktop 工作站首个样本为 195.07 ms；这是确定性回归门禁，不是浏览器 p95 或绘制性能基准。

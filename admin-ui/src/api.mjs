@@ -89,6 +89,18 @@ export class APIError extends Error {
   constructor(message, details) { super(message); this.name = "APIError"; Object.assign(this, details); }
 }
 
+export async function* parseEventStream(body) {
+  if (!body?.getReader) throw new APIError("API returned an invalid event stream", {kind:"invalid-response",uncertain:false});
+  const reader=body.getReader(),decoder=new TextDecoder();let buffer="",event={data:[]};
+  const dispatch=()=>{if(event.type!=="invalidate"||!/^\d+$/.test(event.id??"")||event.data.length===0)return null;const body=parseJSON(event.data.join("\n"));if(!["audit","alerts"].includes(body?.resource))throw new APIError("API returned an invalid event",{kind:"invalid-response",uncertain:false});return{id:event.id,type:event.type,resource:body.resource};};
+  try {
+    while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value??new Uint8Array(),{stream:!done});if(buffer.length>65536)throw new APIError("API event exceeded the buffer limit",{kind:"invalid-response",uncertain:false});let newline;
+      while((newline=buffer.indexOf("\n"))>=0){let line=buffer.slice(0,newline);buffer=buffer.slice(newline+1);if(line.endsWith("\r"))line=line.slice(0,-1);if(line===""){const ready=dispatch();event={data:[]};if(ready)yield ready;continue;}if(line.startsWith(":"))continue;const colon=line.indexOf(":"),field=colon<0?line:line.slice(0,colon);let content=colon<0?"":line.slice(colon+1);if(content.startsWith(" "))content=content.slice(1);if(field==="id")event.id=content;else if(field==="event")event.type=content;else if(field==="data")event.data.push(content);}
+      if(done)break;
+    }
+  } finally { await reader.cancel().catch(()=>{}); }
+}
+
 export function createAPI({fetch: fetcher = globalThis.fetch, origin = globalThis.location?.origin, now = Date.now, requireMutationCapabilities=false} = {}) {
   if (!origin) throw new TypeError("API origin is required");
   let token = "";
@@ -153,6 +165,12 @@ export function createAPI({fetch: fetcher = globalThis.fetch, origin = globalThi
         clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
       }
+    },
+    async events({lastEventID,signal}={}) {
+      if(deadline!==null&&now()>=deadline){credentialGeneration++;token="";const notify=expiredCallback;expiredCallback=null;notify?.();throw new APIError("Verified credential expired before dispatch",{kind:"expired",code:"local_session_expired",status:401,uncertain:false});}
+      const url=new URL("/api/v1/events",origin),headers=new Headers({Accept:"text/event-stream"});if(token)headers.set("Authorization",`Bearer ${token}`);if(tenant)headers.set("X-RJS-Tenant",tenant);if(lastEventID!==undefined){if(!/^\d+$/.test(String(lastEventID))||String(lastEventID)==="0")throw new TypeError("Invalid Last-Event-ID");headers.set("Last-Event-ID",String(lastEventID));}
+      let response;try{response=await fetcher(url.href,{method:"GET",headers,signal,cache:"no-store",redirect:"error",credentials:"same-origin"});if(!response.ok){const raw=await response.text();let body;try{body=parseJSON(raw);}catch{body=null;}throw new APIError(body?.error?.message||`HTTP ${response.status}`,{kind:"http",status:response.status,body,code:body?.error?.code,uncertain:false});}if(!response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream"))throw new APIError("API returned an invalid event stream",{kind:"invalid-response",status:response.status,uncertain:false});return{events:parseEventStream(response.body),headers:response.headers};}
+      catch(error){if(error instanceof APIError)throw error;throw new APIError(signal?.aborted?"API event stream canceled":"API event stream connection failed",{kind:signal?.aborted?"aborted":"network",status:response?.status,uncertain:false});}
     },
     async download(path,{signal,timeout=10000,maxBytes=8<<20}={}) {
       if(!Number.isSafeInteger(maxBytes)||maxBytes<1)throw new TypeError("Invalid download limit");

@@ -210,8 +210,11 @@ func (a *LocalAuthenticator) Verify(_ context.Context, token string) (identity.P
 		return identity.Principal{}, ErrInvalidLocalCredentials
 	}
 	now := a.now().UTC().Unix()
-	if claims.Issued > now+30 || claims.Expires <= now {
+	if claims.Issued > now+30 {
 		return identity.Principal{}, ErrInvalidLocalCredentials
+	}
+	if claims.Expires <= now {
+		return identity.Principal{}, identity.ErrTokenExpired
 	}
 	for _, tenant := range claims.Tenants {
 		if !validLocalName(tenant) || (claims.TenantRoles[tenant] != "operator" && claims.TenantRoles[tenant] != "auditor") {
@@ -284,7 +287,7 @@ func (a *LocalAuthenticator) ListAccounts(context.Context) ([]identity.LocalAcco
 
 func (a *LocalAuthenticator) CreateAccount(_ context.Context, change identity.LocalAccountChange) (identity.LocalAccountView, error) {
 	if change.Password == "" {
-		return identity.LocalAccountView{}, errors.New("password is required")
+		return identity.LocalAccountView{}, fmt.Errorf("password is required: %w", identity.ErrAccountValidation)
 	}
 	hash, err := HashLocalPassword(change.Password)
 	if err != nil {
@@ -298,7 +301,7 @@ func (a *LocalAuthenticator) CreateAccount(_ context.Context, change identity.Lo
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, exists := a.accounts[account.Username]; exists {
-		return identity.LocalAccountView{}, errors.New("account already exists")
+		return identity.LocalAccountView{}, identity.ErrAccountExists
 	}
 	if err := validateLocalAccount(account); err != nil {
 		return identity.LocalAccountView{}, err
@@ -316,7 +319,7 @@ func (a *LocalAuthenticator) UpdateAccount(_ context.Context, change identity.Lo
 	defer a.mu.Unlock()
 	previous, exists := a.accounts[change.Username]
 	if !exists {
-		return identity.LocalAccountView{}, errors.New("account not found")
+		return identity.LocalAccountView{}, identity.ErrAccountNotFound
 	}
 	next := previous
 	next.Memberships = cloneMemberships(change.Memberships)
@@ -336,7 +339,7 @@ func (a *LocalAuthenticator) UpdateAccount(_ context.Context, change identity.Lo
 	a.accounts[change.Username] = next
 	if !a.hasEnabledPlatformAdminLocked() {
 		a.accounts[change.Username] = previous
-		return identity.LocalAccountView{}, errors.New("at least one enabled platform administrator is required")
+		return identity.LocalAccountView{}, fmt.Errorf("at least one enabled platform administrator is required: %w", identity.ErrAccountPolicy)
 	}
 	if err := a.persistLocked(); err != nil {
 		a.accounts[change.Username] = previous
@@ -350,12 +353,12 @@ func (a *LocalAuthenticator) DeleteAccount(_ context.Context, username string) e
 	defer a.mu.Unlock()
 	previous, exists := a.accounts[username]
 	if !exists {
-		return errors.New("account not found")
+		return identity.ErrAccountNotFound
 	}
 	delete(a.accounts, username)
 	if !a.hasEnabledPlatformAdminLocked() {
 		a.accounts[username] = previous
-		return errors.New("at least one enabled platform administrator is required")
+		return fmt.Errorf("at least one enabled platform administrator is required: %w", identity.ErrAccountPolicy)
 	}
 	if err := a.persistLocked(); err != nil {
 		a.accounts[username] = previous
@@ -366,7 +369,7 @@ func (a *LocalAuthenticator) DeleteAccount(_ context.Context, username string) e
 
 func validateLocalAccount(account LocalAccount) error {
 	if !validLocalName(account.Username) || len(account.Memberships) == 0 {
-		return errors.New("invalid local account")
+		return fmt.Errorf("invalid local account: %w", identity.ErrAccountValidation)
 	}
 	if _, err := parseArgon2id(account.PasswordHash); err != nil {
 		return err
@@ -375,10 +378,10 @@ func validateLocalAccount(account LocalAccount) error {
 	for _, membership := range account.Memberships {
 		id := membership.Tenant
 		if !validLocalName(id) || (membership.Role != "operator" && membership.Role != "auditor") {
-			return errors.New("invalid tenant")
+			return fmt.Errorf("invalid tenant: %w", identity.ErrAccountValidation)
 		}
 		if _, ok := seen[id]; ok {
-			return errors.New("duplicate tenant")
+			return fmt.Errorf("duplicate tenant: %w", identity.ErrAccountValidation)
 		}
 		seen[id] = struct{}{}
 	}
@@ -395,14 +398,14 @@ func cloneMemberships(items []identity.TenantMembership) []identity.TenantMember
 func normalizeLocalAccount(account LocalAccount) (LocalAccount, error) {
 	if len(account.Memberships) == 0 {
 		if (account.Role != "operator" && account.Role != "auditor") || len(account.Tenants) == 0 {
-			return account, errors.New("memberships are required")
+			return account, fmt.Errorf("memberships are required: %w", identity.ErrAccountValidation)
 		}
 		account.Memberships = make([]identity.TenantMembership, 0, len(account.Tenants))
 		for _, id := range account.Tenants {
 			account.Memberships = append(account.Memberships, identity.TenantMembership{Tenant: id, Role: account.Role})
 		}
 	} else if account.Role != "" || len(account.Tenants) != 0 {
-		return account, errors.New("legacy role/tenants cannot be combined with memberships")
+		return account, fmt.Errorf("legacy role/tenants cannot be combined with memberships: %w", identity.ErrAccountValidation)
 	}
 	account.Role = ""
 	account.Tenants = nil
@@ -422,7 +425,7 @@ func (a *LocalAuthenticator) hasEnabledPlatformAdminLocked() bool {
 }
 func (a *LocalAuthenticator) persistLocked() error {
 	if a.path == "" {
-		return errors.New("local account store is not writable")
+		return fmt.Errorf("local account store is not writable: %w", identity.ErrAccountStoreUnavailable)
 	}
 	accounts := make([]LocalAccount, 0, len(a.accounts))
 	for _, account := range a.accounts {
@@ -437,25 +440,26 @@ func (a *LocalAuthenticator) persistLocked() error {
 	}
 	tempName := temp.Name()
 	defer os.Remove(tempName)
-	if err := temp.Chmod(0600); err != nil {
+	rollback := func(err error) error {
 		temp.Close()
-		return err
+		return fmt.Errorf("%v: %w", err, identity.ErrAccountStoreUnavailable)
+	}
+	if err := temp.Chmod(0600); err != nil {
+		return rollback(err)
 	}
 	encoder := json.NewEncoder(temp)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(document); err != nil {
-		temp.Close()
-		return err
+		return rollback(err)
 	}
 	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
+		return rollback(err)
 	}
 	if err := temp.Close(); err != nil {
-		return err
+		return fmt.Errorf("%v: %w", err, identity.ErrAccountStoreUnavailable)
 	}
 	if err := os.Rename(tempName, a.path); err != nil {
-		return fmt.Errorf("replace local accounts file: %w", err)
+		return fmt.Errorf("replace local accounts file: %w: %w", err, identity.ErrAccountStoreUnavailable)
 	}
 	return nil
 }

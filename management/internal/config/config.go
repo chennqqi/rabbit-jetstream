@@ -17,6 +17,7 @@ type Config struct {
 	DeploymentProfile         string
 	ReleaseManifest           string
 	HTTPAddr                  string
+	TrustedProxyHops          int
 	LocalDemo                 bool
 	NATSURL                   string
 	NATSUser                  string
@@ -74,6 +75,7 @@ func FromEnv() Config {
 		DeploymentProfile:         env("RJS_DEPLOYMENT_PROFILE", "unknown"),
 		ReleaseManifest:           os.Getenv("RJS_RELEASE_MANIFEST"),
 		HTTPAddr:                  env("RJS_HTTP_ADDR", ":8223"),
+		TrustedProxyHops:          nonNegativeInt("RJS_TRUSTED_PROXY_HOPS", 0),
 		LocalDemo:                 boolean("RJS_LOCAL_DEMO", false),
 		NATSURL:                   env("RJS_NATS_URL", "nats://127.0.0.1:4222"),
 		NATSUser:                  os.Getenv("RJS_NATS_USER"),
@@ -216,6 +218,20 @@ func boolean(key string, fallback bool) bool {
 	}
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// nonNegativeInt follows the lenient config convention: an absent or invalid
+// value falls back to the default instead of failing startup.
+func nonNegativeInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
 		return fallback
 	}
 	return parsed

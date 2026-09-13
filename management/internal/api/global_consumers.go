@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chennqqi/rabbit-jetstream/management/internal/apigen"
 	"github.com/chennqqi/rabbit-jetstream/management/internal/tenant"
 )
 
@@ -95,17 +96,40 @@ func (h *Handler) globalConsumers(w http.ResponseWriter, r *http.Request) {
 	if end > total {
 		end = total
 	}
-	writeJSON(w, http.StatusOK, struct {
-		State        string              `json:"state"`
-		GenerationID string              `json:"generation_id"`
-		StartedAt    time.Time           `json:"started_at"`
-		CompletedAt  time.Time           `json:"completed_at"`
-		FailedAt     *time.Time          `json:"failed_at,omitempty"`
-		Items        []globalConsumerRow `json:"items"`
-		Total        int                 `json:"total"`
-		Offset       int                 `json:"offset"`
-		Limit        int                 `json:"limit"`
-	}{status.State, status.Generation.ID, status.Generation.StartedAt, status.Generation.CompletedAt, status.FailedAt, items[start:end], total, query.offset, query.limit})
+	writeJSON(w, http.StatusOK, apigen.GlobalConsumerPage{
+		State:        apigen.GlobalConsumerPageState(status.State),
+		GenerationId: status.Generation.ID,
+		StartedAt:    status.Generation.StartedAt,
+		CompletedAt:  status.Generation.CompletedAt,
+		FailedAt:     status.FailedAt,
+		Items:        globalConsumerAPIItems(items[start:end]),
+		Total:        total,
+		Offset:       query.offset,
+		Limit:        query.limit,
+	})
+}
+
+func globalConsumerAPIItems(rows []globalConsumerRow) []apigen.GlobalConsumerRow {
+	items := make([]apigen.GlobalConsumerRow, len(rows))
+	for index, row := range rows {
+		item := apigen.GlobalConsumerRow{
+			Stream:     row.Stream,
+			Name:       row.Name,
+			Mode:       apigen.GlobalConsumerRowMode(row.Mode),
+			Status:     apigen.GlobalConsumerRowStatus(row.Status),
+			Ownership:  apigen.GlobalConsumerRowOwnership(row.Ownership),
+			Pending:    row.Pending,
+			AckPending: row.AckPending,
+		}
+		if row.Queue != "" {
+			item.Queue = &row.Queue
+		}
+		if row.Durable != "" {
+			item.Durable = &row.Durable
+		}
+		items[index] = item
+	}
+	return items
 }
 
 func (h *Handler) refreshGlobalConsumers(w http.ResponseWriter, r *http.Request) {

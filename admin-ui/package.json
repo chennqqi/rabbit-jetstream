@@ -10,6 +10,8 @@
     "verify:dist": "node scripts/dist-sync.mjs --check",
     "preview": "node node_modules/vite/bin/vite.js preview --host 127.0.0.1",
     "test": "node --test tests/*.test.mjs",
+    "test:visual-qa": "node scripts/s4-visual-qa.mjs",
+    "test:sse-live": "node scripts/sse-browser-live.mjs",
     "test:live": "node ../tests/admin-ui/candidate-live.mjs",
     "test:selected": "node ../tests/admin-ui/candidate-selected.mjs"
   },
@@ -20,8 +22,12 @@
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
     "@vitejs/plugin-react": "5.0.4",
     "axe-core": "4.10.3",
+    "jsdom": "26.1.0",
+    "openapi-typescript": "7.10.1",
     "vite": "6.4.2"
   }
 }

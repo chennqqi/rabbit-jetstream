@@ -167,8 +167,8 @@ func TestLocalAuthenticator_RejectsCredentialsTamperingAndExpiry(t *testing.T) {
 		t.Fatalf("tampered token accepted: %v", err)
 	}
 	now = now.Add(time.Minute)
-	if _, err := authenticator.Verify(context.Background(), token); !errors.Is(err, ErrInvalidLocalCredentials) {
-		t.Fatalf("expired token accepted: %v", err)
+	if _, err := authenticator.Verify(context.Background(), token); !errors.Is(err, identity.ErrTokenExpired) || errors.Is(err, ErrInvalidLocalCredentials) {
+		t.Fatalf("expired token must report identity.ErrTokenExpired, got %v", err)
 	}
 }
 

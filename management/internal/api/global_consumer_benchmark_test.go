@@ -3,6 +3,11 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,8 +47,9 @@ func (source *benchmarkGlobalConsumerSource) ListDeclarations(context.Context) (
 }
 func (source *benchmarkGlobalConsumerSource) ListConsumers(_ context.Context, stream string) ([]jetstream.Consumer, error) {
 	items := make([]jetstream.Consumer, benchmarkConsumersPerStream)
+	queue := "queue-" + strings.TrimPrefix(stream, "stream-")
 	for index := range items {
-		items[index] = jetstream.Consumer{Stream: stream, Name: fmt.Sprintf("consumer-%02d", index), Durable: fmt.Sprintf("consumer-%02d", index), Mode: "pull", DeliverPolicy: "all", AckPolicy: "explicit", AckWaitNanos: int64(30 * time.Second), MaxDeliver: 5, ReplayPolicy: "instant", FilterSubjects: []string{fmt.Sprintf("subject.%d", index)}, Metadata: map[string]string{"rabbit-jetstream.io/queue": source.declarations[0].Queue}, Pending: uint64(index), AckPending: index}
+		items[index] = jetstream.Consumer{Stream: stream, Name: fmt.Sprintf("consumer-%02d", index), Durable: fmt.Sprintf("consumer-%02d", index), Mode: "pull", DeliverPolicy: "all", AckPolicy: "explicit", AckWaitNanos: int64(30 * time.Second), MaxDeliver: 5, ReplayPolicy: "instant", FilterSubjects: []string{fmt.Sprintf("subject.%d", index)}, Metadata: map[string]string{"rabbit-jetstream.io/queue": queue}, Pending: uint64(index), AckPending: index}
 	}
 	return items, nil
 }
@@ -59,6 +65,11 @@ func BenchmarkCollectGlobalConsumers100k(b *testing.B) {
 		}
 		if len(generation.Rows) != benchmarkGlobalStreams*benchmarkConsumersPerStream {
 			b.Fatalf("rows=%d", len(generation.Rows))
+		}
+		for _, row := range generation.Rows {
+			if row.Status != "present" || row.Ownership != "matching" {
+				b.Fatalf("unexpected row semantics: status=%s ownership=%s", row.Status, row.Ownership)
+			}
 		}
 	}
 }
@@ -77,5 +88,45 @@ func BenchmarkQueryGlobalConsumers100k(b *testing.B) {
 		if len(rows) != benchmarkGlobalStreams {
 			b.Fatalf("rows=%d", len(rows))
 		}
+	}
+}
+
+func BenchmarkHTTPGlobalConsumers100k(b *testing.B) {
+	source := newBenchmarkGlobalConsumerSource()
+	byStream := make(map[string][]jetstream.Consumer, len(source.streams))
+	for _, stream := range source.streams {
+		byStream[stream.Name], _ = source.ListConsumers(context.Background(), stream.Name)
+	}
+	backend := &globalHTTPBackend{
+		fakeBackend: &fakeBackend{streams: source.streams, declarations: source.declarations},
+		byStream:    byStream,
+	}
+	handler := NewWithControllerAuth(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "benchmark", "dev", nil, nil, AuthConfig{
+		RequireReadAuth: true,
+		OperatorTokens:  []string{"operator"},
+		AuditorTokens:   []string{"auditor"},
+	})
+	refresh := httptest.NewRequest(http.MethodPost, "/api/v1/consumers/refresh", nil)
+	refresh.Header.Set("Authorization", "Bearer operator")
+	refreshResponse := httptest.NewRecorder()
+	handler.ServeHTTP(refreshResponse, refresh)
+	if refreshResponse.Code != http.StatusOK {
+		b.Fatalf("refresh status=%d body=%s", refreshResponse.Code, refreshResponse.Body.String())
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/consumers?q=consumer-09&mode=pull&limit=200", nil)
+		request.Header.Set("Authorization", "Bearer auditor")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			b.Fatalf("query status=%d body=%s", response.Code, response.Body.String())
+		}
+		if strings.Contains(response.Body.String(), `"ownership":"different"`) || !strings.Contains(response.Body.String(), `"total":10000`) {
+			b.Fatalf("query returned incorrect ownership or total")
+		}
+		b.ReportMetric(float64(response.Body.Len()), "response-B")
 	}
 }

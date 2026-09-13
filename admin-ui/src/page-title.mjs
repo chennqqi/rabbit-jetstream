@@ -4,7 +4,7 @@ const names=Object.freeze({
 });
 
 export function consolePageTitle({phase,authenticated=false,route={},language="en"}={}){
-  const text=language==="zh"?names.zh:names.en;
+  const text=names[language]??names.en;
   if(!authenticated)return `${phase==="expired"?text.expired:text.login} — Rabbit JetStream`;
   const label=text[route.kind]??text.unavailable;
   const identity=route.kind==="consumer"?[route.stream,route.name]:["node","node-connections"].includes(route.kind)?[route.id]:route.kind==="node-connection"?[route.id,route.cid]:["queue","edit-queue","delete-queue","stream"].includes(route.kind)?[route.name]:[];
