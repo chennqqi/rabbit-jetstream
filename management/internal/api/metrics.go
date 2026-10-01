@@ -165,16 +165,28 @@ func (h *Handler) prometheus(w http.ResponseWriter, r *http.Request) {
 		metric(&output, "rjs_nats_nodes", map[string]string{"status": "unavailable"}, float64(nodes.Unavailable))
 	}
 	if h.controller != nil {
-		status := h.controller.Status()
+		status := h.controllerStatusFor(ctx)
 		instance := map[string]string{"instance": status.InstanceID}
 		metricHelp(&output, "rjs_controller_leader", "Whether this management instance is controller leader.", "gauge")
 		metric(&output, "rjs_controller_leader", instance, boolFloat(status.Leader))
 		metricHelp(&output, "rjs_controller_blocked_queues", "Queue declarations blocked in the latest controller pass.", "gauge")
 		metric(&output, "rjs_controller_blocked_queues", instance, float64(status.Blocked))
-		metricHelp(&output, "rjs_dlq_moved_total", "Messages moved to dead-letter Queues by this instance.", "counter")
+		metricHelp(&output, "rjs_dlq_processed_total", "DLQ advisory processing attempts across all Queues on this instance, including redeliveries.", "counter")
+		metric(&output, "rjs_dlq_processed_total", instance, float64(status.DLQProcessed))
+		metricHelp(&output, "rjs_dlq_ignored_total", "DLQ advisory attempts ignored as invalid JSON or without a matching declared source on this instance.", "counter")
+		metric(&output, "rjs_dlq_ignored_total", instance, float64(status.DLQIgnored))
+		metricHelp(&output, "rjs_dlq_moved_total", "DLQ move attempts completed on this instance, including already-absent source messages; not unique transfers.", "counter")
 		metric(&output, "rjs_dlq_moved_total", instance, float64(status.DLQMoved))
 		metricHelp(&output, "rjs_dlq_failed_total", "Dead-letter move attempts that failed on this instance.", "counter")
 		metric(&output, "rjs_dlq_failed_total", instance, float64(status.DLQFailed))
+		if len(status.DLQByQueue) > 0 {
+			metricHelp(&output, "rjs_dlq_queue_moved_total", "Dead-letter moves completed for the named source Queue on this instance; includes already-absent source messages.", "counter")
+			metricHelp(&output, "rjs_dlq_queue_failed_total", "Dead-letter move attempts that failed for the named source Queue on this instance.", "counter")
+			for queue, counts := range status.DLQByQueue {
+				metric(&output, "rjs_dlq_queue_moved_total", map[string]string{"queue": queue}, float64(counts.Moved))
+				metric(&output, "rjs_dlq_queue_failed_total", map[string]string{"queue": queue}, float64(counts.Failed))
+			}
+		}
 		metricHelp(&output, "rjs_controller_last_success_timestamp_seconds", "Unix timestamp of the latest successful leader pass.", "gauge")
 		lastSuccess := float64(0)
 		if !status.LastSuccess.IsZero() {

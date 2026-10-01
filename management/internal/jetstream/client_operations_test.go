@@ -493,6 +493,9 @@ func TestClientProcessesDeadLetterAdvisories(t *testing.T) {
 	if err != nil || result.Processed != 3 || result.Moved != 1 || result.Ignored != 2 || result.Failed != 0 {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
+	if result.PerQueue["source"].Moved != 1 || result.PerQueue["source"].Failed != 0 {
+		t.Fatalf("per-queue attribution=%#v, want moved=1 for source", result.PerQueue)
+	}
 	if !bad.termed || !other.acked || !good.acked || len(backend.published) != 1 {
 		t.Fatalf("bad=%#v other=%#v good=%#v published=%d", bad, other, good, len(backend.published))
 	}
@@ -521,6 +524,9 @@ func TestClientRetriesFailedDeadLetterPublish(t *testing.T) {
 	result, err := client.ProcessDeadLetters(context.Background(), []topology.Declaration{{Queue: "source", Plan: plan}, {Queue: "target", Plan: target}}, 1)
 	if err != nil || result.Failed != 1 || !event.nakd || backend.streams[plan.Stream.Name].messages[1] == nil {
 		t.Fatalf("result=%#v event=%#v err=%v", result, event, err)
+	}
+	if result.PerQueue["source"].Failed != 1 {
+		t.Fatalf("per-queue attribution=%#v, want failed=1 for source", result.PerQueue)
 	}
 }
 

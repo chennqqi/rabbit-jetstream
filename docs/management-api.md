@@ -1,6 +1,6 @@
 # Management API
 
-The embedded read-only Admin UI is served at `/admin/` and consumes only the endpoints below. `/` redirects to the console; health and API paths remain unchanged.
+The embedded Admin UI is served at `/admin/` and consumes only the endpoints below. The console is no longer read-only: reviewed Queue create/update/delete, local account management, diagnostics jobs and audit reads are implemented behind authentication (see `webui-access.md` and the C-contract status in `webui-api-contracts.md`). `/` redirects to the console; health and API paths remain unchanged.
 
 `GET /metrics` exposes Prometheus text metrics without authentication for in-cluster scraping. Do not expose it directly to untrusted networks.
 

@@ -28,12 +28,11 @@ groups:
   - name: rabbit-jetstream-message-safety
     rules:
       - alert: RabbitJetStreamDeadLetterFailures
-        expr: increase(rjs_dlq_failed_total[5m]) > 0
+        expr: sum by (queue) (increase(rjs_dlq_queue_failed_total[5m])) > 0
         labels: {severity: critical}
         annotations:
-          summary: Dead-letter transfers are failing
-          description: At least one leader-side DLQ transfer failed in the last five minutes.
-
+          summary: "Dead-letter moves are failing for queue {{ $labels.queue }}"
+          description: "The controller failed to move dead-lettered messages out of this source Queue in the last five minutes. Inspect the target declaration and the dead-letter diagnostics for this Queue."
       - alert: RabbitJetStreamQueueBacklogHigh
         expr: rjs_queue_messages > 100000
         for: 15m

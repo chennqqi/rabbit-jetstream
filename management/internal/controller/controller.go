@@ -29,6 +29,8 @@ type Status struct {
 	DLQProcessed int       `json:"dlqProcessed"`
 	DLQMoved     int       `json:"dlqMoved"`
 	DLQFailed    int       `json:"dlqFailed"`
+	DLQIgnored   int       `json:"dlqIgnored"`
+	DLQByQueue   map[string]topology.DeadLetterQueueCounts `json:"dlqByQueue,omitempty"`
 	LastError    string    `json:"lastError,omitempty"`
 }
 
@@ -125,21 +127,35 @@ func (c *Controller) runOnce(parent context.Context) {
 	dlqResult, dlqErr := c.backend.ProcessDeadLetters(dlqCtx, declarations, 100)
 	dlqCancel()
 	if dlqErr != nil {
-		c.update(now, true, len(declarations), reconciled, blocked, dlqErr.Error())
+		c.updateWithDeadLetters(now, true, len(declarations), reconciled, blocked, dlqErr.Error(), dlqResult)
 		c.logger.Warn("dead-letter processing failed", "error", dlqErr)
 		return
 	}
-	c.mu.Lock()
-	c.status.DLQProcessed += dlqResult.Processed
-	c.status.DLQMoved += dlqResult.Moved
-	c.status.DLQFailed += dlqResult.Failed
-	c.mu.Unlock()
-	c.update(now, true, len(declarations), reconciled, blocked, "")
+	c.updateWithDeadLetters(now, true, len(declarations), reconciled, blocked, "", dlqResult)
 }
 
 func (c *Controller) update(now time.Time, leader bool, declarations, reconciled, blocked int, lastError string) {
+	c.updateWithDeadLetters(now, leader, declarations, reconciled, blocked, lastError, topology.DeadLetterProcessResult{})
+}
+
+func (c *Controller) updateWithDeadLetters(now time.Time, leader bool, declarations, reconciled, blocked int, lastError string, result topology.DeadLetterProcessResult) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// A batch may report completed work together with a later read/ack error.
+	// Publish its counters and run status atomically, even on partial failure.
+	c.status.DLQProcessed += result.Processed
+	c.status.DLQMoved += result.Moved
+	c.status.DLQFailed += result.Failed
+	c.status.DLQIgnored += result.Ignored
+	for queue, counts := range result.PerQueue {
+		if c.status.DLQByQueue == nil {
+			c.status.DLQByQueue = make(map[string]topology.DeadLetterQueueCounts)
+		}
+		current := c.status.DLQByQueue[queue]
+		current.Moved += counts.Moved
+		current.Failed += counts.Failed
+		c.status.DLQByQueue[queue] = current
+	}
 	c.status.Leader, c.status.LastRun = leader, now
 	c.status.Declarations, c.status.Reconciled, c.status.Blocked, c.status.LastError = declarations, reconciled, blocked, lastError
 	if lastError == "" && leader {
