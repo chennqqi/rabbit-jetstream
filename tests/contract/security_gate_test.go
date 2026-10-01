@@ -15,7 +15,9 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return string(value)
+		// Normalize CRLF to LF so literal-contains assertions match regardless
+		// of the host's checkout line endings (Windows checkouts use CRLF).
+		return strings.ReplaceAll(string(value), "\r\n", "\n")
 	}
 	for _, file := range []string{"packaging/Dockerfile.nats-server", "packaging/Dockerfile.management", "packaging/Dockerfile.operator"} {
 		content := read(file)
