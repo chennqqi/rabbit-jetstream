@@ -61,6 +61,12 @@ try {
       if (response.status === 200) { const query=new URL(route.request().url()).searchParams; response.body.limit=Number(query.get("limit")); response.body.offset=Number(query.get("offset")); }
       await route.fulfill({status: response.status, contentType: "application/json", body: JSON.stringify(response.body)});
     });
+    // Auth fixtures: the preview server has no backend, so satisfy the
+    // recovery-token login and session probes the console issues pre-render.
+    await page.route("**/api/v1/auth/login", async route => route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({access_token: token, token_type: "Bearer", expires_at: new Date(Date.now()+3600000).toISOString(), actor: "s4-visual-qa", role: "operator", tenants: ["local"]})}));
+    await page.route("**/api/v1/session", async route => route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({actor: "s4-visual-qa", role: "operator", tenants: ["local"], active_tenant: "local", permissions: ["resources:read","audit:read","history:read","queue:preview","queue:apply","queue:delete","diagnostics:create","diagnostics:download","access:manage"], expires_at: new Date(Date.now()+3600000).toISOString(), resource_read_policy: "authenticated"})}));
+    await page.route("**/api/v1/console/capabilities", async route => route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({schema: "rjs.console-capabilities.v1", deployment_profile: "standalone", runtime_revision: "s4-fixture", runtime_clean: false, qualification: null, mutation_capabilities: {queue: {preview: true, apply: true, delete: true}}})}));
+    await page.route("**/api/v1/oidc/config", async route => route.fulfill({status: 404, contentType: "application/json", body: JSON.stringify({error: {code: "browser_oidc_disabled", message: "fixture"}})}));
     await authenticate(page);
     const documentLanguage = await page.locator("html").getAttribute("lang");
     const expectedLanguage = language === "zh" ? "zh-CN" : "en";
@@ -93,6 +99,10 @@ try {
   const context = await firefoxBrowser.newContext({viewport: {width: 375, height: 900}});
   const page = await context.newPage();
   await page.route(/\/api\/v1\/consumers(?:\?|$)/, route => { const body=responseFor("maximum-column").body,query=new URL(route.request().url()).searchParams; body.limit=Number(query.get("limit"));body.offset=Number(query.get("offset"));return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify(body)}); });
+  await page.route("**/api/v1/auth/login", async route => route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({access_token: token, token_type: "Bearer", expires_at: new Date(Date.now()+3600000).toISOString(), actor: "s4-visual-qa", role: "operator", tenants: ["local"]})}));
+  await page.route("**/api/v1/session", async route => route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({actor: "s4-visual-qa", role: "operator", tenants: ["local"], active_tenant: "local", permissions: ["resources:read","audit:read","history:read","queue:preview","queue:apply","queue:delete","diagnostics:create","diagnostics:download","access:manage"], expires_at: new Date(Date.now()+3600000).toISOString(), resource_read_policy: "authenticated"})}));
+  await page.route("**/api/v1/console/capabilities", async route => route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({schema: "rjs.console-capabilities.v1", deployment_profile: "standalone", runtime_revision: "s4-fixture", runtime_clean: false, qualification: null, mutation_capabilities: {queue: {preview: true, apply: true, delete: true}}})}));
+  await page.route("**/api/v1/oidc/config", async route => route.fulfill({status: 404, contentType: "application/json", body: JSON.stringify({error: {code: "browser_oidc_disabled", message: "fixture"}})}));
   await authenticate(page); await navigateConsumers(page);
   try { await page.locator(".collection-table-region").waitFor({timeout:5000}); }
   catch { throw new Error(`Firefox collection did not render. Page text: ${(await page.locator("body").innerText()).slice(0,1200)}`); }

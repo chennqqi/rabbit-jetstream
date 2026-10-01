@@ -45,7 +45,10 @@ test("creates, updates, finds and deletes a Queue through reviewed workflows",as
   const capabilities=page.getByRole("region",{name:"Server capabilities",exact:true});
   await expect(capabilities.getByText(deploymentProfile,{exact:true})).toBeVisible();
   await expect(capabilities.getByText("configuration",{exact:true})).toBeVisible();
-  await navigate(page,"Create Queue");
+  // Create Queue lives in the Queue list page header since the navigation
+  // regrouping: go to the list first, then click the header button.
+  await navigate(page,"Queue list");
+  await page.getByRole("link",{name:"Create Queue",exact:true}).click();
   await page.getByLabel("New Queue name",{exact:true}).fill(queueName);
   await page.getByLabel("Subjects (one per line)",{exact:true}).fill(`${queueName}.events`);
   const requestedReplicas=deploymentProfile==="cluster"?"3":"1";
@@ -76,7 +79,13 @@ test("creates, updates, finds and deletes a Queue through reviewed workflows",as
   await page.getByRole("button",{name:"Apply reviewed draft",exact:true}).click();
   await expect(page.getByText(/^Apply accepted\./)).toBeVisible();
 
-  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
+  // Session clearing lives inside the identity panel since the top-bar weight
+  // fix: open the disclosure first, then confirm in the dialog.
+  await page.locator(".session-controls summary").click();
+  await page.locator(".identity-panel").getByRole("button",{name:"Clear local session",exact:true}).click();
+  // A clean session clears without a confirmation dialog; confirm only when
+  // retained work makes the dialog appear.
+  await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click({timeout:2000}).catch(()=>{});
   await authenticate(page);
   await navigate(page,"Queue list");
   await page.getByRole("link",{name:queueName,exact:true}).click();
@@ -93,7 +102,11 @@ test("creates, updates, finds and deletes a Queue through reviewed workflows",as
 });
 
 test("keeps bearer credentials in memory and reports authorization failures",async({page})=>{
-  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
+  await page.locator(".session-controls summary").click();
+  await page.locator(".identity-panel").getByRole("button",{name:"Clear local session",exact:true}).click();
+  // A clean session clears without a confirmation dialog; confirm only when
+  // retained work makes the dialog appear.
+  await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click({timeout:2000}).catch(()=>{});
   await authenticate(page,"invalid-token");
   await expect(page.getByRole("alert")).toContainText(/identity|authorization|credential|401/i);
   expect(await page.evaluate(()=>({local:Object.values(localStorage),session:Object.values(sessionStorage),cookies:document.cookie}))).toEqual({local:[],session:[],cookies:""});
