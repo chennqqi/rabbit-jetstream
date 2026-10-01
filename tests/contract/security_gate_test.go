@@ -29,11 +29,11 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		}
 	}
 	natsImage := read("packaging/Dockerfile.nats-server")
-	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.53.0") {
+	if !strings.Contains(natsImage, "NATS_X_CRYPTO_VERSION=v0.55.0") {
 		t.Error("NATS image lost its documented security dependency override")
 	}
 	operator := read("packaging/Dockerfile.operator")
-	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/net@v0.56.0") || !strings.Contains(operator, "-X main.version=${VERSION}") || !strings.Contains(operator, "GOARCH=$TARGETARCH") {
+	if strings.Contains(operator, "nats-box") || !strings.Contains(operator, "NATSCLI_VERSION=v0.4.0") || !strings.Contains(operator, "golang.org/x/crypto@v0.55.0") || !strings.Contains(operator, "golang.org/x/net@v0.57.0") || !strings.Contains(operator, "-X main.version=${VERSION}") || !strings.Contains(operator, "GOARCH=$TARGETARCH") {
 		t.Error("operator image no longer builds the minimal patched nats CLI")
 	}
 	scanner := read("tests/security/scan.ps1")
@@ -50,8 +50,18 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(workflow, "tests/deployment/kubernetes-smoke.sh") {
 		t.Error("CI no longer installs the chart in a real Kubernetes cluster")
 	}
+	makefile := read("Makefile")
+	localRC := read("scripts/release/local-rc.ps1")
+	if !strings.Contains(makefile, "test-admin-ui-all: test-admin-ui test-admin-ui-cluster") || !strings.Contains(workflow, "make test-admin-ui-all") {
+		t.Error("CI no longer runs both standalone and cluster Admin UI browser gates")
+	}
+	for _, requirement := range []string{"admin-ui-browser-standalone-e2e", "admin-ui-browser-cluster-e2e", "'-DeploymentProfile', 'standalone'", "'-DeploymentProfile', 'cluster'"} {
+		if !strings.Contains(localRC, requirement) {
+			t.Errorf("Full/Release local RC lost Admin UI browser requirement %q", requirement)
+		}
+	}
 	kubernetesSmoke := read("tests/deployment/kubernetes-smoke.sh")
-	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "ctr -n k8s.io images tag", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", "busybox:1.37.0@sha256:", "auth_before", "auth_after", "network-allowed", "network-denied", "management NetworkPolicy allowed", "nats-network-allowed", "nats-network-denied", "NATS NetworkPolicy allowed", `"kind":"Eviction"`, "disruptionsAllowed", "disruption budget", "two simultaneous voluntary disruptions", " test ", "/readyz", "/admin/", " uninstall "} {
+	for _, requirement := range []string{"sigs.k8s.io/kind@v0.31.0", "kindest/node:v1.35.0@sha256:", "load docker-image", "ctr -n k8s.io images tag", "rollout status", "sort -u", "get pvc", "^Bound$", "helm:3.18.4@sha256:", "busybox:1.37.0@sha256:", "auth_before", "auth_after", "admin-token", "Authorization: Bearer", "/api/v1/console/capabilities", `"deployment":{"profile":"cluster","source":"configuration"}`, "network-allowed", "network-denied", "management NetworkPolicy allowed", "nats-network-allowed", "nats-network-denied", "NATS NetworkPolicy allowed", `"kind":"Eviction"`, "disruptionsAllowed", "disruption budget", "two simultaneous voluntary disruptions", " test ", "/readyz", "/admin/", " uninstall "} {
 		if !strings.Contains(kubernetesSmoke, requirement) {
 			t.Errorf("Kubernetes smoke gate lost requirement %q", requirement)
 		}
@@ -70,7 +80,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(tlsFixture, `filepath.Join(*output, "server")`) || !strings.Contains(tlsFixture, `filepath.Join(*output, "client")`) || !strings.Contains(kubernetesSmoke, "server/tls.key") || !strings.Contains(kubernetesSmoke, "client/tls.key") {
 		t.Error("Kubernetes production smoke gate no longer proves distinct server and client TLS keys")
 	}
-	if !strings.Contains(workflow, "make verify-upstream-online") || !strings.Contains(read("Makefile"), "go run ./tools/upstreamcheck -online") {
+	if !strings.Contains(workflow, "make verify-upstream-online") || !strings.Contains(makefile, "go run ./tools/upstreamcheck -online") {
 		t.Error("CI no longer verifies the official NATS subtree provenance")
 	}
 	upstreamJobStart := strings.Index(workflow, "  upstream-build:")
@@ -118,6 +128,13 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 		if !strings.Contains(compose, "prom/prometheus:v3.12.0-distroless@sha256:") {
 			t.Errorf("%s uses a mutable Prometheus image", file)
 		}
+		profile := "standalone"
+		if strings.HasSuffix(file, "cluster.yml") {
+			profile = "cluster"
+		}
+		if !strings.Contains(compose, "RJS_DEPLOYMENT_PROFILE: "+profile) {
+			t.Errorf("%s does not declare its deployment profile as %q", file, profile)
+		}
 	}
 	healthHook := read("deploy/helm/rabbit-jetstream/templates/tests/health.yaml")
 	if !strings.Contains(healthHook, "busybox:1.37.0@sha256:") {
@@ -157,6 +174,9 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if !strings.Contains(managementTemplate, "minDomains: {{ .Values.management.replicaCount }}") || !strings.Contains(managementTemplate, "DoNotSchedule") {
 		t.Error("production management replicas no longer require distinct nodes")
 	}
+	if !strings.Contains(managementTemplate, "RJS_DEPLOYMENT_PROFILE") || !strings.Contains(managementTemplate, `ternary "standalone" "cluster"`) {
+		t.Error("Helm management deployment no longer declares its configured topology profile")
+	}
 	networkPolicyTemplate := read("deploy/helm/rabbit-jetstream/templates/networkpolicy.yaml")
 	for _, requirement := range []string{"serviceMonitor.enabled", "networkPolicy.monitoring.enabled", "networkPolicy.monitoring.namespaceSelector", "networkPolicy.monitoring.podSelector"} {
 		if !strings.Contains(networkPolicyTemplate, requirement) {
@@ -183,6 +203,28 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	for _, operatorMetadata := range []string{"OPERATOR_IMAGE:", "OPERATOR_DIGEST:", `operator:\n  image:`, `"$OPERATOR_IMAGE" "$OPERATOR_DIGEST"`} {
 		if !strings.Contains(release, operatorMetadata) {
 			t.Errorf("release image metadata lost operator field %q", operatorMetadata)
+		}
+	}
+	localPackage := read("scripts/release/package-local.ps1")
+	for _, requirement := range []string{"Push-Location $RepositoryRoot", "go run ./tools/uiidentity", "finally { Pop-Location }", "sha256-framed-files-v1", "invalid embedded WebUI identity", "webui = [ordered]", "file_count = $WebUIIdentity.fileCount", "-X main.revision=$ServerRevision", "-X main.buildClean=true", "REVISION=$ServerRevision", "BUILD_CLEAN=true"} {
+		if !strings.Contains(localPackage, requirement) {
+			t.Errorf("local release manifest lost WebUI identity requirement %q", requirement)
+		}
+	}
+	managementImage := read("packaging/Dockerfile.management")
+	if !strings.Contains(managementImage, "ARG REVISION=") || !strings.Contains(managementImage, "ARG BUILD_CLEAN=false") || !strings.Contains(managementImage, "-X main.revision=${REVISION}") || !strings.Contains(managementImage, "-X main.buildClean=${BUILD_CLEAN}") || !strings.Contains(release, "REVISION=${{ github.sha }}") || !strings.Contains(release, "BUILD_CLEAN=true") {
+		t.Error("release management builds no longer inject the exact server revision")
+	}
+	baremetalPackage := read("scripts/release/package-baremetal.ps1")
+	for _, requirement := range []string{"frozen runtime manifest lacks a valid WebUI identity", "webui=$Manifest.webui"} {
+		if !strings.Contains(baremetalPackage, requirement) {
+			t.Errorf("bare-metal release manifest lost WebUI identity requirement %q", requirement)
+		}
+	}
+	baremetalRunner := read("tools/baremetal-run/main.go")
+	for _, requirement := range []string{"RJS_RELEASE_MANIFEST=", "runtime-manifest.json"} {
+		if !strings.Contains(baremetalRunner, requirement) {
+			t.Errorf("bare-metal management lost release-manifest binding %q", requirement)
 		}
 	}
 }

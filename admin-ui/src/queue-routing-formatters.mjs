@@ -1,0 +1,2 @@
+const catalogs = Object.freeze({en: Object.freeze({removeSubject: index => `Remove Subject ${index}`, removeKey: (binding, key) => `Remove key ${binding}.${key}`, addKey: binding => `Add key to Binding ${binding}`, removeBinding: binding => `Remove Binding ${binding}`}), zh: Object.freeze({removeSubject: index => `移除 Subject ${index}`, removeKey: (binding, key) => `移除路由键 ${binding}.${key}`, addKey: binding => `为绑定 ${binding} 添加路由键`, removeBinding: binding => `移除绑定 ${binding}`})});
+export function queueRoutingFormatters(language) { return catalogs[language] ?? catalogs.en; }

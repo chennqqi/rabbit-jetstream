@@ -2,6 +2,12 @@
 {{- if and .Values.auth.oidc.issuer (not .Values.auth.oidc.audience) }}
 {{- fail "auth.oidc.audience is required when auth.oidc.issuer is configured" }}
 {{- end }}
+{{- if ne (empty .Values.auth.oidc.browserClientID) (empty .Values.auth.oidc.browserRedirectOrigin) }}
+{{- fail "auth.oidc.browserClientID and auth.oidc.browserRedirectOrigin must be configured together" }}
+{{- end }}
+{{- if and .Values.auth.oidc.browserClientID (ne .Values.auth.oidc.browserClientID .Values.auth.oidc.audience) }}
+{{- fail "auth.oidc.browserClientID must equal auth.oidc.audience" }}
+{{- end }}
 {{- if lt (int .Values.nats.replicaCount) 3 }}
 {{- fail "production.enabled requires nats.replicaCount >= 3" }}
 {{- end }}
@@ -31,8 +37,8 @@
 {{- if not .Values.networkPolicy.egress.enabled }}
 {{- fail "production.enabled requires networkPolicy.egress.enabled=true" }}
 {{- end }}
-{{- if and (or .Values.auth.oidc.issuer .Values.management.telemetry.tracesEndpoint .Values.management.telemetry.metricsEndpoint) (eq (len .Values.networkPolicy.egress.additionalRules) 0) }}
-{{- fail "production.enabled requires explicit networkPolicy.egress.additionalRules for OIDC or OTLP destinations" }}
+{{- if and (or .Values.auth.oidc.issuer .Values.management.telemetry.tracesEndpoint .Values.management.telemetry.metricsEndpoint .Values.management.history.prometheusURL) (eq (len .Values.networkPolicy.egress.additionalRules) 0) }}
+{{- fail "production.enabled requires explicit networkPolicy.egress.additionalRules for OIDC, OTLP, or Prometheus destinations" }}
 {{- end }}
 {{- if not .Values.podDisruptionBudget.enabled }}
 {{- fail "production.enabled requires podDisruptionBudget.enabled=true" }}
@@ -45,6 +51,9 @@
 {{- end }}
 {{- if .Values.management.telemetry.allowInsecure }}
 {{- fail "production.enabled forbids management.telemetry.allowInsecure" }}
+{{- end }}
+{{- if .Values.management.history.allowInsecure }}
+{{- fail "production.enabled forbids management.history.allowInsecure" }}
 {{- end }}
 {{- if and .Values.ingress.enabled (eq (len .Values.ingress.tls) 0) }}
 {{- fail "production.enabled requires ingress.tls when ingress is enabled" }}

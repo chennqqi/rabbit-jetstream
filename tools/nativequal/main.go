@@ -22,12 +22,14 @@ import (
 const evidenceSchema = "rabbit-jetstream.io/native-linux-preflight/v1alpha1"
 
 type releaseManifest struct {
-	Version         string `json:"version"`
-	ServerRevision  string `json:"server_revision"`
-	Qualification   string `json:"qualification"`
-	ContractVersion string `json:"contract_version"`
-	NATSVersion     string `json:"nats_version"`
-	SDK             struct {
+	DeploymentMode       string `json:"deployment_mode,omitempty"`
+	VerificationRevision string `json:"verification_revision,omitempty"`
+	Version              string `json:"version"`
+	ServerRevision       string `json:"server_revision"`
+	Qualification        string `json:"qualification"`
+	ContractVersion      string `json:"contract_version"`
+	NATSVersion          string `json:"nats_version"`
+	SDK                  struct {
 		Version  string `json:"version"`
 		Revision string `json:"revision"`
 	} `json:"sdk"`
@@ -58,20 +60,25 @@ type platformResult struct {
 }
 
 type evidence struct {
-	Schema          string            `json:"schema"`
-	GeneratedAt     string            `json:"generated_at"`
-	SourceRevision  string            `json:"source_revision"`
-	ReleaseVersion  string            `json:"release_version"`
-	SDKVersion      string            `json:"sdk_version"`
-	SDKRevision     string            `json:"sdk_revision"`
-	ContractVersion string            `json:"contract_version"`
-	NATSVersion     string            `json:"nats_version"`
-	Runtime         string            `json:"runtime"`
-	KernelRelease   string            `json:"kernel_release"`
-	Docker          dockerInfo        `json:"docker"`
-	ChecksumFiles   int               `json:"checksum_files"`
-	Images          []platformResult  `json:"images"`
-	Binaries        map[string]string `json:"binaries"`
+	Schema               string            `json:"schema"`
+	GeneratedAt          string            `json:"generated_at"`
+	SourceRevision       string            `json:"source_revision"`
+	ReleaseVersion       string            `json:"release_version"`
+	SDKVersion           string            `json:"sdk_version"`
+	SDKRevision          string            `json:"sdk_revision"`
+	ContractVersion      string            `json:"contract_version"`
+	NATSVersion          string            `json:"nats_version"`
+	Runtime              string            `json:"runtime"`
+	KernelRelease        string            `json:"kernel_release"`
+	Docker               dockerInfo        `json:"docker,omitzero"`
+	DeploymentMode       string            `json:"deployment_mode,omitempty"`
+	Host                 map[string]any    `json:"host,omitempty"`
+	NATSBinarySHA256     string            `json:"nats_binary_sha256,omitempty"`
+	VerificationRevision string            `json:"verification_revision,omitempty"`
+	BundleManifestSHA256 string            `json:"bundle_manifest_sha256,omitempty"`
+	ChecksumFiles        int               `json:"checksum_files"`
+	Images               []platformResult  `json:"images"`
+	Binaries             map[string]string `json:"binaries"`
 }
 
 type qualificationEnvironment struct {
@@ -96,6 +103,8 @@ func runWithQualifier(args []string, stdout, stderr io.Writer, qualifier func(st
 	bundle := flags.String("bundle", "", "local release bundle directory")
 	output := flags.String("output", "", "preflight evidence JSON output")
 	expectedRevision := flags.String("source-revision", "", "expected 40-character server revision")
+	mode := flags.String("mode", "container", "container or bare-metal deployment")
+	dataPath := flags.String("data-path", "", "existing bare-metal data filesystem path")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -103,7 +112,17 @@ func runWithQualifier(args []string, stdout, stderr io.Writer, qualifier func(st
 		fmt.Fprintln(stderr, "-bundle, -output and a 40-character -source-revision are required")
 		return 2
 	}
-	result, err := qualifier(*bundle, *expectedRevision)
+	if *mode != "container" && *mode != "bare-metal" || *mode == "bare-metal" && *dataPath == "" {
+		fmt.Fprintln(stderr, "valid -mode and bare-metal -data-path are required")
+		return 2
+	}
+	var result evidence
+	var err error
+	if *mode == "bare-metal" {
+		result, err = qualifyBareMetal(*bundle, *expectedRevision, *dataPath, qualificationEnvironment{goos: runtime.GOOS, goarch: runtime.GOARCH, readFile: os.ReadFile, command: commandOutput, now: time.Now})
+	} else {
+		result, err = qualifier(*bundle, *expectedRevision)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -378,7 +397,7 @@ func verifyManifestArtifacts(bundle string, manifest releaseManifest) error {
 }
 
 func expectedArtifactPaths(version string) map[string]bool {
-	return map[string]bool{
+	paths := map[string]bool{
 		"bin/linux-amd64/rjs-management":                                true,
 		"bin/linux-amd64/rjsctl":                                        true,
 		"bin/linux-amd64/nativequal":                                    true,
@@ -392,6 +411,12 @@ func expectedArtifactPaths(version string) map[string]bool {
 		"evidence/performance-ci.json":                                  true,
 		"rabbit-jetstream-" + strings.TrimPrefix(version, "v") + ".tgz": true,
 	}
+	if version != "v0.1.0-rc.1" {
+		paths["licenses/NATS-LICENSE"] = true
+		paths["licenses/release-license-records.md"] = true
+		paths["licenses/release-license-records.zh-CN.md"] = true
+	}
+	return paths
 }
 
 func safeRelativePath(path string) bool {

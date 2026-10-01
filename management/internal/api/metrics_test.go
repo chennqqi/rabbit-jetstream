@@ -23,7 +23,7 @@ func TestPrometheusMetricsExposeRuntimeAndRequestState(t *testing.T) {
 		declarations: []topology.Declaration{{Queue: "orders"}},
 	}
 	monitor := fakeMonitor{snapshot: monitoring.Snapshot{Status: "available", Total: 1, Available: 1}}
-	control := fakeController{status: controller.Status{InstanceID: "node\"1", Leader: true, Blocked: 2, DLQMoved: 3, DLQFailed: 1, LastSuccess: time.Unix(100, 0)}}
+	control := fakeController{status: controller.Status{InstanceID: "node\"1", Leader: true, Blocked: 2, DLQProcessed: 6, DLQMoved: 3, DLQFailed: 1, DLQIgnored: 2, LastSuccess: time.Unix(100, 0)}}
 	handler := NewWithController(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "rjs", "v1", monitor, control, "")
 
 	health := httptest.NewRecorder()
@@ -37,6 +37,8 @@ func TestPrometheusMetricsExposeRuntimeAndRequestState(t *testing.T) {
 		`rjs_queue_messages{queue="orders"} 7`, `rjs_nats_nodes{status="available"} 1`,
 		`rjs_controller_leader{instance="node\"1"} 1`, `rjs_controller_blocked_queues{instance="node\"1"} 2`,
 		`rjs_dlq_moved_total{instance="node\"1"} 3`, `rjs_controller_last_success_timestamp_seconds{instance="node\"1"} 100`,
+		`rjs_dlq_processed_total{instance="node\"1"} 6`, `rjs_dlq_ignored_total{instance="node\"1"} 2`,
+		`# TYPE rjs_dlq_processed_total counter`, `# TYPE rjs_dlq_ignored_total counter`,
 		`rjs_http_requests_total{code="200",method="GET",route="GET /healthz"} 1`,
 	} {
 		if !strings.Contains(body, expected) {

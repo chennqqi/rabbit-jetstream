@@ -28,6 +28,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin-ui/package-lock.json
+      - name: Verify embedded Admin UI assets
+        working-directory: admin-ui
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build
+          npm run verify:dist
       - name: Go quality and coverage
         run: |
           make verify-upstream-online
@@ -117,7 +129,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.names.outputs.management }}:${{ github.ref_name }}
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+            BUILD_CLEAN=true
           provenance: mode=max
           sbom: true
       - name: Publish operator image

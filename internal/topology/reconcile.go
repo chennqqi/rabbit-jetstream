@@ -3,6 +3,7 @@ package topology
 import (
 	"reflect"
 	"sort"
+	"strconv"
 )
 
 type ObservedTopology struct {
@@ -94,6 +95,9 @@ func reconcileStream(desired StreamPlan, observed *ObservedStream) Operation {
 		operation.Action = "create"
 		return operation
 	}
+	if blockOwnership(&operation, observed.Metadata, desired.Metadata) {
+		return operation
+	}
 	addChange(&operation, "storage", observed.Storage, desired.Storage, "destructive")
 	addChange(&operation, "subjects", sortedStrings(observed.Subjects), sortedStrings(desired.Subjects), subjectsImpact(observed.Subjects, desired.Subjects))
 	addChange(&operation, "replicas", observed.Replicas, desired.Replicas, "disruptive")
@@ -126,6 +130,9 @@ func reconcileConsumer(desired ConsumerPlan, observed *ObservedConsumer, streamR
 		operation.Action = "create"
 		return operation
 	}
+	if blockOwnership(&operation, observed.Metadata, desired.Metadata) {
+		return operation
+	}
 	filters := observed.FilterSubjects
 	if len(filters) == 0 && observed.FilterSubject != "" {
 		filters = []string{observed.FilterSubject}
@@ -152,6 +159,16 @@ func reconcileConsumer(desired ConsumerPlan, observed *ObservedConsumer, streamR
 	return operation
 }
 
+func blockOwnership(operation *Operation, observed, desired map[string]string) bool {
+	const owner = "rabbit-jetstream.io/queue"
+	if desired[owner] != "" && observed[owner] == desired[owner] {
+		return false
+	}
+	operation.Action, operation.Impact, operation.Blocked = "update", "unsupported", true
+	operation.Reason = "existing resource Queue ownership is missing or different; automatic adoption is not supported"
+	return true
+}
+
 func addChange(operation *Operation, path string, from, to any, impact string) {
 	if reflect.DeepEqual(from, to) {
 		return
@@ -161,13 +178,33 @@ func addChange(operation *Operation, path string, from, to any, impact string) {
 }
 
 func addMetadataChanges(operation *Operation, observed, desired map[string]string) {
-	keys := make([]string, 0, len(desired))
-	for key := range desired {
+	effective := DesiredMetadata(observed, desired)
+	union := make(map[string]struct{}, len(observed)+len(effective))
+	for key := range observed {
+		union[key] = struct{}{}
+	}
+	for key := range effective {
+		union[key] = struct{}{}
+	}
+	keys := make([]string, 0, len(union))
+	for key := range union {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		addChange(operation, "metadata."+key, observed[key], desired[key], "safe")
+		from, fromPresent := observed[key]
+		to, toPresent := effective[key]
+		if fromPresent == toPresent && from == to {
+			continue
+		}
+		fromText, toText := "(absent)", "(absent)"
+		if fromPresent {
+			fromText = strconv.Quote(from)
+		}
+		if toPresent {
+			toText = strconv.Quote(to)
+		}
+		addChange(operation, "metadata."+key, fromText, toText, "safe")
 	}
 }
 

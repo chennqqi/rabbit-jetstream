@@ -1,0 +1,33 @@
+# WebUI diagnostic download proposal
+
+[English](webui-diagnostic-jobs.md) | [简体中文](webui-diagnostic-jobs.zh-CN.md)
+
+Status: the owner approved the recommended instance-local policy on 2026-09-11. WEB-024 is implemented in the candidate: bounded in-memory lifecycle, authenticated operator/creator-only API, fixed metadata collector, audited create/cancel/download, and bilingual download UI. It remains instance-local and restart-ephemeral. Queue/Stream inventories remain excluded until enumeration has a hard work bound; this is not a backup or atomic snapshot. The full embedded Chromium run `artifacts/webui-live-hzzJxJ/report.json` passed all 133 checks, including real create/status/download, bilingual rendering and accessibility inspection.
+
+## Verified integration points
+
+`tools/rjsctl/diagnostics.go` uses a fixed source list, 4 MiB response limits and a ZIP manifest. Its Queue/Stream lists are first-page samples of at most 200, not complete exports. `internal/redact.JSON` preserves exact numbers and rejects malformed JSON without returning raw bytes. Text/embedded secrets still require a stricter browser export policy.
+
+`management/internal/api/handler.go` supplies authenticated principals and `AuditBackend.RecordAudit`. Its current audit helpers hard-code Queue identity and mutation-outcome errors, so they cannot be reused unchanged for downloads. `read_auth.go` alone is insufficient: local-demo reads can be anonymous, while this proposal requires identity for every job request. `app.go` owns shutdown and HTTP deadlines; a job worker must be tied to application shutdown, not left behind the handler. There are no diagnostic routes in the current handler/OpenAPI.
+
+## Approved decision
+
+Implemented: instance-local, bounded in-memory jobs, authenticated operator only, creator-only status/download/cancel. There is no anonymous demo exception or auditor bundle access. Restart loses jobs and data; there is no background recovery. This adds no server files, external storage or credentials. Disk-backed jobs remain outside the approved scope.
+
+## Proposed contract after approval
+
+- Explicit `POST /api/v1/diagnostics/jobs` accepts only the versioned metadata profile, no arbitrary paths, URLs, commands, headers or source lists. Reject unknown/duplicate fields and bound request bytes. No subprocess or CLI invocation from the server, no self-HTTP credential forwarding; collect through bounded typed providers.
+- `GET /api/v1/diagnostics/jobs/{id}` reads status; a separate authenticated download endpoint serves only completed bytes. Cancellation invalidates access and cancels collection. IDs have at least 128 random bits and are not bearer credentials. Each operation revalidates authentication and creator identity; unknown and other-owner jobs are indistinguishable. Token expiry/revocation prevents future access; no token is retained by the worker or placed in URLs/storage. Verify principal uniqueness before using it as an ownership key.
+- Proposed initial budgets: one active collector and two retained jobs per instance, 30-second total collection deadline, 4 MiB per input, 8 MiB aggregate uncompressed output and 8 MiB ZIP, ten-minute expiry measured from creation. These are proposed admission limits, not measured memory/performance claims. Reserve slots/bytes before work, bound encoding/compression overhead, and reject overflow explicitly. No unbounded queue. Bound concurrent downloads and expiry races so in-flight byte references cannot evade memory accounting.
+- States: collecting, ready, partial, failed, cancelled, expired. Publish archive bytes only after ZIP close, manifest/digest checks and required audit records. An omitted source is visible in the manifest and yields partial, never “complete”. Failed/cancelled/expired tasks expose no bytes. Timed cleanup and access-time expiry checks agree; late callbacks cannot republish data. Shutdown cancels workers and releases memory.
+- Metadata only: no message payload, credentials, environment, source files, client subscriptions or arbitrary logs. Reuse JSON redaction with an explicit field/source allowlist; raw errors and Prometheus text require vetted sanitization or omission. Queue/Stream sampling must state first-page limits and collection times. A 200-row HTTP response does not bound backend enumeration cost: providers must have cancellation and hard work budgets before inclusion. Never label this as a full account backup or atomic snapshot.
+- Audit creation intent before collection and download authorization before sending bytes; audit cancellation and terminal outcomes. Audit unavailability prevents initial work or byte release. Distinguish authorization, streaming started, server write completion and client receipt; server success cannot prove the browser saved the file. Outcome audit failure after streaming is not recoverable by a second HTTP JSON response and must be surfaced in server evidence, not claimed as a fully audited success. Do not reuse Queue mutation uncertainty as a download retry rule.
+- Responses use `Cache-Control: no-store`; download uses a server-generated safe filename and fixed ZIP content type, with no external redirect, shared public link or arbitrary range/multipart support. Browser fetch uses the in-memory token, bounds downloaded bytes, checks status/type/length, revokes object URLs and clears references on expiry, logout or navigation. Creation is explicit, never triggered by page refresh; an interrupted create is not automatically repeated. A bounded creator-only lookup/recovery contract is required for lost create responses.
+
+## Implementation and evidence gates
+
+1. Approve storage/access policy, freeze schema, budgets and audit outcome semantics; review principal ownership and account scope.
+2. Implement a pure job store/lifecycle with fake-clock tests for concurrency, capacity, timeout, cancellation, expiry, shutdown, stale completion and bounded downloads. Implement bounded collectors separately from HTTP.
+3. Add authorization-first API/OpenAPI, typed audit events and capability reporting. Test direct anonymous/auditor/other-owner access, expired identity, audit failures, guessed IDs, input injection, memory ceilings and no side effects on rejection.
+4. Add bilingual UI with explicit metadata warning, progress, partial manifest, cancellation, expired/unavailable states and download recovery. No placeholder success or implicit collection.
+5. Run isolated real-service Chromium/Firefox tests, inspect ZIP contents/digests and redaction canaries, verify loss/restart/expiry and keyboard/mobile behavior. Measure collection work and peak memory separately. Do not promote the embedded UI or claim release qualification from unit tests.

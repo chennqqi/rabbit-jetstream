@@ -1,5 +1,5 @@
 param(
-    [string]$Version = 'v0.1.0-rc.1',
+    [string]$Version = 'v0.1.0-rc.2',
     [string]$SDKPath = '',
     [string]$Evidence = 'artifacts/local-rc.json',
     [string]$OutputRoot = 'dist'
@@ -52,30 +52,24 @@ if ($LocalEvidence.mode -ne 'release' -or $LocalEvidence.server.revision -ne $Se
 if (@($LocalEvidence.steps | Where-Object status -ne 'passed').Count -ne 0) { throw 'local Release evidence contains failed steps' }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $Destination 'bin/linux-amd64'), (Join-Path $Destination 'bin/linux-arm64'), (Join-Path $Destination 'images'), (Join-Path $Destination 'evidence') | Out-Null
-$PreviousGOOS = $env:GOOS
-$PreviousGOARCH = $env:GOARCH
-$PreviousCGO = $env:CGO_ENABLED
-try {
-    $env:GOOS = 'linux'; $env:CGO_ENABLED = '0'
-    foreach ($Architecture in @('amd64', 'arm64')) {
-        $env:GOARCH = $Architecture
-        $BinaryDirectory = Join-Path $Destination "bin/linux-$Architecture"
-        Invoke-Checked 'go' @('build', '-trimpath', "-ldflags=-s -w -X main.version=$Version", '-o', (Join-Path $BinaryDirectory 'rjs-management'), './management/cmd/rjs-management')
-        Invoke-Checked 'go' @('build', '-trimpath', "-ldflags=-s -w -X main.version=$Version", '-o', (Join-Path $BinaryDirectory 'rjsctl'), './tools/rjsctl')
-        Invoke-Checked 'go' @('build', '-trimpath', '-ldflags=-s -w', '-o', (Join-Path $BinaryDirectory 'nativequal'), './tools/nativequal')
-    }
-} finally {
-    $env:GOOS = $PreviousGOOS; $env:GOARCH = $PreviousGOARCH; $env:CGO_ENABLED = $PreviousCGO
+$GoImage = 'golang:1.25.13-alpine@sha256:1e0126852075c9c60731c8ba49088448b91f63e2aed97ca9d1a9791622a05946'
+$HostGoModCache = (& go env GOMODCACHE).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'cannot locate Go module cache' }
+foreach ($Architecture in @('amd64', 'arm64')) {
+    $BuildArgs = @('run', '--rm', '-e', 'GOOS=linux', '-e', "GOARCH=$Architecture", '-e', 'CGO_ENABLED=0', '-e', 'GOPROXY=off', '-v', "${RepositoryRoot}:/src:ro", '-v', "${Destination}:/out", '-v', "${HostGoModCache}:/go/pkg/mod", '-w', '/src', $GoImage, 'go', 'build', '-buildvcs=false', '-trimpath')
+    Invoke-Checked 'docker' ($BuildArgs + @("-ldflags=-s -w -X main.version=$Version -X main.revision=$ServerRevision -X main.buildClean=true", '-o', "/out/bin/linux-$Architecture/rjs-management", './management/cmd/rjs-management'))
+    Invoke-Checked 'docker' ($BuildArgs + @("-ldflags=-s -w -X main.version=$Version", '-o', "/out/bin/linux-$Architecture/rjsctl", './tools/rjsctl'))
+    Invoke-Checked 'docker' ($BuildArgs + @('-ldflags=-s -w', '-o', "/out/bin/linux-$Architecture/nativequal", './tools/nativequal'))
 }
 
 $Images = @(
     @{ Name = 'nats'; File = 'packaging/Dockerfile.nats-server'; Tag = "rabbit-jetstream/nats:$Version"; Args = @() },
-    @{ Name = 'management'; File = 'packaging/Dockerfile.management'; Tag = "rabbit-jetstream/management:$Version"; Args = @('--build-arg', "VERSION=$Version") },
+    @{ Name = 'management'; File = 'packaging/Dockerfile.management'; Tag = "rabbit-jetstream/management:$Version"; Args = @('--build-arg', "VERSION=$Version", '--build-arg', "REVISION=$ServerRevision", '--build-arg', 'BUILD_CLEAN=true') },
     @{ Name = 'operator'; File = 'packaging/Dockerfile.operator'; Tag = "rabbit-jetstream/operator:$Version"; Args = @('--build-arg', "VERSION=$Version") }
 )
 foreach ($Image in $Images) {
     $Archive = Join-Path $Destination "images/$($Image.Name).oci.tar"
-    $Arguments = @('buildx', 'build', '--platform', 'linux/amd64,linux/arm64', '--file', $Image.File, '--tag', $Image.Tag) + $Image.Args + @('--output', "type=oci,dest=$Archive", '.')
+    $Arguments = @('buildx', 'build', '--platform', 'linux/amd64,linux/arm64', '--provenance=mode=max', '--sbom=true', '--file', $Image.File, '--tag', $Image.Tag) + $Image.Args + @('--output', "type=oci,dest=$Archive", '.')
     Invoke-Checked 'docker' $Arguments
 }
 
@@ -85,10 +79,21 @@ Invoke-Checked 'docker' @('run', '--rm', '-v', "${RepositoryRoot}:/src:ro", '-v'
 Copy-Item -LiteralPath $EvidencePath -Destination (Join-Path $Destination 'evidence/local-rc.json')
 $PerformancePath = Join-Path $RepositoryRoot $LocalEvidence.performance_report.path
 Copy-Item -LiteralPath $PerformancePath -Destination (Join-Path $Destination 'evidence/performance-ci.json')
+New-Item -ItemType Directory -Path (Join-Path $Destination 'licenses') | Out-Null
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'upstream/nats-server/LICENSE') -Destination (Join-Path $Destination 'licenses/NATS-LICENSE')
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'docs/release-license-records.md') -Destination (Join-Path $Destination 'licenses/release-license-records.md')
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'docs/release-license-records.zh-CN.md') -Destination (Join-Path $Destination 'licenses/release-license-records.zh-CN.md')
 
 $Artifacts = Get-ChildItem -LiteralPath $Destination -Recurse -File | Sort-Object FullName | ForEach-Object {
     [ordered]@{ path = (Get-RelativePath $Destination $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
+Push-Location $RepositoryRoot
+try {
+    $WebUIRaw = & go run ./tools/uiidentity
+    if ($LASTEXITCODE -ne 0) { throw 'cannot identify embedded WebUI assets' }
+} finally { Pop-Location }
+$WebUIIdentity = ($WebUIRaw -join "`n") | ConvertFrom-Json
+if ($WebUIIdentity.algorithm -ne 'sha256-framed-files-v1' -or $WebUIIdentity.digest -notmatch '^[a-f0-9]{64}$' -or $WebUIIdentity.fileCount -lt 1) { throw 'invalid embedded WebUI identity' }
 $Manifest = [ordered]@{
     schema = 'rabbit-jetstream.io/release-bundle/v1alpha1'
     version = $Version
@@ -97,6 +102,7 @@ $Manifest = [ordered]@{
     sdk = [ordered]@{ version = $SDKVersion; revision = $SDKRevision }
     contract_version = $ContractVersion
     nats_version = $NATSLock.tag
+    webui = [ordered]@{ algorithm = $WebUIIdentity.algorithm; digest = $WebUIIdentity.digest; file_count = $WebUIIdentity.fileCount }
     platforms = @('linux/amd64', 'linux/arm64')
     qualification = 'local-release-gates-passed; native-linux-soak-and-canary-required'
     artifacts = $Artifacts

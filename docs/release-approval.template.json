@@ -1,8 +1,8 @@
 {
   "schema": "rabbit-jetstream.io/release-approval/v1alpha1",
-  "release_version": "v0.1.0-rc.1",
+  "release_version": "v0.1.0-rc.2",
   "server_revision": "<40-character-server-revision>",
-  "sdk_version": "0.1.0-rc.1",
+  "sdk_version": "0.1.0-rc.2",
   "sdk_revision": "<40-character-sdk-revision>",
   "local_release_evidence": {"file": "evidence/local-rc.json", "sha256": "<sha256>"},
   "native_preflights": [
@@ -23,8 +23,6 @@
   ],
   "known_limitations": ["no-amqp-wire-compatibility", "at-least-once-delivery"],
   "signoffs": [
-    {"role": "service_owner", "name": "<name>", "approved": true, "approved_at": "<RFC3339-after-final-canary>"},
-    {"role": "application_owner", "name": "<name>", "approved": true, "approved_at": "<RFC3339-after-final-canary>"},
-    {"role": "on_call_operator", "name": "<name>", "approved": true, "approved_at": "<RFC3339-after-final-canary>"}
+    {"role": "sole_owner", "name": "<owner-responsible-for-service-application-and-on-call>", "approved": false, "approved_at": "<RFC3339-after-final-canary>"}
   ]
 }

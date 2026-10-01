@@ -14,24 +14,30 @@ import (
 )
 
 type generateOptions struct {
-	EvidencePath   string
-	ReportPath     string
-	ResourcesPath  string
-	PreflightPath  string
-	NATSImageID    string
-	CommandJSON    string
-	CommandFile    string
-	SampleInterval int
-	MinPublish     float64
-	MinConsume     float64
-	MaxP99         float64
+	EvidencePath     string
+	ReportPath       string
+	ResourcesPath    string
+	PreflightPath    string
+	NATSImageID      string
+	NATSBinarySHA256 string
+	CommandJSON      string
+	CommandFile      string
+	SampleInterval   int
+	MinPublish       float64
+	MinConsume       float64
+	MaxP99           float64
 }
 
 type nativePreflight struct {
-	Schema         string `json:"schema"`
-	SourceRevision string `json:"source_revision"`
-	Runtime        string `json:"runtime"`
-	Docker         struct {
+	DeploymentMode       string         `json:"deployment_mode"`
+	NATSBinarySHA256     string         `json:"nats_binary_sha256"`
+	VerificationRevision string         `json:"verification_revision"`
+	BundleManifestSHA256 string         `json:"bundle_manifest_sha256"`
+	Host                 map[string]any `json:"host"`
+	Schema               string         `json:"schema"`
+	SourceRevision       string         `json:"source_revision"`
+	Runtime              string         `json:"runtime"`
+	Docker               struct {
 		OperatingSystem string `json:"OperatingSystem"`
 		OSType          string `json:"OSType"`
 		Architecture    string `json:"Architecture"`
@@ -53,7 +59,7 @@ func createInauguralEvidence(options generateOptions) (string, error) {
 	if len(imageID) == 64 {
 		imageID = "sha256:" + imageID
 	}
-	if len(imageID) != len("sha256:")+64 || !strings.HasPrefix(imageID, "sha256:") || strings.Trim(strings.TrimPrefix(imageID, "sha256:"), "0123456789abcdef") != "" {
+	if options.NATSBinarySHA256 == "" && (len(imageID) != len("sha256:")+64 || !strings.HasPrefix(imageID, "sha256:") || strings.Trim(strings.TrimPrefix(imageID, "sha256:"), "0123456789abcdef") != "") {
 		return "", errors.New("NATS image ID must be a lowercase SHA-256 ID")
 	}
 	if (options.CommandJSON == "") == (options.CommandFile == "") {
@@ -75,7 +81,18 @@ func createInauguralEvidence(options generateOptions) (string, error) {
 	if err := decodePreflight(options.PreflightPath, &preflight); err != nil {
 		return "", fmt.Errorf("decode native preflight: %w", err)
 	}
-	if preflight.Schema != "rabbit-jetstream.io/native-linux-preflight/v1alpha1" || preflight.Runtime != "linux/amd64" || len(preflight.SourceRevision) != 40 || preflight.Docker.OSType != "linux" || preflight.Docker.NCPU < 1 || preflight.Docker.MemTotal < 1 {
+	bare := preflight.DeploymentMode == "bare-metal"
+	if bare {
+		if imageID != "" || !validSHA256(options.NATSBinarySHA256) || options.NATSBinarySHA256 != preflight.NATSBinarySHA256 || !validSHA256(preflight.BundleManifestSHA256) || preflight.Host["os_type"] != "linux" || preflight.Host["architecture"] != "amd64" || len(preflight.VerificationRevision) != 40 {
+			return "", errors.New("bare-metal preflight or binary identity is invalid")
+		}
+		if filepath.Dir(options.PreflightPath) != filepath.Dir(options.EvidencePath) {
+			return "", errors.New("bare-metal preflight must be beside the evidence")
+		}
+	} else if options.NATSBinarySHA256 != "" {
+		return "", errors.New("binary digest requires a bare-metal preflight")
+	}
+	if preflight.Schema != "rabbit-jetstream.io/native-linux-preflight/v1alpha1" || preflight.Runtime != "linux/amd64" || len(preflight.SourceRevision) != 40 || (!bare && (preflight.Docker.OSType != "linux" || preflight.Docker.NCPU < 1 || preflight.Docker.MemTotal < 1)) {
 		return "", errors.New("native preflight does not prove a Linux AMD64 host")
 	}
 	reportDigest, err := fileDigest(options.ReportPath)
@@ -98,6 +115,18 @@ func createInauguralEvidence(options generateOptions) (string, error) {
 		},
 		Report:    artifact{File: filepath.Base(options.ReportPath), SHA256: reportDigest},
 		Resources: artifact{File: filepath.Base(options.ResourcesPath), SHA256: resourcesDigest},
+	}
+	if bare {
+		digest, err := fileDigest(options.PreflightPath)
+		if err != nil {
+			return "", err
+		}
+		proof.DeploymentMode = "bare-metal"
+		proof.NATSImageID = ""
+		proof.NATSBinarySHA256 = options.NATSBinarySHA256
+		proof.VerificationRevision = preflight.VerificationRevision
+		proof.Host = preflight.Host
+		proof.NativePreflight = artifact{File: filepath.Base(options.PreflightPath), SHA256: digest}
 	}
 	encoded, err := json.MarshalIndent(proof, "", "  ")
 	if err != nil {

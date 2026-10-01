@@ -1,5 +1,7 @@
 # Production Readiness and Canary Runbook
 
+[English](production-readiness.md) | [简体中文](production-readiness.zh-CN.md)
+
 This runbook promotes the paired server and Native SDK release. It does not certify AMQP compatibility.
 
 ## Freeze the Candidate
@@ -56,9 +58,9 @@ At every stage require: JetStream available; controller active; all expected nod
 
 Stop promotion immediately on message loss/corruption, unbounded duplicates, lost quorum, replicas that do not converge, PubAck failure, sustained SLO/error/backlog breach, DLQ failure, storage above 85%, metadata mismatch or an unapproved compatibility dependency. Disable new routing to the candidate, preserve diagnostics/audit/performance evidence, drain or reconcile confirmed messages, and roll back management then NATS nodes using the rehearsed reverse order. Never overwrite a live divergent cluster with a backup.
 
-Formal `v0.1.0` approval requires sign-off from the service owner, application owner and on-call operator on the paired revisions, local Release evidence, native-Linux preflight and soak evidence, canary observations, rollback result and known limitations.
+Formal `v0.1.0` approval requires review of the paired revisions, local Release evidence, native-Linux preflight and soak evidence, canary observations, rollback result and known limitations. When one person owns the service, application and on-call responsibilities, use one `sole_owner` sign-off. Otherwise retain the three role-specific sign-offs (`service_owner`, `application_owner`, `on_call_operator`). Do not mix the two models.
 
-Copy [`release-approval.template.json`](release-approval.template.json), replace every placeholder, export one immutable observation file per canary stage plus node-failure and rollback evidence, and calculate each SHA-256. The template must list every `partial` compatibility dependency used by the application; `priority-queue` is mandatory for this release. After the 100% observation window and all three sign-offs, run:
+Copy [`release-approval.template.json`](release-approval.template.json), replace every placeholder, export one immutable observation file per canary stage plus node-failure and rollback evidence, and calculate each SHA-256. The template defaults to an unsigned sole owner and must list every `partial` compatibility dependency used by the application; `priority-queue` is mandatory for this release. A sole owner reviews the assembled evidence once after the 100% window and signs once for all three responsibilities. Automation may collect the five stages but may not invent observations or the final owner decision. After the final observation window and the applicable sign-off(s), run:
 
 ```bash
 make verify-release-approval RELEASE_APPROVAL=/srv/rabbit-jetstream/release-approval.json

@@ -1,0 +1,5 @@
+const catalogs = Object.freeze({
+  en: Object.freeze({state: "Editor state", blocked: "Operation pending or outcome unknown; handoff is blocked. Return to the editor to inspect and save evidence.", title: "End this Queue's editor review", description: "Explicitly end editing and retain read-only evidence before reading a fresh deletion preflight. Unsubmitted changes are not applied. Login and other Queue drafts are unchanged; this action does not delete resources.", confirm: "End this Queue's editing and retain evidence as read-only records? This does not apply drafts or delete resources.", archive: "Archive this Queue editor for fresh preflight", archived: "Archived editor evidence", separator: " · "}),
+  zh: Object.freeze({state: "编辑器状态", blocked: "操作进行中或结果未知，不能交接。请返回编辑器处理并保存证据。", title: "结束此 Queue 的编辑审阅", description: "明确结束编辑并保留只读证据后，可重新读取删除预检。未提交的修改不会应用，不会清除登录或其他 Queue 草稿；此操作本身不会删除资源。", confirm: "结束此 Queue 的编辑，并将证据保留为只读记录？这不会提交草稿或删除资源。", archive: "归档此 Queue 编辑并允许重新预检", archived: "已归档编辑证据", separator: " · "}),
+});
+export function editorHandoffLabels(language) { return catalogs[language] ?? catalogs.en; }

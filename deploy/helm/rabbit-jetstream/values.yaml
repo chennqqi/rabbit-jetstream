@@ -49,6 +49,12 @@ management:
     metricInterval: 30s
     sampleRatio: 0.1
     allowInsecure: false
+  history:
+    prometheusURL: ""
+    prometheusPublicURL: ""
+    bearerTokenSecret: ""
+    bearerTokenKey: prometheus-token
+    allowInsecure: false
 
 # The operator image is an on-demand administration artifact, not a resident
 # workload. Keeping it in chart values makes release-images.yaml directly
@@ -73,6 +79,8 @@ auth:
     operatorRole: rabbit-jetstream-operator
     auditorRole: rabbit-jetstream-auditor
     allowInsecureIssuer: false
+    browserClientID: ""
+    browserRedirectOrigin: ""
 
 controller:
   interval: 5s

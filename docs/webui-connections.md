@@ -1,0 +1,54 @@
+# Connection diagnostics implementation
+
+[English](webui-connections.md) | [简体中文](webui-connections.zh-CN.md)
+
+Status: WEB-019 source scope is implemented: node-scoped list/detail, exact CID/client-name/user/account/MQTT search, bounded subscription detail, protected monitoring access, responsive bilingual UI and bounded local scale evidence. Formal production-host/release qualification remains separate. See the [current execution record](webui-development.md) for exact candidates and evidence.
+
+Latest embedded Chromium evidence `artifacts/webui-live-yMAIVH/report.json` passes 133 behavior checks and 24 accessibility snapshots with zero automated violations. It includes a real bounded client-name POST search with no URL/response echo, frozen search refresh, explicit clearing, subscription detail, bilingual UI and narrow layouts. Local scale evidence is `artifacts/connections-live-W75a3N/report.json`.
+
+## Candidate page
+
+The list CID now links to `/admin/nodes/{id}/connections/{cid}?offset=…&limit=…`. These query fields preserve only the return-list context and are not forwarded to the detail API. The candidate detail shows the scoped identity, source times and exact numeric counters, with independent refresh and separate node-missing/connection-missing states. Chromium and Firefox now have live navigation/refresh/error and desktop/mobile evidence for this page; full accessibility and release readiness remain separate gates. It does not add client metadata, search or subscription detail.
+
+Both source timestamp fields require valid RFC3339 calendar dates, explicit timezones and at most nine fractional digits. Zero Go time is unreported/invalid, not a real observation. Validation preserves original text and does not normalize invalid dates or truncate source precision.
+
+Node detail links to `/admin/nodes/{id}/connections?offset=0&limit=50`. The page preserves node/query identity in its URL, offers page-size and previous/next controls, and shares the refresh preference. It shows exact CID/counters, reported total versus returned rows, unrounded server and management timestamps, and bilingual explanations. It does not expose unsupported search, client identity or subscription-detail controls. Per-query readers cancel obsolete requests; unavailable reads retain labeled history, while missing/ambiguous/denied/disabled/invalid responses clear it. Malformed identities, counters and pagination fail validation before display. Cumulative connection counters are not Consumer backlog or rates. Mobile tables scroll horizontally to preserve numeric readability; complete accessibility qualification remains open.
+
+## Node connection API
+
+`GET /api/v1/nodes/{node}/connections?offset=0&limit=50` returns the numeric connection projection described below. The existing resource-read policy applies: operator/auditor authentication by default, or the explicit local-demo resource-read exception. Unauthorized GET/HEAD requests are rejected before monitoring I/O. Replies use `Cache-Control: no-store`. Unsigned decimal offset (0–1,000,000), limit (1–200), and optional exact `cid` (1–18446744073709551615) are accepted; omitted offset/limit default to 0/50. CID search requires offset zero, runs server-side against the exact node, and returns a filtered total of zero or one. Unknown, repeated, empty, malformed or out-of-range parameters return 400. Client-name search, client metadata and subscription detail are not yet supported and are not simulated by page-local filtering.
+
+Response fields: `node_id`, `observed_at` (NATS source time), `read_at` (management completion), original `offset`, `limit`, `total`, and `items`. For normal pagination, total is the reported node total; for exact CID search, it is the filtered result count. Each item contains exact uint64 `cid` and optional nonnegative counters. Missing counters mean unknown. Error mapping: 400 `invalid_query`; 404 `not_found` after complete identity coverage; 409 `node_identity_ambiguous`; 503 `connection_lookup_limit` or `connections_unavailable`. Authentication can return 401/403 or 404 `read_api_disabled`. Missing monitor capability and unexpected internal errors return a sanitized 503, never an empty success. See [OpenAPI](../api/openapi.yaml).
+
+`POST /api/v1/nodes/{node}/connections/search` is a read-only resource-read endpoint with an exact JSON `kind`, `value`, `offset` and `limit`; it accepts no URL query. Kinds are `name`, `user`, `account` and `mqtt_client`. User/account/MQTT filters execute in the pinned server before its pages; management performs two stable scans and derives the filtered total because upstream reports the node total. The pinned server has no name filter, so name search is allowed only when the complete node has at most 1,000 open connections. Two full private CID/name reads must agree before management filters, pages and returns only numeric rows. More than 1,000 native-filter matches or more than 1,000 total connections for name search returns 422. Search values are never serialized, logged by the request logger, stored in browser URLs or persisted by the UI.
+
+## Implemented boundary
+
+`monitoring.Client.ConnectionPage` reads one open-connection page from an indexed, preconfigured monitoring endpoint. The caller supplies an expected server ID from a prior node observation; the response must match it. A stable endpoint can serve a restarted/different server, so endpoint identity alone is insufficient. Connection identity is the pair of server ID and exact uint64 CID, never CID alone.
+
+The pinned `upstream/nats-server/server/monitor.go` supplies the wire contract: CID ascending order, separate `total` and returned `num_connections`, original requested offset even beyond the last row, and live rather than snapshot pagination. This implementation permits shortened pages due to churn, preserves total and requested offset, and rejects duplicate/unordered/zero CIDs and impossible metadata. Missing counters remain absent, not zero.
+
+Limits: offset 0–1,000,000; limit 1–200; response at most 2 MiB. Existing HTTP timeout and caller context apply. Redirects are rejected, not followed; errors contain no endpoint credentials or raw response text. Requests fix `auth=false`, `subs=false`, `state=open`, `sort=cid`. Projection includes only CID and numeric counters; it excludes names, addresses, authorization/JWT/account metadata, certificates, subscription subjects and raw upstream JSON. Unknown upstream fields are not forwarded. This is not the final client-search projection.
+
+## Remaining integration
+
+### Exact connection API
+
+`GET /api/v1/nodes/{node}/connections/{cid}` now connects the detail transport through the same unique-node resolver as the list. The 32-endpoint/four-concurrent-read limits and one shared five-second deadline cover resolution plus detail. The route inherits resource-read authorization/no-store behavior, rejects all query parameters and requires unsigned decimal CID in 1–18446744073709551615 without floating-point conversion. It returns `node_id`, `observed_at`, `read_at` and numeric `item`, with no total. A valid missing CID is 404 `connection_not_found`; missing node remains 404 `not_found`. Ambiguity, invalid query, endpoint-limit and unavailable errors match the list contract. OpenAPI and handler/monitoring integration tests cover this path. Standalone real NATS and candidate detail UI integration evidence now exist; use the detail-capable executable identified in the execution record. Cluster faults, scale and release qualification remain open.
+
+The internal `ConnectionDetail(ctx, endpointIndex, expectedID, cid)` transport is now implemented. It sends one `connz` request with exact nonzero uint64 CID, offset 0, limit 1, open state and authentication/subscription expansion disabled. It reuses the bounded no-redirect reader and numeric projection. The pinned NATS implementation preserves `total` as the node connection count, even for a missing CID. Detail uses only the validated zero-or-one returned rows to establish presence and omits the unrelated node total. A valid empty response from the expected node returns `ErrConnectionMissing`; wrong identity/CID, inconsistent or malformed evidence and transport failures return unavailable. It does not infer why a connection disappeared. Node resolution and API/OpenAPI are connected as described above; real-node qualification and UI remain required before user-facing completion.
+
+- Extend existing standalone real-node pagination/churn and candidate list-page evidence to restart/cluster fault qualification; retain the existing authorization policy and exact node identity.
+- Define the sensitive client/identity metadata policy before expanding beyond the current numeric projection.
+- Decide the sensitive-metadata policy before adding server-side client-name or identity filters. Exact node-scoped CID search is implemented with an accurate filtered total; filtering one fetched page remains forbidden.
+- Specify bounded subscription-detail and exact connection lookup contracts; avoid `subs=true` on list requests.
+- Extend the existing API/OpenAPI and candidate list page to the remaining search/detail contracts, with matching real-node and browser tests, lossless identifiers, pagination, freshness and bilingual accessible diagnostics.
+- Verify scale and monitoring cost. Bounded response size does not prove bounded NATS enumeration CPU or latency.
+
+No source tree, service or test workload was transferred to a remote host. No NATS subtree changes or message data-path operations are part of this implementation.
+
+## Exact node resolution
+
+`NodeConnections` now resolves exact node IDs internally. It reads `/varz` only from configured endpoints using the same 2 MiB/no-redirect transport. At most 32 configured endpoints are accepted, with four concurrent identity reads and a five-second deadline covering resolution and the connection read (an earlier caller deadline wins). Invalid input is rejected before I/O; the limit is an explicit error, never silent truncation.
+
+All identity reads must succeed and exactly one must match. Multiple matches are ambiguous; partial coverage is unavailable even if one match was observed, because uniqueness is unknown. No match is missing only after complete valid coverage; no configured endpoints is unavailable. Duplicate endpoint aliases are not silently collapsed. No identity cache or fallback to another node/name is used. The subsequent connection response must still match the selected server ID, so a restart between reads returns unavailable. These reads do not prove atomic membership across endpoints. Errors are typed internally and contain no endpoint URLs or raw responses. The public API and UI now support exact node-scoped CID search under the existing read authorization; sensitive client-name search remains intentionally unavailable.

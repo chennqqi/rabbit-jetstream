@@ -27,6 +27,7 @@ type AuditEvent struct {
 	ResourceName string    `json:"resourceName"`
 	Actor        string    `json:"actor"`
 	ActorRole    string    `json:"actorRole"`
+	Tenant       string    `json:"tenant,omitempty"`
 	SourceIP     string    `json:"sourceIp,omitempty"`
 	Outcome      string    `json:"outcome"`
 	HTTPStatus   int       `json:"httpStatus,omitempty"`
@@ -66,6 +67,9 @@ func (c *Client) RecordAudit(ctx context.Context, event AuditEvent) (uint64, err
 }
 
 func (c *Client) ListAudit(ctx context.Context, offset, limit int) (AuditPage, error) {
+	if offset < 0 || limit < 1 || limit > 200 {
+		return AuditPage{}, errors.New("invalid audit pagination")
+	}
 	page := AuditPage{Offset: offset, Limit: limit, Items: []AuditEvent{}}
 	stream, err := c.js.Stream(ctx, auditStream)
 	if errors.Is(err, jsapi.ErrStreamNotFound) {
@@ -82,18 +86,32 @@ func (c *Client) ListAudit(ctx context.Context, offset, limit int) (AuditPage, e
 	if limit < 1 || offset >= page.Total {
 		return page, nil
 	}
-	sequence := info.State.LastSeq - uint64(offset)
-	for sequence >= info.State.FirstSeq && len(page.Items) < limit {
+	// Offset counts retained messages, not sequence positions. Expiry or gaps
+	// must not make subsequent pages repeat records from an earlier page.
+	sequence := info.State.LastSeq
+	skipped := 0
+	for sequence > 0 && sequence >= info.State.FirstSeq && len(page.Items) < limit {
+		if err := ctx.Err(); err != nil {
+			return AuditPage{}, err
+		}
 		message, getErr := stream.GetMsg(ctx, sequence)
 		if getErr == nil {
+			if skipped < offset {
+				skipped++
+				sequence--
+				continue
+			}
 			var event AuditEvent
 			if decodeErr := json.Unmarshal(message.Data, &event); decodeErr != nil {
-				return page, fmt.Errorf("decode audit event at sequence %d: %w", sequence, decodeErr)
+				return AuditPage{}, fmt.Errorf("decode audit event at sequence %d: %w", sequence, decodeErr)
+			}
+			if event.ID == "" || event.RequestID == "" {
+				return AuditPage{}, fmt.Errorf("audit event identity missing at sequence %d", sequence)
 			}
 			event.Sequence = message.Sequence
 			page.Items = append(page.Items, event)
 		} else if !errors.Is(getErr, jsapi.ErrMsgNotFound) {
-			return page, fmt.Errorf("read audit event at sequence %d: %w", sequence, getErr)
+			return AuditPage{}, fmt.Errorf("read audit event at sequence %d: %w", sequence, getErr)
 		}
 		if sequence == 0 {
 			break

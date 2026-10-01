@@ -49,9 +49,7 @@ func run() error {
 	writer := bufio.NewWriter(file)
 	defer file.Close()
 	client := &http.Client{Timeout: 5 * time.Second}
-	started := time.Now()
-	for {
-		capturedAt := time.Now().UTC()
+	err = runSampling(*duration, *interval, time.Now, time.Sleep, func(capturedAt time.Time) error {
 		free, statErr := freeBytes(*diskPath)
 		for name, endpoint := range endpoints {
 			value := collect(client, name, endpoint, capturedAt, free, statErr)
@@ -66,10 +64,32 @@ func run() error {
 		if err := writer.Flush(); err != nil {
 			return err
 		}
-		if time.Since(started) >= *duration {
-			return file.Sync()
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return file.Sync()
+}
+
+// Anchor collection to a monotonic schedule, not the end of the previous HTTP
+// requests. Missed slots are skipped, never filled with synthetic/catch-up data.
+func runSampling(duration, interval time.Duration, now func() time.Time, sleep func(time.Duration), collect func(time.Time) error) error {
+	started := now()
+	next := started
+	for {
+		if err := collect(now().UTC()); err != nil {
+			return err
 		}
-		time.Sleep(*interval)
+		current := now()
+		if current.Sub(started) >= duration {
+			return nil
+		}
+		next = next.Add(interval)
+		if next.Before(current) {
+			next = next.Add((current.Sub(next)/interval + 1) * interval)
+		}
+		sleep(next.Sub(current))
 	}
 }
 

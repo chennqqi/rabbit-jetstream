@@ -1,118 +1,119 @@
-const { test, expect } = require("@playwright/test");
-const AxeBuilder = require("@axe-core/playwright").default;
+const {test,expect}=require("@playwright/test");
+const AxeBuilder=require("@axe-core/playwright").default;
 
-const queueName = "browser_e2e";
+const queueName="browser_e2e",token="browser-test-token",deploymentProfile=process.env.RJS_EXPECTED_DEPLOYMENT_PROFILE??"standalone";
+if(!["standalone","cluster"].includes(deploymentProfile))throw new Error("Unsupported expected deployment profile");
 
-async function openEditor(page) {
-  await page.getByRole("button", { name: "Create queue" }).click();
-  await expect(page.getByRole("heading", { name: "Create or update queue" })).toBeVisible();
-}
-
-async function setDocument(page, document) {
-  await page.locator("#queue-document").fill(JSON.stringify(document, null, 2));
-}
-
-function queueDocument(maxMessages = 100) {
-  return {
-    apiVersion: "rabbit-jetstream.io/v1alpha1",
-    kind: "Queue",
-    metadata: { name: queueName, labels: { suite: "browser" } },
-    spec: {
-      subjects: [`${queueName}.events`],
-      replicas: 1,
-      storage: "file",
-      maxPriority: 2,
-      retention: { maxAge: "1h", maxBytes: "16MiB", maxMessages },
-      delivery: { ackWait: "30s", maxDeliver: 5 }
-    }
-  };
-}
-
-test.beforeEach(async ({ page, request }) => {
-  const current = await request.get(`/api/v1/queues/${queueName}`);
-  if (current.ok()) {
-    await request.delete(`/api/v1/queues/${queueName}?force=true`, {
-      headers: {
-        Authorization: "Bearer browser-test-token",
-        "If-Match": current.headers().etag,
-        "X-RJS-Confirm-Queue": queueName
-      }
-    });
-  }
+async function authenticate(page,value=token) {
   await page.goto("/admin/");
-  await expect(page.locator("#service-state")).toHaveText("Management ready");
+  await page.locator(".recovery-login summary").click();
+  await page.getByLabel("Recovery bearer token",{exact:true}).fill(value);
+  const sessionResponse=page.waitForResponse(response=>new URL(response.url()).pathname==="/api/v1/session");
+  await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();
+  const response=await sessionResponse;
+  if(value===token)expect(response.status(),await response.text()).toBe(200);
+  await page.waitForTimeout(100);
+}
+
+async function removeFixture(request) {
+  const current=await request.get(`/api/v1/queues/${queueName}`,{headers:{Authorization:`Bearer ${token}`}});
+  if(!current.ok())return;
+  const removed=await request.delete(`/api/v1/queues/${queueName}?force=true`,{headers:{Authorization:`Bearer ${token}`,"If-Match":current.headers().etag,"X-RJS-Confirm-Queue":queueName}});
+  expect(removed.ok(),await removed.text()).toBeTruthy();
+}
+
+async function navigate(page,name) {
+  const navigation=page.getByRole("navigation",{name:"Primary navigation",exact:true});
+  const toggle=page.getByRole("button",{name:"Navigation menu",exact:true});
+  if(await toggle.isVisible())await toggle.click();
+  await navigation.getByRole("link",{name,exact:true}).click();
+}
+
+test.beforeEach(async({page,request})=>{
+  await removeFixture(request);
+  await authenticate(page);
+  await expect(page.getByRole("navigation",{name:"Primary navigation",exact:true})).toBeVisible();
+  await navigate(page,"Overview");
+  await expect(page.getByRole("heading",{name:"Overview",exact:true})).toBeVisible();
 });
 
-test("creates, updates, filters, inspects and deletes a priority queue", async ({ page }) => {
-  await openEditor(page);
-  await page.locator("#editor-token").fill("browser-test-token");
-  await setDocument(page, queueDocument());
-  await page.getByRole("button", { name: "Apply queue" }).click();
+test.afterEach(async({request})=>{await removeFixture(request);});
 
-  const row = page.locator(`tr[data-queue="${queueName}"]`);
-  await expect(row).toBeVisible();
-  await expect(row).toContainText("Ready");
-  await page.locator("#queue-filter").fill("browser_e2");
-  await expect(row).toBeVisible();
-  await page.locator("#queue-filter").fill("does-not-exist");
-  await expect(page.getByText("No queues match this filter.")).toBeVisible();
-  await page.locator("#queue-filter").fill("");
+test("creates, updates, finds and deletes a Queue through reviewed workflows",async({page,request})=>{
+  test.slow();
+  await navigate(page,"Access and settings");
+  const capabilities=page.getByRole("region",{name:"Server capabilities",exact:true});
+  await expect(capabilities.getByText(deploymentProfile,{exact:true})).toBeVisible();
+  await expect(capabilities.getByText("configuration",{exact:true})).toBeVisible();
+  await navigate(page,"Create Queue");
+  await page.getByLabel("New Queue name",{exact:true}).fill(queueName);
+  await page.getByLabel("Subjects (one per line)",{exact:true}).fill(`${queueName}.events`);
+  const requestedReplicas=deploymentProfile==="cluster"?"3":"1";
+  await page.getByLabel("Requested replicas",{exact:true}).selectOption(requestedReplicas);
+  await page.getByLabel("Storage type",{exact:true}).selectOption("file");
+  await page.getByLabel("Maximum stored messages",{exact:true}).fill("100");
+  await page.getByRole("button",{name:"Prepare creation draft",exact:true}).click();
+  await page.getByRole("button",{name:"Preview changes",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Advisory preview — not applied",exact:true})).toBeVisible();
+  expect((await request.get(`/api/v1/queues/${queueName}`,{headers:{Authorization:`Bearer ${token}`}})).status()).toBe(404);
+  await page.getByRole("checkbox",{name:"I reviewed this preview and authorize applying this draft.",exact:true}).check();
+  await page.getByRole("button",{name:"Apply reviewed draft",exact:true}).click();
+  await expect(page.getByText(/^Apply accepted\./)).toBeVisible();
+  const created=await request.get(`/api/v1/queues/${queueName}`,{headers:{Authorization:`Bearer ${token}`}});
+  expect(created.status(),await created.text()).toBe(200);
+  expect((await created.json()).document.spec.replicas).toBe(Number(requestedReplicas));
 
-  await row.press("Enter");
-  await expect(page.getByRole("heading", { name: queueName })).toBeVisible();
-  await page.getByRole("button", { name: "Manage declaration" }).click();
-  const updated = queueDocument(200);
-  await setDocument(page, updated);
-  await page.getByRole("button", { name: "Apply queue" }).click();
-  await expect(row).toBeVisible();
+  await navigate(page,"Queue list");
+  await expect(page.getByRole("link",{name:queueName,exact:true})).toBeVisible();
+  await page.getByRole("link",{name:queueName,exact:true}).click();
+  await page.getByRole("link",{name:"Edit draft and preview",exact:true}).click();
+  const draft=page.getByLabel("Queue document (JSON)",{exact:true});
+  const document=JSON.parse(await draft.inputValue());document.spec.retention.maxMessages=200;
+  await draft.fill(JSON.stringify(document));
+  await page.getByRole("button",{name:"Preview changes",exact:true}).click();
+  await expect(page.getByRole("region",{name:"Declaration change review",exact:true})).toContainText("spec.retention.maxMessages");
+  await page.getByRole("checkbox",{name:"I reviewed this preview and authorize applying this draft.",exact:true}).check();
+  await page.getByRole("button",{name:"Apply reviewed draft",exact:true}).click();
+  await expect(page.getByText(/^Apply accepted\./)).toBeVisible();
 
-  await row.click();
-  await page.getByRole("button", { name: "Manage declaration" }).click();
-  await page.locator("#delete-confirm").fill("wrong-name");
-  await page.getByRole("button", { name: "Delete queue" }).click();
-  await expect(page.locator("#editor-alert")).toContainText("must exactly match");
-  await page.locator("#delete-confirm").fill(queueName);
-  await page.getByRole("button", { name: "Delete queue" }).click();
-  await expect(row).toHaveCount(0);
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
+  await authenticate(page);
+  await navigate(page,"Queue list");
+  await page.getByRole("link",{name:queueName,exact:true}).click();
+  await page.getByRole("link",{name:"Review deletion impact",exact:true}).click();
+  await page.getByRole("button",{name:"Read deletion preflight",exact:true}).click();
+  await page.getByLabel("Type exact Queue name",{exact:true}).fill(queueName);
+  await page.getByLabel("I reviewed this impact and understand that deletion is destructive.",{exact:true}).check();
+  const deleteResponse=page.waitForResponse(response=>response.request().method()==="DELETE"&&new URL(response.url()).pathname===`/api/v1/queues/${queueName}`);
+  await page.getByRole("button",{name:"Delete this Queue",exact:true}).click();
+  const deleted=await deleteResponse;
+  expect(deleted.status(),await deleted.text()).toBe(200);
+  await expect(page.getByText(/^Server acknowledged deletion\./)).toBeVisible();
+  await expect.poll(async()=>(await request.get(`/api/v1/queues/${queueName}`,{headers:{Authorization:`Bearer ${token}`}})).status()).toBe(404);
 });
 
-test("keeps credentials in memory and surfaces authorization and conflict failures", async ({ page }) => {
-  await openEditor(page);
-  await setDocument(page, queueDocument());
-  await page.getByRole("button", { name: "Apply queue" }).click();
-  await expect(page.locator("#editor-alert")).toContainText("Enter an operator bearer token");
-
-  await page.locator("#editor-token").fill("invalid-token");
-  await page.getByRole("button", { name: "Apply queue" }).click();
-  await expect(page.locator("#editor-alert")).toContainText(/valid bearer|unauthorized|401/i);
-
-  await page.locator("#editor-token").fill("browser-test-token");
-  await page.route(`**/api/v1/queues/${queueName}`, async route => {
-    if (route.request().method() === "PUT") {
-      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { message: "revision conflict" } }) });
-    } else {
-      await route.continue();
-    }
-  });
-  await page.getByRole("button", { name: "Apply queue" }).click();
-  await expect(page.locator("#editor-alert")).toContainText("revision conflict");
-
-  expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length, cookies: document.cookie }))).toEqual({ local: 0, session: 0, cookies: "" });
+test("keeps bearer credentials in memory and reports authorization failures",async({page})=>{
+  await page.getByRole("button",{name:"Clear local session",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Clear session",exact:true}).click();
+  await authenticate(page,"invalid-token");
+  await expect(page.getByRole("alert")).toContainText(/identity|authorization|credential|401/i);
+  expect(await page.evaluate(()=>({local:Object.values(localStorage),session:Object.values(sessionStorage),cookies:document.cookie}))).toEqual({local:[],session:[],cookies:""});
   await page.reload();
-  await expect(page.locator("#operator-token")).toHaveValue("");
+  await page.locator(".recovery-login summary").click();
+  await expect(page.getByLabel("Recovery bearer token",{exact:true})).toHaveValue("");
 });
 
-test("reports partial API failure and remains usable on a narrow viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.route("**/api/v1/nodes", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "monitor unavailable" } }) }));
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await expect(page.locator("#alert")).toContainText("monitor unavailable");
-  await expect(page.getByRole("button", { name: "Create queue" })).toBeVisible();
-  await expect(page.locator("body")).not.toHaveJSProperty("scrollWidth", 0);
+test("distinguishes an unavailable Node collection on a narrow viewport",async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.route("**/api/v1/nodes**",route=>route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:{code:"monitoring_unavailable",message:"Monitoring unavailable"}})}));
+  await navigate(page,"Node list");
+  await expect(page.getByRole("heading",{name:"Nodes",exact:true})).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("unavailable");
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await expect(page.getByRole("button",{name:"Refresh nodes",exact:true})).toBeVisible();
 });
 
-test("has no serious or critical automated accessibility violations", async ({ page }) => {
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-  const blocking = results.violations.filter(item => ["serious", "critical"].includes(item.impact));
-  expect(blocking, blocking.map(item => `${item.id}: ${item.help}`).join("\n")).toEqual([]);
+test("has no serious or critical automated accessibility violations after authentication",async({page})=>{
+  const results=await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa"]).analyze();
+  const blocking=results.violations.filter(item=>["serious","critical"].includes(item.impact));
+  expect(blocking,blocking.map(item=>`${item.id}: ${item.help}`).join("\n")).toEqual([]);
 });

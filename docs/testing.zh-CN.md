@@ -6,7 +6,7 @@
 
 ## Admin UI 浏览器资格验证
 
-`make test-admin-ui` 使用 Docker Compose 启动真实的单节点 JetStream 和管理服务，再通过 Playwright 在 Linux Chromium 与 Firefox 中操作内嵌控制台。测试覆盖仪表盘加载、筛选、键盘操作、优先级 Queue 创建/更新/删除、精确删除确认、Bearer 认证失败、revision 冲突、部分 API 故障、窄屏行为、凭据不持久化，以及 WCAG A/AA serious/critical 自动检查。本地 RC 的 `Full` 和 `Release` 模式均包含此门禁。静态资源或仅 HTTP Smoke 不能替代真实浏览器测试。
+`make test-admin-ui` 使用 Docker Compose 启动真实 standalone JetStream 与管理服务，再通过 Playwright 在 Linux Chromium 和 Firefox 中操作内嵌控制台。`make test-admin-ui-cluster` 对官方三节点 cluster 执行同一工作流并验证规范 R3 Queue；`make test-admin-ui-all` 同时运行两种部署模式，是 CI 及本地 RC `Full`/`Release` 的门禁。测试覆盖认证导航、经审阅的 Queue 创建/修改/删除、精确删除确认、清除会话并重新认证、授权失败、部分 API 故障、窄屏行为、凭据不持久化、声明的部署意图，以及 WCAG A/AA serious/critical 自动检查。静态资源或仅 HTTP Smoke 不能替代真实浏览器测试。
 
 ## 测试分层
 
@@ -31,3 +31,18 @@ make test-linux-fault
 ```
 
 Linux/AMD64 是首版生产资格平台。Windows 和 Docker Desktop 用于开发反馈，不能替代原生 Linux 资格证据；ARM64 可交叉构建，但在取得原生环境验证前不具备生产资格。完整命令和证据规则见英文默认文档；如有歧义以英文版本为准。
+
+### 影子迁移开发复跑
+
+生产镜像构建使用 BuildKit 模块缓存，以及可配置的 `GOPROXY` / `GOSUMDB` 构建参数。NATS 和 management 构建采用与 operator 一致的默认值。间歇下载失败可重试，但必须保留校验和验证及漏洞门禁阈值。
+
+`tests/integration/shadow-capture.ps1` 默认重新构建生产测试镜像。在 Linux 上，迁移容器使用调用者的 UID/GID，使证据保持私有 `0600` 权限且宿主断言可读。切流动作使用包含 `/bin/cp` 的专用测试镜像运行相同 CLI，生产镜像仍为 distroless。
+
+开发期间依赖下载不可用时，可使用已有测试镜像和已填充的宿主模块缓存：
+
+```powershell
+$ShadowGoCache = (go env GOMODCACHE).Trim()
+pwsh -NoProfile -File tests/integration/shadow-capture.ps1 -SkipBuild -GoModCache $ShadowGoCache
+```
+
+`-GoModCache` 禁止 publisher 辅助程序下载模块。`-SkipBuild` 不能证明当前发布 revision 已取得资格。CI 和本地 `Release` 门禁使用默认完整构建流程，并保留全部迁移断言。

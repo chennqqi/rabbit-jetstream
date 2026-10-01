@@ -32,7 +32,7 @@ try {
     Invoke-Docker run --rm -v "${Temporary}:/work:ro" $KubeconformImage -strict -summary /work/default.yaml
 
     $Rendered = Get-Content -LiteralPath $Default -Raw
-    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'persistentVolumeClaimRetentionPolicy:', 'whenDeleted: Retain', 'whenScaled: Retain', 'minDomains: 3', 'whenUnsatisfiable: DoNotSchedule', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
+    foreach ($Required in @('kind: StatefulSet', 'replicas: 3', 'persistentVolumeClaimRetentionPolicy:', 'whenDeleted: Retain', 'whenScaled: Retain', 'minDomains: 3', 'whenUnsatisfiable: DoNotSchedule', 'kind: PodDisruptionBudget', 'kind: NetworkPolicy', 'runAsNonRoot: true', 'RJS_DEPLOYMENT_PROFILE', 'value: "cluster"', 'RJS_METADATA_REPLICAS', 'RJS_ADMIN_TOKENS', 'RJS_AUDIT_TOKENS', 'optional: true')) {
         if (-not $Rendered.Contains($Required)) { throw "default Helm output is missing $Required" }
     }
 	if ([regex]::Matches($Rendered, '(?m)^\s+app\.kubernetes\.io/component: nats\r?$').Count -lt 5) { throw 'NATS PVC template is missing operational labels' }
@@ -60,6 +60,7 @@ try {
 	$SingleRendered = (& docker run --rm -v "${RepositoryRoot}:/src:ro" -w /src $HelmImage template production $Chart --namespace messaging --set nats.replicaCount=1) -join "`n"
 	if ($LASTEXITCODE -ne 0) { throw 'single-node Helm render failed' }
 	if (-not $SingleRendered.Contains('minDomains: 1')) { throw 'single-node Helm render has an invalid topology domain requirement' }
+	if (-not $SingleRendered.Contains('RJS_DEPLOYMENT_PROFILE') -or -not $SingleRendered.Contains('value: "standalone"')) { throw 'single-node Helm render does not declare the standalone profile' }
 	$SingleMatch = [regex]::Match($SingleRendered, '(?m)^  nats\.conf: \|\r?\n(?<config>(?:    [^\r\n]*(?:\r?\n|$))+)(?=---|\z)')
 	if (-not $SingleMatch.Success) { throw 'single-node NATS configuration was not found' }
 	$SingleConfig = [regex]::Replace($SingleMatch.Groups['config'].Value, '(?m)^    ', '')

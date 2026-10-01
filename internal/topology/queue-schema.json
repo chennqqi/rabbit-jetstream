@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rabbit-jetstream:queue:v1alpha1:schema:1",
+  "title": "Rabbit JetStream Queue",
+  "description": "Typed Queue authoring contract. Legacy YAML coercions are not exhaustively modeled. Validate through server preview; schema success is not permission, resource readiness or production qualification. Defaults are annotations, never instructions to replace omitted draft fields.",
+  "x-rjs-version": "rjs.queue-schema.v1",
+  "x-rjs-server-validation": ["duration-range", "byte-size-range", "dead-letter-self-reference", "generated-plan", "resource-ownership", "declaration-preconditions"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"type": "string", "const": "rabbit-jetstream.io/v1alpha1"},
+    "kind": {"type": "string", "const": "Queue"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$", "description": "Immutable Queue identity after creation."},
+        "labels": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Case-sensitive keys and exact string values."}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas"],
+      "properties": {
+        "subjects": {
+          "type": ["array", "null"],
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "format": "rjs-subject"},
+          "description": "Use nonempty Subjects or nonempty Bindings, never both. Null is the canonical absent Subjects value for binding-based documents. Wildcards are whole-token * and final-token >; server validation is required."
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["exchange", "type"],
+            "properties": {
+              "exchange": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
+              "type": {"type": "string", "enum": ["direct", "topic", "fanout"]},
+              "keys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "format": "rjs-routing-key"}}
+            },
+            "oneOf": [
+              {"properties": {"type": {"const": "direct"}, "keys": {"minItems": 1}}, "required": ["keys"]},
+              {"properties": {"type": {"const": "topic"}, "keys": {"minItems": 1}}, "required": ["keys"]},
+              {"properties": {"type": {"const": "fanout"}, "keys": {"maxItems": 0}}}
+            ],
+            "description": "Direct keys contain no wildcards. Topic supports whole-token * and final-token #. Fanout has no keys. Server validates routing syntax and generated-plan compatibility."
+          }
+        },
+        "replicas": {"type": "integer", "enum": [1, 3, 5], "description": "Required explicit selection; parser support is not production qualification."},
+        "storage": {"type": "string", "enum": ["file", "memory"], "default": "file"},
+        "maxPriority": {"type": "integer", "minimum": 0, "maximum": 255, "description": "Omitted priority differs from explicit zero."},
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxAge": {"type": "string", "format": "rjs-duration", "x-rjs-minimum-nanoseconds": "0", "description": "Go duration string, nonnegative int64 nanoseconds. Zero leaves this limit unset."},
+            "maxBytes": {"type": "string", "format": "rjs-byte-size", "description": "Nonnegative int64 bytes or integer B/KB/MB/GB/KiB/MiB/GiB. Server checks multiplication overflow. Zero leaves this limit unset."},
+            "maxMessages": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807, "description": "Exact int64; preserve precision. Zero leaves this limit unset."}
+          }
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ackWait": {"type": "string", "format": "rjs-duration", "x-rjs-minimum-nanoseconds": "1", "default": "30s", "description": "Positive Go duration within int64 nanoseconds."},
+            "maxDeliver": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807, "default": 5, "description": "Positive delivery attempts on the qualified 64-bit target."}
+          }
+        },
+        "deadLetter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["queue"],
+          "properties": {"queue": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$", "description": "Cannot equal metadata.name. This field does not prove the target exists or is qualified."}}
+        }
+      },
+      "oneOf": [
+        {"required": ["subjects"], "properties": {"subjects": {"type": "array", "minItems": 1}, "bindings": {"maxItems": 0}}},
+        {"required": ["bindings"], "properties": {"bindings": {"minItems": 1}, "subjects": {"maxItems": 0}}}
+      ]
+    }
+  }
+}

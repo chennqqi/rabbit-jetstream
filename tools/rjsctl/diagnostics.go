@@ -66,12 +66,9 @@ func collectDiagnostics(client *http.Client, baseURL, output string, now time.Ti
 		return fmt.Errorf("create diagnostics bundle: %w", err)
 	}
 	temporaryName := temporary.Name()
-	committed := false
 	defer func() {
 		_ = temporary.Close()
-		if !committed {
-			_ = os.Remove(temporaryName)
-		}
+		_ = os.Remove(temporaryName)
 	}()
 
 	archive := zip.NewWriter(temporary)
@@ -103,8 +100,14 @@ func collectDiagnostics(client *http.Client, baseURL, output string, now time.Ti
 			manifest.Entries = append(manifest.Entries, entry)
 			continue
 		}
-		if strings.Contains(response.Header.Get("Content-Type"), "json") || json.Valid(body) {
-			body = redactJSON(body)
+		if strings.HasSuffix(endpoint.File, ".json") || strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "json") || json.Valid(body) {
+			var redactErr error
+			body, redactErr = redact.JSON(body)
+			if redactErr != nil {
+				entry.Error = "invalid JSON response omitted; redaction unavailable"
+				manifest.Entries = append(manifest.Entries, entry)
+				continue
+			}
 		}
 		if err := writeDiagnosticFile(archive, endpoint.File, body); err != nil {
 			return err
@@ -135,10 +138,13 @@ func collectDiagnostics(client *http.Client, baseURL, output string, now time.Ti
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("close diagnostics archive: %w", err)
 	}
-	if err := os.Rename(temporaryName, output); err != nil {
+	// Link publishes the completed file without replacing any existing path.
+	// A preflight Stat plus Rename is racy: another owner may create output
+	// during collection. Staging in the output directory keeps this on one
+	// filesystem. Unsupported hard links fail safely; never fall back to rename.
+	if err := os.Link(temporaryName, output); err != nil {
 		return fmt.Errorf("publish diagnostics archive: %w", err)
 	}
-	committed = true
 	return nil
 }
 
@@ -154,48 +160,6 @@ func writeDiagnosticFile(archive *zip.Writer, name string, value []byte) error {
 		return fmt.Errorf("write diagnostics entry %s: %w", name, err)
 	}
 	return nil
-}
-
-func redactJSON(value []byte) []byte {
-	var document any
-	if err := json.Unmarshal(value, &document); err != nil {
-		return value
-	}
-	document = redactValue(document, "")
-	redacted, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		return value
-	}
-	return append(redacted, '\n')
-}
-
-func redactValue(value any, key string) any {
-	if sensitiveDiagnosticKey(key) {
-		return "[REDACTED]"
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for childKey, child := range typed {
-			typed[childKey] = redactValue(child, childKey)
-		}
-	case []any:
-		for index := range typed {
-			typed[index] = redactValue(typed[index], key)
-		}
-	case string:
-		return publicURL(typed)
-	}
-	return value
-}
-
-func sensitiveDiagnosticKey(key string) bool {
-	key = strings.ToLower(key)
-	for _, fragment := range []string{"authorization", "credential", "password", "secret", "token"} {
-		if strings.Contains(key, fragment) {
-			return true
-		}
-	}
-	return false
 }
 
 func publicURL(value string) string {

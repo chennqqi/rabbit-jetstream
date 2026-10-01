@@ -2,33 +2,555 @@ openapi: 3.1.0
 info:
   title: Rabbit JetStream Management API
   version: 1.0.0
-  description: Stable v1 control-plane and operations contract.
+  description: Stable v1 control-plane and operations contract. Resource GET/HEAD requires operator or auditor authentication by default (401 missing/invalid credentials, 403 insufficient role, 404 read_api_disabled when authentication is unconfigured). Authenticated resource operations accept X-RJS-Tenant; it is required when an identity belongs to multiple tenants, defaults to the sole membership otherwise, and is checked before any tenant backend access. Only explicit loopback-bound RJS_LOCAL_DEMO permits anonymous resource reads; session, audit and writes remain authenticated. Probes, metrics, static UI and published contracts remain public and require network-level exposure controls.
 servers:
   - url: /
+security: [{bearerAuth: []}]
 paths:
+  /api/v1/queues/change-plan:
+    post:
+      operationId: planQueueChanges
+      description: Operator-only bounded bulk-update preview. Accepts 1–100 Queue documents paired with their original quoted declaration ETags, at most 4 MiB total and 1 MiB per document. Every unique valid item is passed through the existing update-only Queue preview under one shared ten-second deadline. Returns an item for every input in original order; invalid, duplicate, missing, conflicting, blocked and unavailable targets remain distinct. Performs no writes or audit records and never authorizes apply, retry, rollback or atomic execution. Clients must apply ready items separately with the same original ETag and handle each outcome independently.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [document, etag]
+                    properties:
+                      document: {$ref: '#/components/schemas/Queue'}
+                      etag: {type: string, pattern: '^"[1-9][0-9]*"$', description: Original quoted declaration KV revision.}
+      responses:
+        '200':
+          description: Complete itemized read-only preview collection. ready is true only when every item has a valid, unblocked preview; it is not apply authorization.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scope, ready, items]
+                properties:
+                  scope: {type: string, const: bulk-change-preview-not-apply-authorization}
+                  ready: {type: boolean}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [index, queue, status]
+                      properties:
+                        index: {type: integer, minimum: 0, maximum: 99}
+                        queue: {type: string}
+                        etag: {type: string}
+                        status: {type: string, enum: [ready, blocked, invalid, conflict, missing, unavailable]}
+                        code: {type: string, enum: [invalid_declaration, invalid_etag, duplicate_queue, invalid_preview, conflict, not_found, dlq_dependency_cycle, jetstream_unavailable, deadline_exceeded]}
+                        preview: {$ref: '#/components/schemas/PlanPreview'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '412': {$ref: '#/components/responses/Error'}
+  /api/v1/queues/import-plan:
+    post:
+      operationId: planQueueImport
+      description: Operator-only declaration planning; uses existing preview authorization and optional capability preconditions. Does not apply, publish, audit a write or authorize a batch. Exactly one JSON envelope with a documents array of 1–100 entries, maximum 4 MiB total and 1 MiB per document. Queue and dependency names are limited to 256 bytes. No query fields, extra envelope fields or repeated documents field. Invalid documents retain indexes and safe names as invalid_declaration items. External dependency declarations are deduplicated and read under one five-second lookup deadline; observations do not validate live Stream health/ownership or clear external_dependency_unverified. No raw documents, labels or validation strings are returned. A canceled lookup returns 503 without partial planning evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [documents]
+              properties:
+                documents: {type: array, minItems: 1, maxItems: 100, items: {description: Queue JSON document; semantic validation errors become indexed item problems.}}
+      responses:
+        '200':
+          description: Declaration-only plan, potentially containing blocked items; ready refers only to internal validity/order, never destination readiness or apply authorization.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan, external_declarations, scope]
+                properties:
+                  scope: {type: string, const: declaration-only-not-apply-authorization}
+                  plan:
+                    type: object
+                    required: [items, order, review_order, ready]
+                    properties:
+                      ready: {type: boolean}
+                      order: {type: array, items: {type: integer, minimum: 0, maximum: 99}, description: Dependency-first indexes of unblocked input items.}
+                      review_order: {type: array, items: {type: integer, minimum: 0, maximum: 99}, description: Dependency-first indexes eligible for explicit destination preview including unresolved external prerequisites and their dependents. Excludes invalid/duplicate/cyclic prerequisites and their dependents. Does not clear problems or establish readiness; no write authorization.}
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          required: [index, queue, dependencies, problems]
+                          properties:
+                            index: {type: integer}
+                            queue: {type: string}
+                            revision: {type: string}
+                            dependencies: {type: array, items: {type: string}}
+                            problems:
+                              type: array
+                              items:
+                                type: object
+                                required: [code]
+                                properties:
+                                  code: {type: string, enum: [invalid_declaration, duplicate_queue, external_dependency_unverified, dependency_cycle, blocked_dependency]}
+                                  dependency: {type: string}
+                  external_declarations:
+                    type: array
+                    items:
+                      type: object
+                      required: [queue, status]
+                      properties:
+                        queue: {type: string}
+                        status: {type: string, enum: [present, missing, unavailable, unrepresentable]}
+                        etag: {type: string, description: Exact quoted source KV revision only when declaration is present and reconstructable.}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '412': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/console/build:
+    get:
+      operationId: consoleBuildInformation
+      description: Operator/auditor-only management executable metadata, including in local-demo mode. Release packaging injects the exact clean server revision even though release binaries disable ambient Go VCS stamping; ordinary builds may report Go build-info metadata instead. No Broker calls. Not an artifact attestation or qualification verdict. Rejects query parameters; excludes build flags, paths and dependency lists.
+      responses:
+        '200':
+          description: Reported management build; absent VCS fields mean unreported, not a clean build.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schemaVersion, version, goVersion, os, arch, uiAssets]
+                properties:
+                  schemaVersion: {type: string, const: rjs.build-info.v1}
+                  version: {type: string}
+                  goVersion: {type: string}
+                  os: {type: string}
+                  arch: {type: string}
+                  revision: {type: string}
+                  revisionSource: {type: string, enum: [release-build, injected, go-build-info], description: Present only with revision. Only release-build also carries modified=false and is injected by the clean revision-bound packaging workflow; injected alone is not clean-build proof.}
+                  modified: {type: boolean}
+                  uiAssets:
+                    type: object
+                    additionalProperties: false
+                    required: [algorithm, digest, fileCount]
+                    properties:
+                      algorithm: {type: string, const: sha256-framed-files-v1}
+                      digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+                      fileCount: {type: integer, minimum: 1}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/console/queue-schema:
+    get:
+      operationId: queueAuthoringSchema
+      description: Authenticated operator/auditor typed Queue authoring schema. Includes every document field, not all legacy YAML coercions or server/resource semantics. Custom formats require server preview. No backend reads. Rejects queries; supports the optional capabilities precondition.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: header
+          name: X-RJS-If-Capabilities-Match
+          schema: {type: string}
+      responses:
+        '200':
+          description: JSON Schema 2020-12 with annotation-only defaults.
+          headers:
+            ETag: {schema: {type: string}, description: SHA-256 content revision advertised by capabilities.}
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/schema+json:
+              schema: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '412': {$ref: '#/components/responses/Error'}
   /healthz:
-    get: {operationId: health, responses: {'200': {$ref: '#/components/responses/JSON'}}}
+    get: {operationId: health, security: [], responses: {'200': {$ref: '#/components/responses/JSON'}}}
   /readyz:
     get:
       operationId: readiness
+      security: []
+      responses:
+        '200':
+          description: JetStream account is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: {type: string, const: ready}
+        '503':
+          description: JetStream account is not ready; dependency details are available only in service logs
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: {type: string, const: not_ready}
+  /api/v1/openapi.yaml:
+    get: {operationId: openapiV1, security: [], responses: {'200': {description: OpenAPI contract, content: {application/yaml: {schema: {type: string}}}}}}
+  /api/v1/native-sdk-contract.json:
+    get: {operationId: nativeSDKContractV1Alpha1, security: [], responses: {'200': {description: Native SDK resource and message contract, content: {application/json: {schema: {type: object}}}}}}
+  /api/v1/console/capabilities:
+    get:
+      operationId: consoleCapabilities
+      description: Authenticated operator/auditor contract metadata, including in local-demo mode. No backend or monitor reads. Deployment profile is operator configuration, never inferred capacity. Parser-supported values and canonical omitted-field defaults are not production qualification; replicas always require explicit selection. Qualification is unreported unless an explicitly configured release-bundle manifest was strictly bound to this clean release build; a reported manifest statement is not a qualified verdict. Features identify implemented API contracts, not current permissions/readiness or full JSON schema. Rejects query parameters.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Local process contract metadata, not a health or qualification verdict.
+          headers:
+            ETag: {schema: {type: string}, description: Opaque contract/build token for X-RJS-If-Capabilities-Match; unrelated to declaration ETags.}
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConsoleCapabilities'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/login:
+    post:
+      operationId: loginLocalAccount
+      description: Verify a configured local username/password pair and issue one short-lived bearer access token. The response creates no cookie or refresh token and must not be persisted in browser storage. Authentication failures do not reveal whether the username exists.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LocalLoginRequest'}
+      responses:
+        '200':
+          description: Short-lived access token and the authenticated account's tenant memberships.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LocalLoginResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '415': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/session:
+    get:
+      operationId: getSession
+      description: Verify the supplied bearer using existing operator/auditor authorization and report current identity, role permissions and known verified expiry. No cookie, server session or refresh token is created. Permissions do not imply resource/backend availability. Reports the effective resource read policy, including the explicit local-demo exception.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Authenticated identity; null expiry means unknown, not guaranteed infinite validity.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/access/tenants:
+    get:
+      operationId: listAccessTenants
+      description: Platform-administrator view of configured tenant identifiers. NATS credentials and connection settings are never returned.
       responses:
         '200': {$ref: '#/components/responses/JSON'}
-        '503': {$ref: '#/components/responses/Error'}
-  /api/v1/openapi.yaml:
-    get: {operationId: openapiV1, responses: {'200': {description: OpenAPI contract, content: {application/yaml: {schema: {type: string}}}}}}
-  /api/v1/native-sdk-contract.json:
-    get: {operationId: nativeSDKContractV1Alpha1, responses: {'200': {description: Native SDK resource and message contract, content: {application/json: {schema: {type: object}}}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/access/accounts:
+    get:
+      operationId: listLocalAccounts
+      responses:
+        '200': {$ref: '#/components/responses/JSON'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createLocalAccount
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccountChange'}}}
+      responses:
+        '201': {description: Account created, content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccount'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/v1/access/accounts/{username}:
+    parameters:
+      - {name: username, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}}
+    put:
+      operationId: updateLocalAccount
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccountChange'}}}
+      responses:
+        '200': {description: Account updated, content: {application/json: {schema: {$ref: '#/components/schemas/LocalAccount'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteLocalAccount
+      responses:
+        '204': {description: Account deleted}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
   /api/v1/info:
     get: {operationId: info, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
   /api/v1/cluster:
     get: {operationId: cluster, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
   /api/v1/nodes:
-    get: {operationId: listNodes, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
+    get:
+      operationId: listNodes
+      summary: Read configured monitoring endpoints; absent scalar metrics are unknown, explicit numeric zero is preserved. JetStream enabled is optional (missing means unknown, not false); conflicting enablement evidence degrades the node. JetStream metadata pending is not message backlog.
+      description: Observations of configured monitoring endpoints, not a discovered complete membership or health verdict. Each node includes a sources map keyed by attempted varz, routez and jsz reads; available requires successful HTTP/JSON decoding and a nonempty varz server_id, with routez/jsz server_id matching that identity exactly. routez additionally requires a nonnegative num_routes matching a non-null routes list and a reported nonblank peer name for every row; incomplete peer observations are unavailable, not an empty peer set. Connected peers are distinct reported names, not stable IDs or a count of route connections. Missing or mismatched identities make that source unavailable and its metrics are not attached to the node. read_at is management-side completion time. Absent sources were not attempted. Node observed_at remains the server varz timestamp; matching IDs do not make separate reads an atomic snapshot. Consumers must not interpret metrics from unavailable sources as zero. Unreachable or identity-less varz endpoints remain in the collection without an observed node ID; empty configuration does not establish an empty cluster.
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/nodes/{node}/connections:
+    get:
+      operationId: listNodeConnections
+      summary: Read one open-connection page from an exact configured node identity
+      description: Uses the resource-read authorization policy (authenticated operator/auditor by default; explicit local-demo exception applies). Without cid, CID-ascending live pagination is not a snapshot and total is the reported node total. With cid, the server performs an exact node-scoped lookup, offset must be zero, and total is the filtered result count (zero or one). CID is scoped to server ID and must be decoded losslessly. Neither mode is global client search; client names and subscription subjects remain excluded. Unknown/repeated parameters are rejected. Resolution checks at most 32 configured endpoints with four concurrent identity reads and a five-second deadline. Partial identity coverage is unavailable, multiple matches are ambiguous, and a changed server ID on the subsequent connection response is unavailable. Responses are no-store and exclude names, addresses, credentials and account metadata.
+      parameters:
+        - {name: node, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 256}, description: 'Exact server ID; no whitespace, control characters or path separators.'}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {name: cid, in: query, schema: {type: string, pattern: '^[0-9]+$', minLength: 1, maxLength: 20}, description: 'Optional exact node-scoped CID in unsigned decimal uint64 range 1 through 18446744073709551615; requires offset zero and returns filtered total zero or one.'}
+      responses:
+        '200':
+          description: Independently timestamped node connection page; absent counters are unknown. Exact CID search has a filtered total of zero or one.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [node_id, observed_at, read_at, offset, limit, total, items]
+                properties:
+                  node_id: {type: string}
+                  observed_at: {type: string, format: date-time}
+                  read_at: {type: string, format: date-time}
+                  offset: {type: integer, minimum: 0, maximum: 1000000}
+                  limit: {type: integer, minimum: 1, maximum: 200}
+                  total: {type: integer, minimum: 0}
+                  items:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [cid]
+                      additionalProperties: false
+                      properties:
+                        cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615, description: Exact uint64; use lossless JSON decoding.}
+                        pending_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        in_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        out_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        in_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        out_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        subscriptions: {type: integer, minimum: 0, maximum: 4294967295}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {description: 'not_found after complete identity coverage, or read_api_disabled when read authentication is unconfigured'}
+        '409': {description: node_identity_ambiguous; multiple configured endpoints report the requested ID}
+        '503': {description: connections_unavailable or connection_lookup_limit; no empty-success fallback}
+  /api/v1/nodes/{node}/connections/search:
+    post:
+      operationId: searchNodeConnectionsByIdentity
+      summary: Search one node by an exact supported client identity without putting the value in the URL
+      description: A read-only POST protected by the resource-read authorization policy. Supports exact client name, authorized user, account, or MQTT client ID. Native identity filters run on the node before upstream pagination; management performs two CID-stability scans of at most 1000 matches to derive the filtered total. Because the pinned server has no name filter, exact client-name search instead requires the entire node to contain at most 1000 open connections, reads two complete CID/name snapshots, verifies both are stable, filters in management memory and discards names before serialization. Churn fails closed and over-limit searches return 422. The search value is accepted only in the JSON body and is never returned. Responses contain the same numeric-only projection as the connection list and are no-store.
+      parameters:
+        - {name: node, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 256}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind, value, offset, limit]
+              properties:
+                kind: {type: string, enum: [name, user, account, mqtt_client]}
+                value: {type: string, minLength: 1, maxLength: 256, description: Exact identity value; control characters are rejected.}
+                offset: {type: integer, minimum: 0, maximum: 1000000}
+                limit: {type: integer, minimum: 1, maximum: 200}
+      responses:
+        '200':
+          description: Stable bounded filtered page with exact total and numeric-only connection rows
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [node_id, observed_at, read_at, offset, limit, total, items]
+                properties:
+                  node_id: {type: string}
+                  observed_at: {type: string, format: date-time}
+                  read_at: {type: string, format: date-time}
+                  offset: {type: integer, minimum: 0, maximum: 1000000}
+                  limit: {type: integer, minimum: 1, maximum: 200}
+                  total: {type: integer, minimum: 0, maximum: 1000}
+                  items:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [cid]
+                      properties:
+                        cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615}
+                        pending_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        in_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        out_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        in_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        out_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                        subscriptions: {type: integer, minimum: 0, maximum: 4294967295}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {description: 'not_found or read_api_disabled'}
+        '409': {description: node_identity_ambiguous}
+        '415': {description: unsupported_media_type}
+        '422': {description: 'connection_search_limit; more than 1000 matching connections for native identity filters, or more than 1000 total node connections for client-name search'}
+        '503': {description: connections_unavailable or connection_lookup_limit}
+  /api/v1/nodes/{node}/connections/{cid}:
+    get:
+      operationId: getNodeConnection
+      summary: Read one exact open connection on a uniquely resolved node
+      description: Uses the same resource-read authorization and bounded node resolution as the connection list. One shared five-second deadline covers identity resolution and exact CID lookup. CID is scoped to the server ID. Query parameters are rejected. A valid zero-match observation means connection_not_found, not a node outage or proof of why the connection disappeared. No list enumeration, sensitive metadata or subscription subjects are returned. Responses are no-store. Detail omits the node total; upstream total remains the node count even when this exact CID is absent.
+      parameters:
+        - {name: node, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 256}, description: 'Exact server ID; no whitespace, control characters or path separators.'}
+        - {name: cid, in: path, required: true, schema: {type: string, pattern: '^[0-9]+$', minLength: 1}, description: Unsigned decimal uint64 in range 1 through 18446744073709551615; never round through floating point.}
+      responses:
+        '200':
+          description: Exact independently timestamped numeric observation; absent counters remain unknown
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [node_id, observed_at, read_at, item]
+                properties:
+                  node_id: {type: string}
+                  observed_at: {type: string, format: date-time}
+                  read_at: {type: string, format: date-time}
+                  item:
+                    type: object
+                    required: [cid]
+                    additionalProperties: false
+                    properties:
+                      cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615}
+                      pending_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                      in_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                      out_msgs: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                      in_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                      out_bytes: {type: integer, minimum: 0, maximum: 9223372036854775807}
+                      subscriptions: {type: integer, minimum: 0, maximum: 4294967295}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {description: 'not_found for missing node, connection_not_found for missing open CID, or read_api_disabled'}
+        '409': {description: node_identity_ambiguous}
+        '503': {description: connections_unavailable or connection_lookup_limit}
+  /api/v1/nodes/{node}/connections/{cid}/subscriptions:
+    get:
+      operationId: getNodeConnectionSubscriptions
+      summary: Explicitly expand one bounded complete connection-subscription observation
+      description: Uses authenticated resource-read policy and one five-second deadline. It resolves an exact configured node and CID, performs a numeric preflight, then requests subscription detail only when the reported count is at most 1000. The two reads must retain the exact count; churn, malformed rows, duplicates or truncation fail the whole request. No independent upstream subscription pagination exists. Returned operational Subjects, queue groups and exact string SIDs may contain business-sensitive identifiers. No client address/name, account, authentication metadata, certificate, payload, mutation or Consumer-health inference is returned. Query parameters are rejected and responses are no-store.
+      parameters:
+        - {name: node, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 256}, description: 'Exact server ID; no whitespace, control characters or path separators.'}
+        - {name: cid, in: path, required: true, schema: {type: string, pattern: '^[0-9]+$', minLength: 1}, description: Unsigned decimal uint64 in range 1 through 18446744073709551615.}
+      responses:
+        '200':
+          description: Complete bounded observation sorted by exact SID
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [node_id, cid, observed_at, read_at, items]
+                properties:
+                  node_id: {type: string}
+                  cid: {type: integer, format: uint64, minimum: 1, maximum: 18446744073709551615, description: Decode losslessly.}
+                  observed_at: {type: string, format: date-time}
+                  read_at: {type: string, format: date-time}
+                  items:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [sid, subject, messages]
+                      properties:
+                        sid: {type: string, minLength: 1, maxLength: 256, description: Exact opaque string; leading zeroes are significant.}
+                        subject: {type: string, minLength: 1, maxLength: 1024}
+                        queue: {type: string, maxLength: 512}
+                        messages: {type: integer, minimum: 0, maximum: 9223372036854775807, description: Cumulative messages delivered to this subscription.}
+                        maximum: {type: integer, minimum: 0, maximum: 9223372036854775807, description: Auto-unsubscribe maximum when reported; absence is unknown/unset, not zero.}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {description: 'not_found for missing node, connection_not_found for missing open CID, or read_api_disabled'}
+        '409': {description: node_identity_ambiguous}
+        '422': {description: subscription_limit_exceeded; no partial rows are returned}
+        '503': {description: connections_unavailable or connection_lookup_limit; includes churn/incomplete observations}
   /api/v1/streams:
     get:
       operationId: listStreams
-      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
+      description: Filter the complete successful enumeration by name, sort, then paginate. Total is the filtered count. Unknown/repeated/malformed query parameters return 400. Not an atomic snapshot or an indexed-query performance guarantee.
+      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/NameQuery'}, {$ref: '#/components/parameters/NameSort'}, {$ref: '#/components/parameters/SortOrder'}]
       responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/consumers:
+    get:
+      operationId: listGlobalConsumers
+      description: Query one completed instance-local Consumer index generation. Filters run across the complete generation before deterministic Stream/name sorting and pagination. Reads never trigger broker collection. The generation joins expected missing and observed external Consumers; identical names on different Streams remain distinct. A generation is not an atomic broker snapshot or health verdict.
+      parameters:
+        - {$ref: '#/components/parameters/Offset'}
+        - {$ref: '#/components/parameters/Limit'}
+        - {name: q, in: query, description: Case-insensitive literal substring of Queue, Stream, Consumer name or durable identity., schema: {type: string, maxLength: 256}}
+        - {name: queue, in: query, schema: {type: string, maxLength: 256}}
+        - {name: stream, in: query, schema: {type: string, maxLength: 256}}
+        - {name: mode, in: query, schema: {type: string, enum: [pull, push]}}
+        - {name: state, in: query, schema: {type: string, enum: [present, missing, mismatched]}}
+        - {name: sort, in: query, schema: {type: string, enum: [identity]}}
+        - {$ref: '#/components/parameters/SortOrder'}
+        - {name: generation, in: query, description: Pin pagination to one generation; a replacement returns 409 and requires reset., schema: {type: string, maxLength: 256}}
+      responses:
+        '200': {description: Ready or explicitly stale completed generation page., content: {application/json: {schema: {$ref: '#/components/schemas/GlobalConsumerPage'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '409': {description: consumer_generation_changed; reset pagination explicitly.}
+        '503': {description: No completed generation is available; state is unavailable or collecting.}
+  /api/v1/consumers/refresh:
+    post:
+      operationId: refreshGlobalConsumers
+      description: Operator-only explicit collection. Builds a bounded generation off to the side with at most 10,000 Streams, 100,000 rows, 128 MiB encoded row budget, 16 workers and 30 seconds. Duplicate refreshes coalesce. Any source failure, limit, timeout or declaration revision change prevents publication; a prior generation remains stale.
+      responses:
+        '200': {description: A complete new generation was published.}
+        '202': {description: A refresh is already collecting.}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '503': {description: Collection failed; response reports unavailable or retained stale state without raw backend errors.}
   /api/v1/streams/{stream}:
     parameters: [{$ref: '#/components/parameters/Stream'}]
     get:
@@ -38,55 +560,899 @@ paths:
     parameters: [{$ref: '#/components/parameters/Stream'}]
     get:
       operationId: listConsumers
-      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
+      description: Search the full successful observed Consumer enumeration by name or effective filter Subject, filter by mode, sort by name, then paginate. Total is the filtered count, not all Stream Consumers. Unknown, repeated or malformed parameters return 400. No partial results on enumeration failure; not an atomic snapshot or indexed-query performance guarantee.
+      parameters:
+        - {$ref: '#/components/parameters/Offset'}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/NameSort'}
+        - {$ref: '#/components/parameters/SortOrder'}
+        - {name: q, in: query, description: Trimmed case-insensitive literal substring of name or effective filter Subject. Maximum 256 normalized UTF-8 bytes., schema: {type: string}}
+        - {name: mode, in: query, schema: {type: string, enum: [pull, push]}}
       responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/streams/{stream}/consumers/{consumer}:
+    parameters: [{$ref: '#/components/parameters/Stream'}, {$ref: '#/components/parameters/Consumer'}]
+    get:
+      operationId: getConsumer
+      description: Exact Stream-scoped pull or push Consumer observation, independent of list pagination. Requires resource-read authorization by default. No message delivery or mutation occurs. Integer counters may exceed JavaScript safe integer precision; clients must decode them losslessly.
+      responses:
+        '200':
+          description: Consumer observation (not a Queue-wide aggregate or health verdict)
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Consumer'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /api/v1/queues:
     get:
       operationId: listQueues
-      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
-      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+      description: Filter the complete successful declaration enumeration by Queue name, sort, then paginate. One separate complete Stream enumeration is joined by the exact Stream identity from each declaration Plan; no per-row backend reads occur. Observation states distinguish unavailable, missing, degraded/configuration mismatch and present. Present checks Stream configuration, ownership metadata and available replica-current evidence, but not Consumer configuration, end-to-end delivery, convergence or health. A failed Stream enumeration retains the declaration page with unavailable observations and no fabricated zero counts. Total is the filtered declaration count. The two enumerations are not an atomic snapshot or an indexed-query performance guarantee.
+      parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/NameQuery'}, {$ref: '#/components/parameters/NameSort'}, {$ref: '#/components/parameters/SortOrder'}]
+      responses:
+        '200':
+          description: Complete filtered declaration page with independently joined Stream observations.
+          content: {application/json: {schema: {$ref: '#/components/schemas/QueueListPage'}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/queues/{queue}/delete-preview:
+    parameters: [{$ref: '#/components/parameters/Queue'}]
+    get:
+      operationId: previewDeleteQueue
+      description: Operator-only read-only deletion evidence with a five-second timeout. Requires original quoted declaration If-Match and rejects query parameters and create-only conditions. Checks declaration revision before and after observation. No lock, resource mutation or audit write. Counts are advisory, not an atomic empty/unused guard; Consumers do not block deletion. Force cannot bypass ownership checks. Missing Stream permits declaration-only cleanup but does not establish zero counts. Does not inspect DLQ dependents or reserve a deletion.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CapabilitiesMatch'}
+        - {name: If-Match, in: header, required: true, schema: {type: string}, description: Original quoted declaration KV revision.}
+      responses:
+        '200':
+          description: Observation including default (force=false) blocked status; not permission or a guarantee of future deletion.
+          headers:
+            ETag: {schema: {type: string}}
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeletePreview'}
+        '412': {$ref: '#/components/responses/Error'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '428': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/queues/{queue}/preview:
+    parameters: [{$ref: '#/components/parameters/Queue'}]
+    post:
+      operationId: previewQueue
+      summary: Preview Queue changes; an observed DLQ cycle returns 400 dlq_dependency_cycle, not broker unavailability or a revision conflict.
+      description: Operator-only read-only advisory preview. Checks original create/edit preconditions before and after observation. Does not acquire a write lock, create metadata/resources/DLQ infrastructure or record audit intent/outcome. Final apply must recheck preconditions and safety. A blocked plan is returned as HTTP 200 with result.blocked=true, not an applied mutation. Five-second read timeout and 1 MiB request limit.
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IfNoneMatch'}, {$ref: '#/components/parameters/CapabilitiesMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Queue'}}}}
+      responses:
+        '200':
+          description: Observed advisory plan, including blocked operations. Not authorization or a guarantee of successful future apply.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlanPreview'}
+        '412': {$ref: '#/components/responses/Error'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '428': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/queues/{queue}/export:
+    parameters: [{$ref: '#/components/parameters/Queue'}]
+    get:
+      operationId: exportQueueDeclaration
+      description: Download one faithfully reconstructed Queue JSON document. Default removes all free-form labels; include_labels=true explicitly preserves them. Operational identifiers and routing subjects remain; this is not guaranteed secret-free. No Plan, runtime observations, credentials, messages or dependency Queue documents are exported. DLQ references remain and need separate dependency review on import. Not a message backup, atomic migration or import approval. Uses existing resource-read authorization and local-demo exception. Queue name is limited to 256 bytes, encoded query to 64 bytes, response to 1 MiB, declaration read to three seconds. Unknown/repeated/malformed query fields fail. Unrepresentable or inconsistent declarations return 409 export_declaration_unavailable; oversized output returns 503 export_limit, never a truncated file.
+      parameters:
+        - {name: include_labels, in: query, schema: {type: boolean, default: false}, description: Only literal true or false is accepted.}
+      responses:
+        '200':
+          description: Versioned Queue document; normalized defaults may differ lexically from original authoring. Label omission changes declaration content. Source ETag is provenance, not a destination write precondition.
+          headers:
+            Content-Disposition: {schema: {type: string}, description: Attachment with validated Queue-name.queue.json filename.}
+            Cache-Control: {schema: {type: string, const: no-store}}
+            ETag: {schema: {type: string}, description: Exact quoted source declaration KV revision.}
+            X-RJS-Export-Omitted-Labels: {schema: {type: integer, minimum: 0}}
+            X-RJS-Export-Scope: {schema: {type: string, const: single-queue-declaration}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Queue'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/queues/{queue}/routing-probe:
+    parameters: [{$ref: '#/components/parameters/Queue'}]
+    get:
+      operationId: probeQueueRouting
+      description: Pure calculation from one saved declaration, never publishes or reads live Stream state. Supply either a nonempty literal subject or exchange/type/routingKey; no mixed, repeated or unknown fields. Query is limited to 4096 encoded bytes and each value to 1024 decoded UTF-8 bytes; Queue name is limited to 256 bytes. Shared declaration read deadline is at most three seconds. Response is at most 1 MiB, never truncated. Binding matches do not imply Stream matches or delivery. Priority exchange resolution is unsupported; literal priority subjects are supported. A 409 routing_declaration_unavailable denotes mismatched or unrepresentable saved evidence.
+      parameters:
+        - {name: subject, in: query, schema: {type: string}, description: Literal NATS Subject; wildcards are forbidden.}
+        - {name: exchange, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string, enum: [direct, topic, fanout]}}
+        - {name: routingKey, in: query, schema: {type: string}, description: Empty or omitted is allowed for topic/fanout; direct requires a nonempty key. Fanout forbids a nonempty key.}
+      responses:
+        '200':
+          description: Declaration-only routing evidence; empty match arrays mean a valid nonmatch.
+          headers:
+            ETag: {schema: {type: string}, description: Quoted exact declaration KV revision.}
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoutingProbeResult'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/queues/{queue}/consumers:
+    parameters: [{$ref: '#/components/parameters/Queue'}]
+    get:
+      operationId: listQueueConsumers
+      description: Merge declared primary/priority identities with observations from one Stream, then filter, name-sort and paginate. Missing observations are null. At most 2000 observed Consumers; excess or incomplete enumeration fails, never returns a truncated success. Requires resource-read authorization by default. Not an atomic broker snapshot or health verdict.
+      parameters:
+        - {$ref: '#/components/parameters/Offset'}
+        - {$ref: '#/components/parameters/Limit'}
+        - {name: q, in: query, description: Trimmed case-insensitive literal substring of name or effective filter Subject (observed when present, otherwise expected). Maximum 256 UTF-8 bytes after normalization., schema: {type: string}}
+        - {name: mode, in: query, schema: {type: string, enum: [pull, push]}}
+        - {name: order, in: query, schema: {type: string, enum: [asc, desc], default: asc}}
+      responses:
+        '200':
+          description: Complete filtered total and clamped offset; empty items is an array. Unknown, repeated or malformed query parameters are rejected.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueueConsumerPage'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /api/v1/queues/{queue}:
     parameters: [{$ref: '#/components/parameters/Queue'}]
     get:
       operationId: getQueue
+      description: Returns existing declaration fields and an additive document field containing a normalized Queue only when rebuilding it reproduces the complete stored plan. Otherwise document is null and document_error explains why editing must be disabled; the declaration remains inspectable with HTTP 200. ETag remains the original quoted KV revision. Large integer fields require lossless client decoding.
       responses: {'200': {$ref: '#/components/responses/JSON'}, '404': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
     put:
       operationId: applyQueue
+      description: Rechecks DLQ dependencies before changing Queue resources. An observed cycle returns 400 dlq_dependency_cycle. A dispatched write response alone does not establish the outcome of a possibly replayed request; preserve mutation evidence and do not automatically retry.
       security: [{bearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IfNoneMatch'}]
+      parameters: [{$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IfNoneMatch'}, {$ref: '#/components/parameters/CapabilitiesMatch'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Queue'}}}}
-      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}, '428': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}, '412': {$ref: '#/components/responses/Error'}, '428': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
     delete:
       operationId: deleteQueue
       security: [{bearerAuth: []}]
       parameters:
+        - {$ref: '#/components/parameters/CapabilitiesMatch'}
         - {$ref: '#/components/parameters/IfMatch'}
         - {$ref: '#/components/parameters/IfNoneMatch'}
         - {name: X-RJS-Confirm-Queue, in: header, required: true, schema: {type: string}}
         - {name: force, in: query, schema: {type: boolean, default: false}}
-      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}, '428': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}, '412': {$ref: '#/components/responses/Error'}, '428': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
   /api/v1/controller:
-    get: {operationId: controllerStatus, responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}}
+    get:
+      operationId: controllerStatus
+      description: Reports this controller process across all Queues, not a durable per-Queue history or health verdict. dlqProcessed, dlqMoved, dlqFailed and dlqIgnored are cumulative processing-attempt counters that reset with the process and can count redeliveries. Ignored means invalid advisory JSON or no matching declared source; it does not prove message loss or completed acknowledgment. Moved includes already-absent source messages. Partial batch results are retained alongside errors. Older servers may omit dlqIgnored; absence is not zero.
+      responses: {'200': {$ref: '#/components/responses/JSON'}, '503': {$ref: '#/components/responses/Error'}}
   /api/v1/audit:
     get:
       operationId: listAuditEvents
       security: [{bearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/Offset'}, {$ref: '#/components/parameters/Limit'}]
       responses: {'200': {$ref: '#/components/responses/JSON'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'}}
+  /api/v1/audit/windows:
+    get:
+      operationId: auditWindow
+      security: [{bearerAuth: []}]
+      description: Operator/auditor read-only global audit window. At most 256 sequence positions are scanned newest-first, including gaps. Filters are exact case-sensitive conjunctions; empty values impose no constraint. Unknown/repeated/malformed parameters return 400. Continue with nextBefore even for an empty matching window. No matching total is computed; scanned/missing are window counts. Retention bounds are observations, not an atomic snapshot or proof of no execution. This is bounded scanning, not indexed lookup or outcome attribution. Changing filters starts a new traversal. New arrivals require an explicit fresh traversal.
+      parameters:
+        - {name: from, in: query, schema: {type: string, format: date-time}, description: Inclusive event time lower bound, RFC3339 with timezone and at most nine fractional digits. Empty means unbounded.}
+        - {name: until, in: query, schema: {type: string, format: date-time}, description: Exclusive event time upper bound. Must be after from when both supplied. Zero/unknown event times are excluded when either bound is supplied. Sequence traversal continues independently of event time order.}
+        - {name: before, in: query, schema: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}, description: Exclusive sequence cursor; omitted starts at current last sequence.}
+        - {name: requestId, in: query, schema: {type: string}, description: Exact request ID; at most 256 UTF-8 bytes and no control characters.}
+        - {name: resource, in: query, schema: {type: string}, description: Exact resource name; at most 256 UTF-8 bytes and no control characters.}
+        - {name: actor, in: query, schema: {type: string}, description: Exact actor; at most 256 UTF-8 bytes and no control characters.}
+        - {name: phase, in: query, schema: {type: string, enum: ['', intent, outcome]}}
+        - {name: action, in: query, schema: {type: string}, description: Exact action; at most 256 UTF-8 bytes and no control characters.}
+        - {name: outcome, in: query, schema: {type: string}, description: Exact recorded outcome; at most 256 UTF-8 bytes and no control characters.}
+      responses:
+        '200':
+          description: Bounded global evidence window, not an execution verdict.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, streamPresent, firstSequence, lastSequence, scanned, missing, nextBefore, filter]
+                properties:
+                  items: {type: array, maxItems: 256, items: {type: object}}
+                  streamPresent: {type: boolean}
+                  firstSequence: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
+                  lastSequence: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
+                  scanned: {type: integer, minimum: 0, maximum: 256}
+                  missing: {type: integer, minimum: 0, maximum: 256}
+                  nextBefore: {type: [integer, 'null'], format: uint64, minimum: 0, maximum: 18446744073709551615}
+                  filter:
+                    type: object
+                    required: [requestId, resource, actor, phase, action, outcome, from, until]
+                    properties:
+                      requestId: {type: string}
+                      resource: {type: string}
+                      actor: {type: string}
+                      phase: {type: string}
+                      action: {type: string}
+                      outcome: {type: string}
+                      from: {type: string}
+                      until: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/audit/requests/{requestID}:
+    get:
+      operationId: auditRequestEvidence
+      description: Operator/auditor read-only retained audit evidence for an exact request ID. Scans at most 256 sequence positions newest-first, including gaps. Continue with nextBefore even when items is empty. Cursor is exclusive and integers require lossless decoding. Current retained first/last sequences are observations, not an atomic snapshot or guaranteed history. Null nextBefore means this backward traversal reached the current retained lower boundary, not that no older or future events exist. No matches never proves no execution. Request ID is correlation, not idempotency or authoritative outcome attribution.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: requestID, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$'}}
+        - {name: before, in: query, schema: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}, description: Exclusive sequence cursor; omitted starts at current last sequence.}
+      responses:
+        '200':
+          description: Bounded evidence window, never an operation verdict.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, items, streamPresent, firstSequence, lastSequence, scanned, missing, nextBefore]
+                properties:
+                  requestId: {type: string}
+                  items: {type: array, items: {type: object}}
+                  streamPresent: {type: boolean}
+                  firstSequence: {type: integer, minimum: 0}
+                  lastSequence: {type: integer, minimum: 0}
+                  scanned: {type: integer, minimum: 0, maximum: 256}
+                  missing: {type: integer, minimum: 0, maximum: 256}
+                  nextBefore: {type: [integer, 'null'], minimum: 0}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/events:
+    get:
+      operationId: streamInvalidations
+      security: [{bearerAuth: []}]
+      summary: Stream tenant-scoped read invalidations
+      description: Authenticated, read-only, instance-local SSE stream. Authorization and X-RJS-Tenant use the same rules as audit reads; credentials never appear in the URL. Each tenant has an independent monotonically increasing event ID and a 256-event replay window. Last-Event-ID outside that window returns 409 and requires a bounded refresh before reconnecting without it. Events are invalidation hints, not mutation outcomes or exact alert delivery. Clients reconnect with exponential backoff and retain polling/manual refresh as fallback. Limits are two connections per actor, 32 per tenant and 256 per instance; overflow returns 429 or closes a slow stream. A comment heartbeat is emitted every 15 seconds. Reverse proxies must disable response buffering and allow idle intervals beyond the heartbeat.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          schema: {type: string, pattern: '^[1-9][0-9]*$'}
+          description: Last tenant-local decimal event ID fully processed by this client.
+      responses:
+        '200':
+          description: Standard SSE wire stream. `invalidate` data is a JSON object whose resource is `audit` or `alerts`.
+          headers:
+            X-Accel-Buffering: {schema: {type: string, const: 'no'}}
+          content:
+            text/event-stream:
+              schema: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '406': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/diagnostics/jobs:
+    post:
+      operationId: createDiagnosticJob
+      security: [{bearerAuth: []}]
+      description: Creates one explicit instance-local metadata collection for the authenticated operator. No URL, path, command, header or source selection is accepted. Collection is not automatically retried and restart loses every job. One collection may run and at most two jobs are retained per process; each expires ten minutes after creation. Queue/Stream inventories, messages, subscriptions, logs, environment and credentials are excluded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DiagnosticJobRequest'}
+      responses:
+        '202': {description: Collection admitted, headers: {Location: {schema: {type: string}}}, content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosticJob'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/diagnostics/jobs/{id}:
+    parameters: [{$ref: '#/components/parameters/DiagnosticJobID'}]
+    get:
+      operationId: getDiagnosticJob
+      security: [{bearerAuth: []}]
+      description: Creator-only status. Unknown IDs and jobs owned by another identity are indistinguishable. Expired status remains visible until capacity admission reclaims the identity.
+      responses: {'200': {description: Current job state, content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosticJob'}}}}, '401': {$ref: '#/components/responses/Error'}, '403': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'} }
+    delete:
+      operationId: cancelDiagnosticJob
+      security: [{bearerAuth: []}]
+      description: Creator-only cancellation. Ready, partial, failed, cancelled and expired jobs are returned unchanged. Cancellation removes archive access and a late collector cannot republish bytes.
+      responses: {'200': {description: Current terminal job state, content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosticJob'}}}}, '401': {$ref: '#/components/responses/Error'}, '403': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '503': {$ref: '#/components/responses/Error'} }
+  /api/v1/diagnostics/jobs/{id}/download:
+    get:
+      operationId: downloadDiagnosticJob
+      security: [{bearerAuth: []}]
+      description: Creator-only download for ready or partial jobs. Range and query requests are rejected. Authorization is audited before bytes are sent. A server write-completion audit does not prove browser receipt or saving.
+      parameters: [{$ref: '#/components/parameters/DiagnosticJobID'}]
+      responses:
+        '200': {description: Bounded metadata ZIP, headers: {Content-Disposition: {schema: {type: string}}, Content-Length: {schema: {type: integer, maximum: 8388608}}}, content: {application/zip: {schema: {type: string, format: binary, maxLength: 8388608}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/history:
+    get:
+      operationId: getMetricHistory
+      security: [{bearerAuth: []}]
+      description: Queries the configured Prometheus backend through a fixed metric allowlist. Browsers cannot submit PromQL or an upstream URL. Samples retain source timestamps and numeric strings; gapBefore marks a missing sampling interval and reset is reported only for a decreasing management uptime series. Empty series means no samples were returned, never zero. The backend is disabled when no Prometheus origin is configured.
+      parameters:
+        - {name: metric, in: query, required: true, schema: {type: string, enum: [jetstream-memory-bytes, jetstream-storage-bytes, queue-messages, queue-bytes, nats-nodes, management-uptime-seconds]}}
+        - {name: window, in: query, required: true, schema: {type: string, enum: [15m, 1h, 24h]}}
+        - {name: queue, in: query, schema: {type: string, pattern: '^[A-Za-z0-9_-]+$'}, description: Required only for queue-messages and queue-bytes; rejected for every other metric.}
+      responses:
+        '200': {description: Bounded Prometheus range projection, content: {application/json: {schema: {$ref: '#/components/schemas/MetricHistory'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/oidc/config:
+    get:
+      operationId: getBrowserOIDCConfig
+      security: []
+      description: Public, no-store, non-secret Authorization Code plus PKCE configuration. The callback is an explicitly configured same-origin URL; the token endpoint is not exposed to the browser.
+      responses:
+        '200': {description: Reviewed browser OIDC metadata, content: {application/json: {schema: {$ref: '#/components/schemas/BrowserOIDCConfig'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/oidc/token:
+    post:
+      operationId: exchangeBrowserOIDCCode
+      security: []
+      description: Exchanges one bounded authorization code and PKCE verifier at the fixed discovered token endpoint. Returns only a freshly verified authorized ID token; refresh tokens and raw provider errors are never returned.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/BrowserOIDCCallback'}}}}
+      responses:
+        '200': {description: Verified memory-only browser bearer, content: {application/json: {schema: {$ref: '#/components/schemas/BrowserOIDCToken'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/alerts:
+    get:
+      operationId: getOperationalAlerts
+      security: [{bearerAuth: []}]
+      description: Returns a bounded projection of the six repository-defined Prometheus alert rules. The browser cannot submit PromQL or an upstream URL. Inactive is not presented as recovered; recovered is emitted only after this management process observes a firing-to-inactive transition. This endpoint does not send notifications.
+      responses:
+        '200': {description: Current projected Prometheus alert rules, content: {application/json: {schema: {$ref: '#/components/schemas/OperationalAlerts'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
   parameters:
+    Tenant: {name: X-RJS-Tenant, in: header, description: Selected tenant ID. Required for identities with multiple memberships; forbidden for nonmembers. Duplicate, empty, or invalid values are rejected., schema: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}}
+    NameQuery: {name: q, in: query, description: Trimmed case-insensitive literal name substring; maximum 256 normalized UTF-8 bytes., schema: {type: string}}
+    NameSort: {name: sort, in: query, schema: {type: string, enum: [name], default: name}}
+    SortOrder: {name: order, in: query, schema: {type: string, enum: [asc, desc], default: asc}}
     Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
     Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
     Stream: {name: stream, in: path, required: true, schema: {type: string}}
-    Queue: {name: queue, in: path, required: true, schema: {type: string}}
+    Consumer: {name: consumer, in: path, required: true, x-go-name: ConsumerName, schema: {type: string}}
+    Queue: {name: queue, in: path, required: true, x-go-name: QueueName, schema: {type: string}}
     IfMatch: {name: If-Match, in: header, schema: {type: string}}
+    CapabilitiesMatch:
+      name: X-RJS-If-Capabilities-Match
+      in: header
+      description: Optional for legacy clients; candidate UI supplies original capabilities ETag. After authorization, malformed/repeated values return 400 and a different receiving-instance contract returns 412 before audit intent or backend work. Binds immutable capability data and reported build version, not live state or binary attestation. Does not replace declaration preconditions.
+      schema: {type: string, pattern: '^"rjs-capabilities-v1:[0-9a-f]{64}"$'}
     IfNoneMatch: {name: If-None-Match, in: header, schema: {type: string}}
+    DiagnosticJobID: {name: id, in: path, required: true, schema: {type: string, pattern: '^[0-9a-f]{32}$'}}
   responses:
     JSON: {description: Successful JSON response, content: {application/json: {schema: {type: object}}}}
     Error: {description: Stable error envelope, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
   schemas:
+    BrowserOIDCConfig:
+      type: object
+      additionalProperties: false
+      required: [schema, authorizationEndpoint, clientId, callbackUrl, scopes]
+      properties:
+        schema: {type: string, const: rjs.browser-oidc.v1}
+        authorizationEndpoint: {type: string, format: uri}
+        clientId: {type: string}
+        callbackUrl: {type: string, format: uri}
+        logoutEndpoint: {type: string, format: uri}
+        scopes: {type: array, minItems: 2, maxItems: 2, prefixItems: [{const: openid}, {const: profile}]}
+    BrowserOIDCCallback:
+      type: object
+      additionalProperties: false
+      required: [schema, code, verifier]
+      properties:
+        schema: {type: string, const: rjs.browser-oidc-callback.v1}
+        code: {type: string, minLength: 1, maxLength: 4096}
+        verifier: {type: string, minLength: 43, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$'}
+    BrowserOIDCToken:
+      type: object
+      additionalProperties: false
+      required: [schema, token]
+      properties:
+        schema: {type: string, const: rjs.browser-oidc-token.v1}
+        token: {type: string, description: Freshly verified authorized ID token; the browser must keep it in memory only.}
+    OperationalAlertRule:
+      type: object
+      additionalProperties: false
+      required: [name, query, duration, severity, summary, description, state]
+      properties:
+        name: {type: string, enum: [RabbitJetStreamJetStreamUnavailable, RabbitJetStreamControllerStalled, RabbitJetStreamNATSNodeUnavailable, RabbitJetStreamDeadLetterFailures, RabbitJetStreamQueueBacklogHigh, RabbitJetStreamManagementHighErrorRate]}
+        query: {type: string, maxLength: 2048}
+        duration: {type: string, description: Prometheus rule duration in seconds, retained as numeric text.}
+        severity: {type: string, enum: [warning, critical]}
+        summary: {type: string}
+        description: {type: string}
+        state: {type: string, enum: [inactive, pending, firing, recovered]}
+        activeAt: {type: string, format: date-time}
+        recoveredAt: {type: string, format: date-time}
+    OperationalAlerts:
+      type: object
+      additionalProperties: false
+      required: [schema, source, observedAt, rules, missingRules]
+      properties:
+        schema: {type: string, const: rjs.operational-alerts.v1}
+        source: {type: string, const: prometheus}
+        observedAt: {type: string, format: date-time}
+        consoleUrl: {type: string, format: uri, description: Optional separately configured browser-visible Prometheus alerts URL; never inferred from the internal scrape origin.}
+        rules: {type: array, maxItems: 6, items: {$ref: '#/components/schemas/OperationalAlertRule'}}
+        missingRules: {type: array, maxItems: 6, uniqueItems: true, items: {type: string}, description: Repository-defined alert names absent from the current Prometheus rules response; an incomplete set is never implied to provide full coverage.}
+    MetricHistorySample:
+      type: object
+      additionalProperties: false
+      required: [time, value]
+      properties:
+        time: {type: string, format: date-time}
+        value: {type: string, description: Finite Prometheus numeric text; clients must not assume IEEE-754 preserves integer precision.}
+        gapBefore: {type: boolean}
+        reset: {type: boolean, description: Present only when management uptime decreased from the preceding returned sample.}
+    MetricHistorySeries:
+      type: object
+      additionalProperties: false
+      required: [labels, samples]
+      properties:
+        labels: {type: object, additionalProperties: {type: string}, description: Only labels approved for the selected metric are retained.}
+        samples: {type: array, maxItems: 6000, items: {$ref: '#/components/schemas/MetricHistorySample'}}
+    MetricHistory:
+      type: object
+      additionalProperties: false
+      required: [schema, source, metric, window, start, end, stepSeconds, series]
+      properties:
+        schema: {type: string, const: rjs.metric-history.v1}
+        source: {type: string, const: prometheus}
+        metric: {type: string, enum: [jetstream-memory-bytes, jetstream-storage-bytes, queue-messages, queue-bytes, nats-nodes, management-uptime-seconds]}
+        window: {type: string, enum: [15m, 1h, 24h]}
+        start: {type: string, format: date-time}
+        end: {type: string, format: date-time}
+        stepSeconds: {type: integer, enum: [15, 60, 300]}
+        series: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/MetricHistorySeries'}}
+    DiagnosticJobRequest:
+      type: object
+      additionalProperties: false
+      required: [schema, profile]
+      properties:
+        schema: {type: string, const: rjs.diagnostics-request.v1}
+        profile: {type: string, const: metadata-v1}
+    DiagnosticManifestEntry:
+      type: object
+      additionalProperties: false
+      required: [source, collectedAt]
+      properties:
+        source: {type: string}
+        file: {type: string}
+        collectedAt: {type: string, format: date-time}
+        size: {type: integer, minimum: 0, maximum: 4194304}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        error: {type: string, description: Fixed non-sensitive omission reason; never a raw dependency error.}
+    DiagnosticManifest:
+      type: object
+      additionalProperties: false
+      required: [schema, generatedAt, entries]
+      properties:
+        schema: {type: string, const: rjs.diagnostics-manifest.v1}
+        generatedAt: {type: string, format: date-time}
+        entries: {type: array, maxItems: 5, items: {$ref: '#/components/schemas/DiagnosticManifestEntry'}}
+    DiagnosticJob:
+      type: object
+      additionalProperties: false
+      required: [id, profile, state, createdAt, expiresAt]
+      properties:
+        id: {type: string, pattern: '^[0-9a-f]{32}$'}
+        profile: {type: string, const: metadata-v1}
+        state: {type: string, enum: [collecting, ready, partial, failed, cancelled, expired]}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+        manifest: {$ref: '#/components/schemas/DiagnosticManifest'}
+        errorCode: {type: string, enum: [collection_failed, collection_timeout, archive_limit_exceeded, cancelled, expired]}
+    QueueListPage:
+      type: object
+      required: [items, total, offset, limit]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [queue, revision, plan, observation]
+            properties:
+              queue: {type: string}
+              revision: {type: string}
+              plan: {type: object}
+              observation: {$ref: '#/components/schemas/QueueListObservation'}
+        total: {type: integer, minimum: 0}
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+    QueueListObservation:
+      type: object
+      required: [state, reasons]
+      properties:
+        state: {type: string, enum: [present, missing, degraded, unavailable]}
+        stream: {type: string}
+        messages: {type: integer, minimum: 0, format: uint64, description: Absent when the Stream is missing or observation is unavailable; explicit zero is preserved.}
+        consumers: {type: integer, minimum: 0, description: Observed Stream Consumer count, not client connections; absent when unavailable.}
+        reasons:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [declaration_inconsistent, stream_collection_unavailable, stream_missing, stream_identity_ambiguous, stream_configuration_mismatch, stream_replicas_not_current]}
+    RoutingProbeResult:
+      type: object
+      additionalProperties: false
+      required: [queue, revision, stream, subject, streamSubjects, matchedStreamSubjects, bindings]
+      properties:
+        queue: {type: string}
+        revision: {type: string}
+        stream: {type: string}
+        subject: {type: string}
+        streamSubjects: {type: array, items: {type: string}}
+        matchedStreamSubjects: {type: array, items: {type: string}}
+        bindings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [exchange, type, keys, subjects, matchedSubjects]
+            properties:
+              exchange: {type: string}
+              type: {type: string, enum: [direct, topic, fanout]}
+              keys: {type: [array, 'null'], items: {type: string}, description: Fanout has no routing keys.}
+              subjects: {type: array, items: {type: string}}
+              matchedSubjects: {type: array, items: {type: string}}
+    ConsoleCapabilities:
+      type: object
+      required: [schemaVersion, deployment, queue, features, qualification]
+      properties:
+        schemaVersion: {type: string, const: rjs.console-capabilities.v1}
+        deployment:
+          type: object
+          required: [profile, source]
+          properties:
+            profile: {type: string, enum: [unknown, standalone, cluster]}
+            source: {type: string, enum: [unspecified, configuration]}
+        queue:
+          type: object
+          required: [apiVersion, kind, supportedReplicas, supportedStorage, minimumPriority, maximumPriority, requiresExplicitReplicas, defaults]
+          properties:
+            apiVersion: {type: string}
+            kind: {type: string, const: Queue}
+            supportedReplicas: {type: array, items: {type: integer}, uniqueItems: true}
+            schema:
+              type: object
+              required: [id, version, url, etag]
+              description: Present when queue-schema is advertised; its content revision participates in the capabilities ETag.
+              properties:
+                id: {type: string, const: 'urn:rabbit-jetstream:queue:v1alpha1:schema:1'}
+                version: {type: string, const: rjs.queue-schema.v1}
+                url: {type: string, const: /api/v1/console/queue-schema}
+                etag: {type: string}
+            supportedStorage: {type: array, items: {type: string}, uniqueItems: true}
+            minimumPriority: {type: integer}
+            maximumPriority: {type: integer}
+            requiresExplicitReplicas: {type: boolean, const: true}
+            defaults:
+              type: object
+              required: [storage, delivery]
+              properties:
+                storage: {type: string}
+                delivery:
+                  type: object
+                  required: [ackWait, maxDeliver]
+                  properties:
+                    ackWait: {type: string}
+                    maxDeliver: {type: integer, minimum: 1}
+        features: {type: array, items: {type: string}, uniqueItems: true}
+        qualification:
+          type: object
+          required: [status]
+          additionalProperties: false
+          properties:
+            status: {type: string, enum: [unreported, reported], description: Reported means a configured release-bundle manifest exactly matched this clean release build's version, revision and embedded WebUI identity; it is not a qualification verdict.}
+            statement: {type: string, minLength: 1, maxLength: 512, description: Exact release-manifest qualification statement; present only when status is reported.}
+            manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$', description: SHA-256 of the loaded release manifest after an optional UTF-8 BOM; present only when status is reported.}
+    Session:
+      type: object
+      required: [actor, role, permissions, expires_at, resource_read_policy]
+      additionalProperties: false
+      properties:
+        actor: {type: string}
+        role: {type: string, enum: [operator, auditor]}
+        permissions:
+          type: array
+          items: {type: string, enum: ['resources:read', 'audit:read', 'queue:preview', 'queue:apply', 'queue:delete']}
+        expires_at: {type: [string, 'null'], format: date-time}
+        tenants:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+          description: Present for local accounts. Absence means the credential is not an application-level tenant credential.
+        tenant_roles:
+          type: object
+          additionalProperties: {type: string, enum: [operator, auditor]}
+          description: Effective role keyed by tenant for local multi-tenant accounts.
+        tenant_permissions:
+          type: object
+          additionalProperties: {type: array, items: {type: string}}
+          description: Server-derived permissions keyed by tenant; the UI must replace, not merge, permissions when switching.
+        resource_read_policy: {type: string, enum: [authenticated, anonymous]}
+    LocalLoginRequest:
+      type: object
+      required: [username, password]
+      additionalProperties: false
+      properties:
+        username: {type: string, minLength: 1, maxLength: 128}
+        password: {type: string, minLength: 1, maxLength: 1024, format: password}
+    LocalLoginResponse:
+      type: object
+      required: [access_token, token_type, expires_at, actor, role, tenants]
+      additionalProperties: false
+      properties:
+        access_token: {type: string, minLength: 1, description: Short-lived bearer credential; keep only in page memory.}
+        token_type: {type: string, const: Bearer}
+        expires_at: {type: string, format: date-time}
+        actor: {type: string, pattern: '^local:[A-Za-z0-9._-]{1,128}$'}
+        role: {type: string, enum: [operator, auditor]}
+        tenants:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+    LocalAccount:
+      type: object
+      additionalProperties: false
+      required: [username, memberships, disabled, platform_admin]
+      properties:
+        username: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+        memberships: {type: array, minItems: 1, items: {$ref: '#/components/schemas/TenantMembership'}}
+        disabled: {type: boolean}
+        platform_admin: {type: boolean}
+    LocalAccountChange:
+      type: object
+      additionalProperties: false
+      required: [memberships, disabled, platform_admin]
+      properties:
+        username: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+        password: {type: string, minLength: 12, maxLength: 1024, format: password}
+        memberships: {type: array, minItems: 1, items: {$ref: '#/components/schemas/TenantMembership'}}
+        disabled: {type: boolean}
+        platform_admin: {type: boolean}
+    TenantMembership:
+      type: object
+      additionalProperties: false
+      required: [tenant, role]
+      properties:
+        tenant: {type: string, pattern: '^[A-Za-z0-9._-]{1,128}$'}
+        role: {type: string, enum: [operator, auditor]}
+    DeletePreview:
+      type: object
+      required: [queue, stream, base_revision, observed_at, stream_present, ownership, requires_force, blocked]
+      properties:
+        queue: {type: string}
+        stream: {type: string}
+        base_revision: {type: string, description: Original quoted declaration KV revision, not a Stream version.}
+        observed_at: {type: string, format: date-time, description: Management-side read completion time, not an atomic snapshot time.}
+        stream_present: {type: boolean}
+        ownership: {type: string, enum: [matching, unmarked, different, unobserved]}
+        messages: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615, description: Omitted for missing Stream; decode losslessly.}
+        consumers: {type: integer, minimum: 0, description: Omitted for missing Stream; includes all observed Stream Consumers and is not an unused guard.}
+        requires_force: {type: boolean, description: Observed messages are nonzero; force does not bypass ownership protection.}
+        blocked: {type: boolean, description: Default force=false deletion would be blocked by observed ownership or messages.}
+        reason: {type: string}
+    PlanPreview:
+      type: object
+      required: [plan, result, observed_at, base_revision, create_only]
+      properties:
+        plan: {type: object, description: Generated topology.Plan using rabbit-jetstream.io/plan/v1alpha1; canonical Queue schema remains a separate contract.}
+        result: {$ref: '#/components/schemas/ReconcileResult'}
+        observed_at: {type: string, format: date-time, description: Completion time of this advisory read, not an atomic broker snapshot timestamp.}
+        base_revision: {type: string, description: Quoted original declaration KV version for edits; empty for create-only. Not a revision of observed broker state.}
+        create_only: {type: boolean}
+        declaration_review: {$ref: '#/components/schemas/DeclarationReview'}
+    DeclarationReview:
+      type: object
+      required: [status]
+      description: Additive declaration-to-declaration review, separate from observed-resource reconciliation. Reads the exact original KV version and rechecks the precondition before returning. Does not authorize apply or prove convergence. Missing on older servers.
+      properties:
+        status: {type: string, enum: [available, create, unavailable]}
+        reason: {type: string, enum: [target_unrepresentable, base_unrepresentable, base_identity_mismatch]}
+        document: {type: object, description: Losslessly reconstructed normalized target Queue document. Defaults and lexical units may be normalized; not a replacement for the submitted draft. Absent when target reconstruction is unavailable.}
+        diff:
+          type: object
+          description: Present only for available edit review. Empty changes do not imply that observed resources need no repair. Creation has no fabricated empty base. Values are normalized server strings, not typed JSON field values.
+          required: [queue, changes]
+          properties:
+            queue: {type: string}
+            changes:
+              type: array
+              items:
+                type: object
+                required: [path, impact]
+                properties:
+                  path: {type: string}
+                  from: {type: string}
+                  to: {type: string}
+                  impact: {type: string}
+    ReconcileResult:
+      type: object
+      required: [queue, revision, status, blocked, operations]
+      properties:
+        queue: {type: string}
+        revision: {type: string, description: Desired content revision; not a KV ETag.}
+        status: {type: string, enum: [ready, noop, blocked]}
+        blocked: {type: boolean}
+        operations:
+          type: array
+          items:
+            type: object
+            required: [resource, name, action, impact, blocked, changes]
+            properties:
+              resource: {type: string}
+              name: {type: string}
+              action: {type: string}
+              impact: {type: string}
+              blocked: {type: boolean}
+              reason: {type: string}
+              changes:
+                type: [array, 'null']
+                items: {type: object}
+    QueueConsumerPage:
+      type: object
+      required: [queue, stream, declaration_revision, stream_status, stream_ownership, items, total, offset, limit]
+      properties:
+        queue: {type: string}
+        stream: {type: string}
+        declaration_revision: {type: string, description: Quoted opaque declaration KV version only; not an ETag for observations.}
+        stream_status: {type: string, enum: [present, missing]}
+        stream_ownership: {$ref: '#/components/schemas/QueueOwnership'}
+        total: {type: integer, minimum: 0}
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        items:
+          type: array
+          items:
+            type: object
+            required: [stream, name, expected, observed, status, ownership]
+            properties:
+              stream: {type: string}
+              name: {type: string}
+              expected:
+                oneOf: [{$ref: '#/components/schemas/ConsumerPlan'}, {type: 'null'}]
+              observed:
+                oneOf: [{$ref: '#/components/schemas/Consumer'}, {type: 'null'}]
+              status: {type: string, enum: [present, missing]}
+              ownership: {$ref: '#/components/schemas/QueueOwnership'}
+    GlobalConsumerPage:
+      type: object
+      required: [state, generation_id, started_at, completed_at, items, total, offset, limit]
+      properties:
+        state: {type: string, enum: [ready, stale]}
+        generation_id: {type: string}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        failed_at: {type: string, format: date-time}
+        total: {type: integer, minimum: 0}
+        offset: {type: integer, minimum: 0, maximum: 1000000}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/GlobalConsumerRow'}
+    GlobalConsumerRow:
+      type: object
+      additionalProperties: false
+      required: [stream, name, mode, status, ownership, pending, ack_pending]
+      properties:
+        queue: {type: string, description: Present only when exact Stream identity and declaration association are available.}
+        stream: {type: string}
+        name: {type: string}
+        durable: {type: string}
+        mode: {type: string, enum: [pull, push]}
+        status: {type: string, enum: [present, missing, mismatched]}
+        ownership: {type: string, enum: [matching, different, external, unknown]}
+        pending: {type: [integer, 'null'], format: uint64, minimum: 0, maximum: 18446744073709551615}
+        ack_pending: {type: [integer, 'null'], minimum: 0}
+    QueueOwnership:
+      type: string
+      enum: [matching, different, unmarked, unknown]
+      description: Queue ownership metadata evidence, not authorization or health. Unknown for missing observations. Check Stream and Consumer evidence separately; expected identity alone does not imply ownership.
+    ConsumerPlan:
+      type: object
+      required: [name, stream, mode, filterSubjects, deliverPolicy, ackPolicy, ackWaitNanos, maxDeliver, replayPolicy, metadata]
+      properties:
+        name: {type: string}
+        stream: {type: string}
+        mode: {type: string}
+        filterSubjects: {type: [array, 'null'], items: {type: string}}
+        deliverPolicy: {type: string}
+        ackPolicy: {type: string}
+        ackWaitNanos: {type: integer, format: int64}
+        maxDeliver: {type: integer}
+        replayPolicy: {type: string}
+        metadata: {type: [object, 'null'], additionalProperties: {type: string}}
+    Consumer:
+      type: object
+      required: [stream, name, created, filter_subjects, mode, deliver_policy, ack_policy, ack_wait_nanos, max_deliver, max_ack_pending, replay_policy, metadata, pending, ack_pending, redelivered, waiting, delivered]
+      properties:
+        stream: {type: string}
+        name: {type: string}
+        created: {type: string, format: date-time}
+        durable: {type: string}
+        filter_subject: {type: string}
+        filter_subjects: {type: [array, 'null'], items: {type: string}}
+        mode: {type: string, enum: [pull, push]}
+        deliver_policy: {type: string}
+        ack_policy: {type: string}
+        ack_wait_nanos: {type: integer, format: int64}
+        max_deliver: {type: integer}
+        max_ack_pending: {type: integer, description: Observed broker configuration; only positive values are a finite ACK-pending limit. Absent on older management versions.}
+        replay_policy: {type: string}
+        metadata: {type: [object, 'null'], additionalProperties: {type: string}}
+        pending: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
+        ack_pending: {type: integer}
+        redelivered: {type: integer}
+        waiting: {type: integer}
+        delivered: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
+        cluster: {$ref: '#/components/schemas/ClusterInfo'}
+    ClusterInfo:
+      type: object
+      required: [replicas]
+      properties:
+        name: {type: string}
+        leader: {type: string}
+        replicas:
+          type: [array, 'null']
+          items:
+            type: object
+            required: [name, current, offline, lag, active_nanos]
+            properties:
+              name: {type: string}
+              current: {type: boolean}
+              offline: {type: boolean}
+              lag: {type: integer, format: uint64, minimum: 0, maximum: 18446744073709551615}
+              active_nanos: {type: integer, format: int64}
     ErrorEnvelope:
       type: object
       required: [error]
@@ -94,15 +1460,48 @@ components:
         error:
           type: object
           required: [code, message]
-          properties: {code: {type: string}, message: {type: string}}
-    Queue:
+          properties:
+            code: {type: string}
+            message: {type: string}
+            mutation:
+              $ref: '#/components/schemas/MutationAttemptEvidence'
+            issues_version:
+              type: string
+              const: rjs.queue-validation.v1
+              description: Present with issues for semantic Queue validation failures only; decoding errors retain text without guessed paths.
+            issues:
+              type: array
+              description: Paths refer to the submitted document before canonical sorting. Group-level constraints can point to a parent object.
+              items:
+                type: object
+                required: [path, code, message]
+                properties:
+                  path: {type: string, description: JSON Pointer; may identify a missing required field.}
+                  code: {type: string, description: Stable semantic rule identifier.}
+                  message: {type: string}
+    MutationAttemptEvidence:
       type: object
-      required: [apiVersion, kind, metadata, spec]
+      required: [schemaVersion, scope, phase, resourceEffects]
+      description: Optional PUT/DELETE failure evidence for this receiving handler attempt only. Covers Queue/Stream/Consumer and declaration effects; excludes audit/lock metadata and earlier transport replays. Not an idempotency key, rollback assertion or durable original-request outcome. Absence conveys no phase information. Existing status/code/message semantics are unchanged.
       properties:
-        apiVersion: {type: string, const: rabbit-jetstream.io/v1alpha1}
-        kind: {type: string, const: Queue}
-        metadata:
-          type: object
-          required: [name]
-          properties: {name: {type: string}}
-        spec: {type: object}
+        schemaVersion: {type: string, const: rjs.mutation-evidence.v1}
+        scope: {type: string, const: receiving-attempt}
+        phase: {type: string, enum: [audit_intent, backend, audit_outcome]}
+        resourceEffects:
+          type: string
+          enum: [none, possible]
+          description: none only for audit_intent failure before backend invocation; possible for backend or audit_outcome failure, including conflicts. Never authorizes automatic retry.
+        intentId:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+          description: Audit intent correlation when generated. Persistence is not guaranteed, including after a lost publish acknowledgment.
+      oneOf:
+        - properties:
+            phase: {const: audit_intent}
+            resourceEffects: {const: none}
+        - properties:
+            phase: {enum: [backend, audit_outcome]}
+            resourceEffects: {const: possible}
+    Queue:
+      $ref: /api/v1/console/queue-schema
+      description: Full typed authoring schema from the same authenticated server. Offline source is internal/topology/queue-schema.json; custom formats and resource rules still require server validation.
