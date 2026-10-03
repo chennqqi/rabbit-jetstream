@@ -1,0 +1,30 @@
+# Baseline Alertmanager configuration shipped with Rabbit JetStream.
+#
+# The console's "Operational alerts" page is a read-only projection of the
+# shipped Prometheus rules; it never sends notifications. Delivering alerts to
+# a human requires this Alertmanager (or an equivalent external component).
+#
+# The default route writes notifications to a local webhook receiver, which
+# must be replaced with the team's real endpoint (PagerDuty, Slack, DingTalk,
+# email, ...). Grouping and repetition are deliberately conservative for a
+# small on-call rotation; tune before production use.
+route:
+  receiver: default-webhook
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Critical pages immediately and repeats more often.
+    - matchers: [ 'severity="critical"' ]
+      receiver: default-webhook
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: default-webhook
+    webhook_configs:
+      # Replace with the team's real notification endpoint. The payload is the
+      # standard Alertmanager JSON webhook v2 body.
+      - url: http://localhost:5001/alerts
+        send_resolved: true

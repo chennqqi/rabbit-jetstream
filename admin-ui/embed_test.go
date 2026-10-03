@@ -1,19 +1,57 @@
 package adminui
 
 import (
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
+
+func TestEmbeddedAssetIdentity(t *testing.T) {
+	identity := EmbeddedAssetIdentity()
+	if identity.Algorithm != "sha256-framed-files-v1" || identity.FileCount < 4 {
+		t.Fatalf("unexpected identity: %+v", identity)
+	}
+	decoded, err := hex.DecodeString(identity.Digest)
+	if err != nil || len(decoded) != 32 {
+		t.Fatalf("invalid SHA-256 digest %q: %v", identity.Digest, err)
+	}
+	if identity != EmbeddedAssetIdentity() {
+		t.Fatal("embedded asset identity is not stable")
+	}
+}
+
+func TestAssetIdentityBindsPathsLengthsAndContents(t *testing.T) {
+	base := fstest.MapFS{"index.html": {Data: []byte("ab")}, "assets/app.js": {Data: []byte("c")}}
+	sameDifferentInsertionOrder := fstest.MapFS{"assets/app.js": {Data: []byte("c")}, "index.html": {Data: []byte("ab")}}
+	pathChanged := fstest.MapFS{"index.html": {Data: []byte("ab")}, "assets/other.js": {Data: []byte("c")}}
+	boundaryChanged := fstest.MapFS{"index.html": {Data: []byte("a")}, "assets/app.js": {Data: []byte("bc")}}
+	contentChanged := fstest.MapFS{"index.html": {Data: []byte("ax")}, "assets/app.js": {Data: []byte("c")}}
+
+	want, err := identifyAssets(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, files := range map[string]fstest.MapFS{"insertion order": sameDifferentInsertionOrder, "path": pathChanged, "boundary": boundaryChanged, "content": contentChanged} {
+		got, err := identifyAssets(files)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "insertion order" && got != want {
+			t.Fatalf("walk order changed identity: got %+v want %+v", got, want)
+		}
+		if name != "insertion order" && got.Digest == want.Digest {
+			t.Errorf("%s change did not change digest", name)
+		}
+	}
+}
 
 func TestHandlerServesConsoleAndAssets(t *testing.T) {
 	for _, test := range []struct{ path, content string }{
 		{"/admin/", "Rabbit JetStream"},
-		{"/admin/styles.css", "--ink"},
-		{"/admin/app.js", "loadDashboard"},
-		{"/admin/management.js", "If-None-Match"},
-		{"/admin/management.css", ".danger-zone"},
 		{"/admin/queues/example", "Rabbit JetStream"},
 	} {
 		recorder := httptest.NewRecorder()
@@ -38,28 +76,31 @@ func TestHandlerServesConsoleAndAssets(t *testing.T) {
 	}
 }
 
+func TestHandlerServesEveryEntrypointAsset(t *testing.T) {
+	index, err := assets.ReadFile("dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := regexp.MustCompile(`(?:src|href)="(/admin/assets/[^"]+)"`).FindAllStringSubmatch(string(index), -1)
+	if len(matches) < 3 {
+		t.Fatalf("index has %d entrypoint assets, want script, vendor and stylesheet", len(matches))
+	}
+	for _, match := range matches {
+		recorder := httptest.NewRecorder()
+		Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, match[1], nil))
+		if recorder.Code != http.StatusOK || recorder.Body.Len() == 0 {
+			t.Errorf("%s: status=%d bytes=%d", match[1], recorder.Code, recorder.Body.Len())
+		}
+		if cache := recorder.Header().Get("Cache-Control"); cache != "public, max-age=3600" {
+			t.Errorf("%s: Cache-Control=%q", match[1], cache)
+		}
+	}
+}
+
 func TestHandlerRejectsTraversal(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/..%2fsecret", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status=%d", recorder.Code)
-	}
-}
-
-func TestManagementUIPreservesMutationSafetyContract(t *testing.T) {
-	script, err := assets.ReadFile("dist/management.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	value := string(script)
-	for _, required := range []string{"Authorization", "If-None-Match", "If-Match", "X-RJS-Confirm-Queue", "operator-token", "editor-token", "managedQueueName&&name!==managedQueueName", "cannot be renamed", "maxPriority", "declarationSubjects"} {
-		if !strings.Contains(value, required) {
-			t.Errorf("management UI missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{"localStorage", "sessionStorage", "document.cookie"} {
-		if strings.Contains(value, forbidden) {
-			t.Errorf("management UI persists bearer credential through %q", forbidden)
-		}
 	}
 }

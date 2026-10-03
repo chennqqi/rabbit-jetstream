@@ -67,6 +67,25 @@ func TestVerifyManifestArtifacts(t *testing.T) {
 	}
 }
 
+func TestRC2RequiresLicenseRecords(t *testing.T) {
+	old := expectedArtifactPaths("v0.1.0-rc.1")
+	current := expectedArtifactPaths("v0.1.0-rc.2")
+	for _, path := range []string{"licenses/NATS-LICENSE", "licenses/release-license-records.md", "licenses/release-license-records.zh-CN.md"} {
+		if old[path] || !current[path] {
+			t.Fatalf("incorrect license boundary for %s", path)
+		}
+	}
+	manifest := releaseManifest{Version: "v0.1.0-rc.2"}
+	for path := range current {
+		if !strings.HasPrefix(path, "licenses/") {
+			manifest.Artifacts = append(manifest.Artifacts, releaseArtifact{Path: path})
+		}
+	}
+	if err := verifyManifestArtifacts(t.TempDir(), manifest); err == nil {
+		t.Fatal("rc.2 accepted missing license records")
+	}
+}
+
 func TestVerifyChecksumsRejectsTraversal(t *testing.T) {
 	directory := t.TempDir()
 	line := strings.Repeat("0", 64) + "  ../outside\n"

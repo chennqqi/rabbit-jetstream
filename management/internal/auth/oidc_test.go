@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +40,9 @@ func TestOIDCVerifiesRolesAudienceAndKeyRotation(t *testing.T) {
 	if err != nil || principal.Role != "operator" || principal.Actor != "oidc:"+server.URL+"#alice" {
 		t.Fatalf("principal=%+v err=%v", principal, err)
 	}
+	if principal.ExpiresAt.IsZero() || time.Until(principal.ExpiresAt) <= 0 || time.Until(principal.ExpiresAt) > time.Hour {
+		t.Fatalf("verified expiry not propagated: %v", principal.ExpiresAt)
+	}
 	auditorToken := sign(key1, "key-1", claims("bob", "audit"))
 	principal, err = verifier.Verify(context.Background(), auditorToken)
 	if err != nil || principal.Role != "auditor" {
@@ -53,6 +58,44 @@ func TestOIDCVerifiesRolesAudienceAndKeyRotation(t *testing.T) {
 	wrongAudience["aud"] = "other"
 	if _, err = verifier.Verify(context.Background(), sign(key2, "key-2", wrongAudience)); err == nil {
 		t.Fatal("wrong audience was accepted")
+	}
+}
+
+func TestOIDCBrowserCodeExchangeUsesFixedEndpointAndVerifiesIDToken(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	provider := &oidctest.Server{PublicKeys: []oidctest.PublicKey{{PublicKey: key.Public(), KeyID: "browser-key", Algorithm: oidc.RS256}}}
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/token" {
+			provider.ServeHTTP(w, r)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.RawQuery != "" || r.ParseForm() != nil || r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "one-time" || r.Form.Get("code_verifier") != strings.Repeat("v", 43) || r.Form.Get("client_id") != "management" || r.Form.Get("redirect_uri") != "http://127.0.0.1:9443/admin/oidc/callback" {
+			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
+			return
+		}
+		claims, _ := json.Marshal(map[string]any{"iss": server.URL, "aud": "management", "sub": "browser-user", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Add(-time.Minute).Unix(), "roles": []string{"ops"}})
+		token := oidctest.SignIDToken(key, "browser-key", oidc.RS256, string(claims))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "must-not-be-returned", "refresh_token": "must-not-be-returned", "token_type": "Bearer", "id_token": token})
+	}))
+	defer server.Close()
+	provider.SetIssuer(server.URL)
+	verifier, err := NewOIDC(context.Background(), OIDCConfig{Issuer: server.URL, Audience: "management", RoleClaim: "roles", OperatorRole: "ops", AuditorRole: "audit", AllowInsecureIssuer: true, BrowserClientID: "management", BrowserRedirectOrigin: "http://127.0.0.1:9443"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := verifier.BrowserLogin()
+	if config == nil || config.AuthorizationEndpoint != server.URL+"/auth" || config.CallbackURL != "http://127.0.0.1:9443/admin/oidc/callback" {
+		t.Fatalf("browser config=%+v", config)
+	}
+	raw, err := verifier.ExchangeBrowserCode(context.Background(), "one-time", strings.Repeat("v", 43))
+	if err != nil || strings.Contains(raw, "must-not-be-returned") {
+		t.Fatalf("raw=%q err=%v", raw, err)
+	}
+	principal, err := verifier.Verify(context.Background(), raw)
+	if err != nil || principal.Role != "operator" || principal.Actor != "oidc:"+server.URL+"#browser-user" {
+		t.Fatalf("principal=%+v err=%v", principal, err)
 	}
 }
 

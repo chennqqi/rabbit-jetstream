@@ -99,15 +99,18 @@ func (c *Client) ProcessDeadLetters(ctx context.Context, declarations []topology
 		target, targetOK := byQueue[declaration.Plan.DeadLetter.Queue]
 		if !targetOK {
 			result.Failed++
+			result.Bump(declaration.Queue, false)
 			_ = event.NakWithDelay(time.Second)
 			continue
 		}
 		if err := c.moveDeadLetter(ctx, declaration, target, advisory); err != nil {
 			result.Failed++
+			result.Bump(declaration.Queue, false)
 			_ = event.NakWithDelay(time.Second)
 			continue
 		}
 		result.Moved++
+		result.Bump(declaration.Queue, true)
 		if err := event.DoubleAck(ctx); err != nil {
 			return result, fmt.Errorf("ack DLQ advisory: %w", err)
 		}

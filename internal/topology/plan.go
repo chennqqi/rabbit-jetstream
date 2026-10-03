@@ -71,11 +71,36 @@ type DeadLetterPlan struct {
 	Mechanism string `json:"mechanism"`
 }
 
+type DeadLetterQueueCounts struct {
+	Moved  int `json:"moved"`
+	Failed int `json:"failed"`
+}
+
 type DeadLetterProcessResult struct {
 	Processed int `json:"processed"`
 	Moved     int `json:"moved"`
 	Ignored   int `json:"ignored"`
 	Failed    int `json:"failed"`
+	// PerQueue attributes move outcomes to the source Queue that produced the
+	// advisory, so per-Queue alerting can attribute failures. Global counters
+	// remain the only cross-Queue total; attribution is best-effort on purpose.
+	PerQueue map[string]DeadLetterQueueCounts `json:"perQueue,omitempty"`
+}
+
+func (r *DeadLetterProcessResult) Bump(queue string, moved bool) {
+	if queue == "" {
+		return
+	}
+	if r.PerQueue == nil {
+		r.PerQueue = make(map[string]DeadLetterQueueCounts)
+	}
+	counts := r.PerQueue[queue]
+	if moved {
+		counts.Moved++
+	} else {
+		counts.Failed++
+	}
+	r.PerQueue[queue] = counts
 }
 
 func BuildPlan(queue Queue) (Plan, error) {

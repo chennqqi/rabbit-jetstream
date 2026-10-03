@@ -1,0 +1,20 @@
+import {parseJSON,stringifyJSON} from "../../admin-ui/src/api.mjs";
+
+export async function bulkChangeChecks({page,api,origin,operator,expect,assert,report}){
+  const document=(name,maxMessages)=>({apiVersion:"rabbit-jetstream.io/v1alpha1",kind:"Queue",metadata:{name,labels:{fixture:"bulk-change"}},spec:{subjects:[`${name}.events`],replicas:1,storage:"file",retention:{maxMessages}}});
+  const create=async(name)=>{const response=await api(`/api/v1/queues/${name}`,{method:"PUT",headers:{"If-None-Match":"*"},body:stringifyJSON(document(name,100))});assert.equal(response.status,200);const saved=await api(`/api/v1/queues/${name}`);assert.equal(saved.status,200);return {etag:saved.headers.get("etag"),body:parseJSON(await saved.text()).document};};
+  const ready=await create("bulk_ready"),conflict=await create("bulk_conflict");
+  const changed=document("bulk_conflict",150),drift=await api("/api/v1/queues/bulk_conflict",{method:"PUT",headers:{"If-Match":conflict.etag},body:stringifyJSON(changed)});assert.equal(drift.status,200);
+  const pack=(name,value,etag)=>({name:`${name}.queue-change.json`,mimeType:"application/json",buffer:Buffer.from(stringifyJSON({schema:"rjs.queue-change.v1",etag,document:value}))});
+  await page.goto(origin+"/admin/queues/bulk-change");
+  if(await page.getByLabel("Recovery bearer token",{exact:true}).count()){await page.locator(".recovery-login summary").click();await page.getByLabel("Recovery bearer token",{exact:true}).fill(operator);await page.getByRole("button",{name:"Verify recovery token",exact:true}).click();}
+  const region=page.getByRole("region",{name:"Bulk Queue changes",exact:true}),files=region.getByLabel("Queue change packages",{exact:true});await expect(region).toBeVisible();
+  const planningResponses=[];const observe=async response=>{if(new URL(response.url()).pathname==="/api/v1/queues/change-plan")planningResponses.push({status:response.status(),body:await response.text()});};page.on("response",observe);
+  await files.setInputFiles([pack("bulk_ready",document("bulk_ready",200),ready.etag),pack("bulk_conflict",document("bulk_conflict",200),conflict.etag)]);await region.getByRole("button",{name:"Preview every target",exact:true}).click();
+  const results=region.getByRole("region",{name:"Bulk preview results",exact:true});try{await expect(results).toContainText("Some items are not ready");}catch(error){const alerts=await region.getByRole("alert").allTextContents();throw Error(`bulk planning failed: responses=${JSON.stringify(planningResponses)} alerts=${JSON.stringify(alerts)} cause=${error.message}`);}finally{page.off("response",observe);}await expect(results).toContainText("bulk_ready — ready");await expect(results).toContainText("bulk_conflict — conflict");
+  await expect(results.getByRole("button",{name:"Prepare independent review: bulk_conflict",exact:true})).toHaveCount(0);await results.getByRole("button",{name:"Prepare independent review: bulk_ready",exact:true}).click();
+  const editor=region.getByRole("heading",{name:"Edit Queue draft: bulk_ready",exact:true});await expect(editor).toBeVisible();assert.equal(parseJSON(await page.getByLabel("Queue document (JSON)",{exact:true}).inputValue()).spec.retention.maxMessages,200);
+  await page.getByRole("button",{name:"Preview changes",exact:true}).click();await page.getByRole("checkbox",{name:"I reviewed this preview and authorize applying this draft.",exact:true}).check();await page.getByRole("button",{name:"Apply reviewed draft",exact:true}).click();await expect(page.getByText(/^Apply accepted\./)).toBeVisible();
+  const savedReady=await api("/api/v1/queues/bulk_ready"),savedConflict=await api("/api/v1/queues/bulk_conflict");assert.equal(parseJSON(await savedReady.text()).document.spec.retention.maxMessages,200);assert.equal(parseJSON(await savedConflict.text()).document.spec.retention.maxMessages,150);
+  report.checks.push("bulk-change-two-versioned-packages-itemized-ready-conflict-fresh-read-preview-independent-etag-write-no-failed-target-write");
+}

@@ -19,6 +19,22 @@ type fakeClient struct {
 	url    string
 }
 
+func TestNewRejectsInvalidDeploymentBeforeInitialization(t *testing.T) {
+	application, err := New(config.Config{DeploymentProfile: "auto-from-nodes"}, nil, "test")
+	if err == nil || application != nil || !strings.Contains(err.Error(), "RJS_DEPLOYMENT_PROFILE") {
+		t.Fatalf("application=%v error=%v", application, err)
+	}
+}
+
+func TestNewRejectsExposedDemoBeforeInitialization(t *testing.T) {
+	// Invalid backend settings and nil logger must never be reached.
+	cfg := config.Config{HTTPAddr: "0.0.0.0:8223", LocalDemo: true}
+	application, err := New(cfg, nil, "test")
+	if err == nil || application != nil || !strings.Contains(err.Error(), "RJS_LOCAL_DEMO") {
+		t.Fatalf("application=%v error=%v", application, err)
+	}
+}
+
 func (c *fakeClient) Close()            { c.closed = true }
 func (c *fakeClient) ServerURL() string { return c.url }
 

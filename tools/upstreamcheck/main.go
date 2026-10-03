@@ -152,9 +152,12 @@ func git(directory string, arguments ...string) (string, error) {
 	if directory != "" {
 		command.Dir = directory
 	}
-	output, err := command.CombinedOutput()
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(arguments, " "), err, strings.TrimSpace(string(output)))
+		diagnostic := strings.TrimSpace(strings.Join([]string{string(output), stderr.String()}, "\n"))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(arguments, " "), err, diagnostic)
 	}
 	return strings.TrimSpace(string(output)), nil
 }

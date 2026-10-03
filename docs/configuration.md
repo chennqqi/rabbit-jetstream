@@ -4,6 +4,7 @@
 |---|---|---|
 | `RJS_NAME` | `rabbit-jetstream` | 实例名称 |
 | `RJS_HTTP_ADDR` | `:8223` | 管理 HTTP 监听地址 |
+| `RJS_TRUSTED_PROXY_HOPS` | `0` | 管理服务与网络边界之间的可信反向代理跳数；大于 0 时按 `X-Forwarded-For` 从右向左剥离可信跳，解析客户端 IP 用于登录限流与审计归属。链长不足或非 IP 值回退为直接对端地址。前提是仅可信代理可直接访问本服务，客户端无法绕过边界伪造该头 |
 | `RJS_NATS_URL` | `nats://127.0.0.1:4222` | NATS 地址，多个地址以逗号分隔 |
 | `RJS_NATS_USER` | 空 | 用户名 |
 | `RJS_NATS_PASSWORD` | 空 | 密码 |
@@ -17,12 +18,22 @@
 | `RJS_ADMIN_TOKEN` | 空 | 启用 apply/delete 写 API 的 Bearer Token；为空时写 API 关闭 |
 | `RJS_ADMIN_TOKENS` | 空 | 逗号分隔的 operator Token；全部可 apply/delete 及读取审计，用于重叠轮换 |
 | `RJS_AUDIT_TOKENS` | 空 | 逗号分隔的 auditor Token；只能读取审计 API，不能修改 Queue |
+| `RJS_LOCAL_ACCOUNTS_FILE` | 空 | 严格版本化的本地账户 JSON Secret；设置后启用账号密码登录，详见[本地账户认证](local-auth.zh-CN.md) |
+| `RJS_LOCAL_AUTH_SIGNING_KEY` | 空 | 本地 Access Token 的签名 Secret；启用本地账户时必填且至少 32 字节，所有管理副本必须一致 |
+| `RJS_LOCAL_AUTH_TTL` | `15m` | 本地 Access Token 时效；必须大于零且不超过 `24h` |
+| `RJS_TENANTS_FILE` | 空 | 严格版本化的租户路由 JSON Secret；为每个租户建立独立 NATS Account 连接、监控与控制器，详见[管理面多租户](multi-tenancy.zh-CN.md) |
 | `RJS_OIDC_ISSUER` | 空 | OIDC issuer；设置后启动时执行 discovery，默认要求 HTTPS |
 | `RJS_OIDC_AUDIENCE` | 空 | 管理 API 的预期 audience；启用 OIDC 时必填 |
 | `RJS_OIDC_ROLE_CLAIM` | `roles` | 包含角色的字符串或字符串数组 claim |
 | `RJS_OIDC_OPERATOR_ROLE` | `rabbit-jetstream-operator` | 映射为 operator 的 IdP 角色 |
 | `RJS_OIDC_AUDITOR_ROLE` | `rabbit-jetstream-auditor` | 映射为 auditor 的 IdP 角色 |
 | `RJS_OIDC_ALLOW_INSECURE_ISSUER` | `false` | 仅本地测试允许 HTTP issuer；生产环境不得开启 |
+| `RJS_OIDC_BROWSER_CLIENT_ID` | 空 | 可选 Admin UI 公共客户端 ID；必须与 `RJS_OIDC_AUDIENCE` 相同并与回调 origin 同时配置 |
+| `RJS_OIDC_BROWSER_REDIRECT_ORIGIN` | 空 | Admin UI 的精确外部 origin；固定回调为该 origin 下的 `/admin/oidc/callback`，生产必须为 HTTPS |
+| `RJS_PROMETHEUS_URL` | 空 | 供受保护历史 API 使用的 Prometheus origin；为空时历史指标与运维告警页同时关闭（控制台显示明确降级提示，不影响服务稳定性），不接受路径、查询或 URL 凭据。告警到人的通知链路还需要 Alertmanager 或同等外部组件，参见运维配套清单 |
+| `RJS_PROMETHEUS_PUBLIC_URL` | 空 | 可选的浏览器可访问 Prometheus origin；仅用于生成 `/alerts` 外链，不从内部抓取地址推断 |
+| `RJS_PROMETHEUS_TOKEN` | 空 | 管理服务访问 Prometheus 使用的 Bearer Token；绝不返回浏览器或写入诊断包 |
+| `RJS_PROMETHEUS_ALLOW_INSECURE` | `false` | 仅隔离测试／内部 Compose 允许 HTTP Prometheus；生产环境不得开启 |
 | `RJS_OTEL_TRACES_ENDPOINT` | 空 | OTLP/HTTP traces 完整 URL；为空时 tracing 关闭 |
 | `RJS_OTEL_METRICS_ENDPOINT` | 空 | OTLP/HTTP metrics 完整 URL；为空时 OTLP metrics 关闭 |
 | `RJS_OTEL_METRIC_INTERVAL` | `30s` | OTLP metrics 周期导出间隔 |

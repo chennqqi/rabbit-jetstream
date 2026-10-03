@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -67,6 +68,23 @@ func (f *fakeBackend) Stream(_ context.Context, name string) (*jetstream.Stream,
 }
 func (f *fakeBackend) ListConsumers(context.Context, string) ([]jetstream.Consumer, error) {
 	return f.consumers, f.err
+}
+func (f *fakeBackend) QueueConsumers(context.Context, string) (*jetstream.QueueConsumerCollection, error) {
+	return &jetstream.QueueConsumerCollection{Items: []jetstream.QueueConsumer{}}, f.err
+}
+func (f *fakeBackend) Preview(_ context.Context, plan topology.Plan, precondition jetstream.ApplyPrecondition) (*jetstream.PlanPreview, error) {
+	return &jetstream.PlanPreview{Plan: plan, Result: f.applyResult, CreateOnly: precondition.CreateOnly}, f.err
+}
+func (f *fakeBackend) Consumer(_ context.Context, stream, name string) (*jetstream.Consumer, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	for i := range f.consumers {
+		if f.consumers[i].Stream == stream && f.consumers[i].Name == name {
+			return &f.consumers[i], nil
+		}
+	}
+	return nil, jetstream.ErrNotFound
 }
 func (f *fakeBackend) Apply(context.Context, topology.Plan) (topology.ReconcileResult, error) {
 	return f.applyResult, f.err
@@ -209,11 +227,18 @@ func TestReadyAndInfoEndpoints(t *testing.T) {
 			t.Fatalf("%s status=%d body=%s", test.path, recorder.Code, recorder.Body.String())
 		}
 	}
-	backend.err = errors.New("offline")
+	backend.err = errors.New("connect to nats://operator:super-secret@nats-1:4222: offline")
 	recorder := httptest.NewRecorder()
 	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "not_ready") {
+	if recorder.Code != http.StatusServiceUnavailable || recorder.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var readiness map[string]string
+	if err := json.NewDecoder(recorder.Body).Decode(&readiness); err != nil {
+		t.Fatal(err)
+	}
+	if len(readiness) != 1 || readiness["status"] != "not_ready" {
+		t.Fatalf("readiness response exposes backend detail: %#v", readiness)
 	}
 }
 
@@ -229,6 +254,44 @@ func TestManagementResponsesRedactNATSCredentials(t *testing.T) {
 	}
 }
 
+func TestBackendFailuresDoNotExposeDependencyDetails(t *testing.T) {
+	secret := "nats://operator:super-secret@nats-1:4222"
+	backend := &fakeBackend{err: errors.New("connect to " + secret + ": unavailable"), auditErr: errors.New("read " + secret + ": unavailable")}
+	var logs bytes.Buffer
+	handler := NewWithControllerAuth(backend, slog.New(slog.NewTextHandler(&logs, nil)), "test", "dev", nil, nil,
+		AuthConfig{RequireReadAuth: true, OperatorTokens: []string{"operator"}})
+	for _, path := range []string{"/readyz", "/api/v1/info", "/api/v1/cluster", "/api/v1/streams", "/api/v1/audit"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Authorization", "Bearer operator")
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			if strings.Contains(recorder.Body.String(), "super-secret") || strings.Contains(recorder.Body.String(), "operator") || strings.Contains(recorder.Body.String(), "nats-1") {
+				t.Fatalf("dependency detail exposed: %s", recorder.Body.String())
+			}
+		})
+	}
+	if strings.Contains(logs.String(), "super-secret") || strings.Contains(logs.String(), "nats-1") {
+		t.Fatalf("dependency detail exposed in logs: %s", logs.String())
+	}
+}
+
+func TestBackendPublicMessagesPreserveStableKnownSemantics(t *testing.T) {
+	for code, expected := range map[string]string{
+		"dlq_dependency_cycle":  "DLQ dependency cycle",
+		"conflict":              "resource conflict",
+		"not_found":             "resource not found",
+		"jetstream_unavailable": "JetStream is unavailable",
+	} {
+		if actual := backendPublicMessage(code); actual != expected {
+			t.Fatalf("%s message=%q, want %q", code, actual, expected)
+		}
+	}
+}
+
 func TestAdminUIEndpoints(t *testing.T) {
 	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil)
 	for _, test := range []struct {
@@ -238,7 +301,7 @@ func TestAdminUIEndpoints(t *testing.T) {
 		{"/", "/admin/", "", http.StatusTemporaryRedirect},
 		{"/admin", "/admin/", "", http.StatusPermanentRedirect},
 		{"/admin/", "", "Rabbit JetStream", http.StatusOK},
-		{"/admin/app.js", "", "loadDashboard", http.StatusOK},
+		{"/admin/queues/example", "", "Rabbit JetStream", http.StatusOK},
 	} {
 		recorder := httptest.NewRecorder()
 		h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
@@ -454,8 +517,9 @@ func TestApplyWritesCorrelatedAuditIntentAndOutcome(t *testing.T) {
 }
 
 func TestAuditIntentFailureRejectsMutation(t *testing.T) {
-	backend := &fakeBackend{auditErr: errors.New("audit unavailable")}
-	handler := New(backend, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", "dev", nil, "secret")
+	backend := &fakeBackend{auditErr: errors.New("write nats://operator:super-secret@nats-1:4222: unavailable")}
+	var logs bytes.Buffer
+	handler := New(backend, slog.New(slog.NewTextHandler(&logs, nil)), "test", "dev", nil, "secret")
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/queues/orders", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("X-RJS-Confirm-Queue", "orders")
@@ -464,6 +528,9 @@ func TestAuditIntentFailureRejectsMutation(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable || backend.deleteCalls != 0 || !strings.Contains(rec.Body.String(), "audit_unavailable") {
 		t.Fatalf("status=%d deletes=%d body=%s", rec.Code, backend.deleteCalls, rec.Body.String())
+	}
+	if strings.Contains(logs.String(), "super-secret") || strings.Contains(logs.String(), "nats-1") || !strings.Contains(logs.String(), "error_kind=audit_unavailable") {
+		t.Fatalf("unsafe or unclassified audit log: %s", logs.String())
 	}
 }
 

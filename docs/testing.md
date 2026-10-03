@@ -6,7 +6,7 @@ Replacing RabbitMQ makes correctness and recoverability release requirements, no
 
 ## Admin UI Browser Qualification
 
-`make test-admin-ui` starts a real standalone JetStream and management service with Docker Compose, then runs the embedded console in Linux Chromium and Firefox through Playwright. The suite exercises dashboard loading, filtering, keyboard activation, priority Queue create/update/delete, exact deletion confirmation, bearer authentication failures, revision conflicts, partial API failure, narrow viewport behavior, credential non-persistence, and WCAG A/AA serious/critical automated checks. `Full` and `Release` local RC modes include this gate. Static asset or HTTP-only smoke tests do not substitute for it.
+`make test-admin-ui` starts the real standalone JetStream and management services with Docker Compose, then runs the embedded console in Linux Chromium and Firefox through Playwright. `make test-admin-ui-cluster` runs the same workflow against the official three-node cluster and verifies a canonical R3 Queue; `make test-admin-ui-all` runs both deployment modes and is the CI plus Full/Release local RC gate. The suite exercises authenticated navigation, reviewed Queue create/update/delete, exact deletion confirmation, session clearing and reauthentication, authorization failure, partial API failure, narrow viewport behavior, credential non-persistence, declared deployment intent, and WCAG A/AA serious/critical automated checks. Static asset or HTTP-only smoke tests do not substitute for it.
 
 ## Test Pyramid
 
@@ -96,3 +96,18 @@ On Windows, call Docker Desktop directly from PowerShell; WSL is not required:
 ```
 
 The CI profile verifies a three-replica persistent workload and retains its report. Large-scale and release-soak profiles, baseline rules, resource evidence, and interpretation limits are defined in [Performance and Soak Testing](performance-testing.md). The release profile enforces a minimum 24-hour duration; the short CI profile never satisfies that gate.
+
+### Shadow migration development reruns
+
+Production image builds use BuildKit module caches and configurable `GOPROXY` / `GOSUMDB` build arguments. The NATS and management builds share the operator's defaults. Intermittent downloads may be retried; checksum verification and vulnerability thresholds must remain enabled.
+
+`tests/integration/shadow-capture.ps1` normally rebuilds the production test images. On Linux it maps migration containers to the invoking UID/GID, preserving private `0600` evidence while allowing host assertions. Cutover actions run the same CLI in a test-only image with `/bin/cp`; production remains distroless.
+
+For development when dependency downloads are unavailable, use pre-existing test images and a populated host module cache:
+
+```powershell
+$ShadowGoCache = (go env GOMODCACHE).Trim()
+pwsh -NoProfile -File tests/integration/shadow-capture.ps1 -SkipBuild -GoModCache $ShadowGoCache
+```
+
+`-GoModCache` disables module downloads for the publisher helper. `-SkipBuild` does not qualify the current release revision. CI and the local `Release` gate use the default full-build path and retain all migration assertions.

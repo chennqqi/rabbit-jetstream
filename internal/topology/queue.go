@@ -107,14 +107,15 @@ func ParseQueue(reader io.Reader) (*Queue, error) {
 		}
 		return nil, fmt.Errorf("decode queue: %w", err)
 	}
-	queue.Default()
+	queue.defaultValues()
 	if err := queue.Validate(); err != nil {
 		return nil, err
 	}
+	queue.Default()
 	return &queue, nil
 }
 
-func (q *Queue) Default() {
+func (q *Queue) defaultValues() {
 	if q.Spec.Storage == "" {
 		q.Spec.Storage = "file"
 	}
@@ -126,6 +127,10 @@ func (q *Queue) Default() {
 		value := 5
 		q.Spec.Delivery.MaxDeliver = &value
 	}
+}
+
+func (q *Queue) Default() {
+	q.defaultValues()
 	sort.Strings(q.Spec.Subjects)
 	for index := range q.Spec.Bindings {
 		sort.Strings(q.Spec.Bindings[index].Keys)
@@ -143,98 +148,102 @@ func (q *Queue) Default() {
 }
 
 func (q Queue) Validate() error {
-	var problems []string
+	var problems []ValidationIssue
+	add := func(path, code, message string) {
+		problems = append(problems, ValidationIssue{Path: path, Code: code, Message: message})
+	}
 	if q.APIVersion != QueueAPIVersion {
-		problems = append(problems, "apiVersion must be "+QueueAPIVersion)
+		add("/apiVersion", "unsupported_value", "apiVersion must be "+QueueAPIVersion)
 	}
 	if q.Kind != QueueKind {
-		problems = append(problems, "kind must be Queue")
+		add("/kind", "unsupported_value", "kind must be Queue")
 	}
 	if !queueNamePattern.MatchString(q.Metadata.Name) {
-		problems = append(problems, "metadata.name must contain only letters, digits, '_' or '-'")
+		add("/metadata/name", "invalid_name", "metadata.name must contain only letters, digits, '_' or '-'")
 	}
 	if len(q.Spec.Subjects) == 0 && len(q.Spec.Bindings) == 0 {
-		problems = append(problems, "spec.subjects or spec.bindings must contain at least one entry")
+		add("/spec", "routing_required", "spec.subjects or spec.bindings must contain at least one entry")
 	}
 	if len(q.Spec.Subjects) > 0 && len(q.Spec.Bindings) > 0 {
-		problems = append(problems, "spec.subjects and spec.bindings are mutually exclusive")
+		add("/spec", "routing_exclusive", "spec.subjects and spec.bindings are mutually exclusive")
 	}
 	for index, binding := range q.Spec.Bindings {
 		prefix := fmt.Sprintf("spec.bindings[%d]", index)
+		pointer := fmt.Sprintf("/spec/bindings/%d", index)
 		if !queueNamePattern.MatchString(binding.Exchange) {
-			problems = append(problems, prefix+".exchange is invalid")
+			add(pointer+"/exchange", "invalid_name", prefix+".exchange is invalid")
 		}
 		switch binding.Type {
 		case "direct":
 			if len(binding.Keys) == 0 {
-				problems = append(problems, prefix+".keys must not be empty for direct")
+				add(pointer+"/keys", "required", prefix+".keys must not be empty for direct")
 			}
-			for _, key := range binding.Keys {
+			for keyIndex, key := range binding.Keys {
 				if err := validateRoutingKey(key, false); err != nil {
-					problems = append(problems, prefix+".keys: "+err.Error())
+					add(fmt.Sprintf("%s/keys/%d", pointer, keyIndex), "invalid_routing_key", prefix+".keys: "+err.Error())
 				}
 			}
 		case "topic":
 			if len(binding.Keys) == 0 {
-				problems = append(problems, prefix+".keys must not be empty for topic")
+				add(pointer+"/keys", "required", prefix+".keys must not be empty for topic")
 			}
-			for _, key := range binding.Keys {
+			for keyIndex, key := range binding.Keys {
 				if err := validateRoutingKey(key, true); err != nil {
-					problems = append(problems, prefix+".keys: "+err.Error())
+					add(fmt.Sprintf("%s/keys/%d", pointer, keyIndex), "invalid_routing_key", prefix+".keys: "+err.Error())
 				}
 			}
 		case "fanout":
 			if len(binding.Keys) != 0 {
-				problems = append(problems, prefix+".keys must be empty for fanout")
+				add(pointer+"/keys", "must_be_empty", prefix+".keys must be empty for fanout")
 			}
 		default:
-			problems = append(problems, prefix+".type must be direct, topic, or fanout")
+			add(pointer+"/type", "unsupported_value", prefix+".type must be direct, topic, or fanout")
 		}
 		bindingKeys := make(map[string]struct{}, len(binding.Keys))
-		for _, key := range binding.Keys {
+		for keyIndex, key := range binding.Keys {
 			if _, exists := bindingKeys[key]; exists {
-				problems = append(problems, prefix+".keys contains duplicate "+key)
+				add(fmt.Sprintf("%s/keys/%d", pointer, keyIndex), "duplicate", prefix+".keys contains duplicate "+key)
 			}
 			bindingKeys[key] = struct{}{}
 		}
 	}
 	seen := make(map[string]struct{})
-	for _, subject := range q.Spec.Subjects {
+	for subjectIndex, subject := range q.Spec.Subjects {
 		if err := validateSubject(subject); err != nil {
-			problems = append(problems, "spec.subjects: "+err.Error())
+			add(fmt.Sprintf("/spec/subjects/%d", subjectIndex), "invalid_subject", "spec.subjects: "+err.Error())
 		}
 		if _, exists := seen[subject]; exists {
-			problems = append(problems, "spec.subjects contains duplicate "+subject)
+			add(fmt.Sprintf("/spec/subjects/%d", subjectIndex), "duplicate", "spec.subjects contains duplicate "+subject)
 		}
 		seen[subject] = struct{}{}
 	}
 	if q.Spec.Replicas != 1 && q.Spec.Replicas != 3 && q.Spec.Replicas != 5 {
-		problems = append(problems, "spec.replicas must be 1, 3, or 5")
+		add("/spec/replicas", "unsupported_value", "spec.replicas must be 1, 3, or 5")
 	}
 	if q.Spec.Storage != "file" && q.Spec.Storage != "memory" {
-		problems = append(problems, "spec.storage must be file or memory")
+		add("/spec/storage", "unsupported_value", "spec.storage must be file or memory")
 	}
 	if q.Spec.Retention.MaxAge < 0 || q.Spec.Retention.MaxBytes < 0 || q.Spec.Retention.MaxMessages < 0 {
-		problems = append(problems, "spec.retention limits cannot be negative")
+		add("/spec/retention", "negative_limit", "spec.retention limits cannot be negative")
 	}
 	if q.Spec.MaxPriority != nil && (*q.Spec.MaxPriority < MinimumPriority || *q.Spec.MaxPriority > MaximumPriority) {
-		problems = append(problems, fmt.Sprintf("spec.maxPriority must be between %d and %d", MinimumPriority, MaximumPriority))
+		add("/spec/maxPriority", "out_of_range", fmt.Sprintf("spec.maxPriority must be between %d and %d", MinimumPriority, MaximumPriority))
 	}
 	if q.Spec.Delivery.AckWait == nil || *q.Spec.Delivery.AckWait <= 0 {
-		problems = append(problems, "spec.delivery.ackWait must be positive")
+		add("/spec/delivery/ackWait", "must_be_positive", "spec.delivery.ackWait must be positive")
 	}
 	if q.Spec.Delivery.MaxDeliver == nil || *q.Spec.Delivery.MaxDeliver < 1 {
-		problems = append(problems, "spec.delivery.maxDeliver must be at least 1")
+		add("/spec/delivery/maxDeliver", "must_be_positive", "spec.delivery.maxDeliver must be at least 1")
 	}
 	if q.Spec.DeadLetter != nil {
 		if !queueNamePattern.MatchString(q.Spec.DeadLetter.Queue) {
-			problems = append(problems, "spec.deadLetter.queue is invalid")
+			add("/spec/deadLetter/queue", "invalid_name", "spec.deadLetter.queue is invalid")
 		} else if q.Spec.DeadLetter.Queue == q.Metadata.Name {
-			problems = append(problems, "spec.deadLetter.queue cannot reference itself")
+			add("/spec/deadLetter/queue", "self_reference", "spec.deadLetter.queue cannot reference itself")
 		}
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("invalid Queue: %s", strings.Join(problems, "; "))
+		return &ValidationError{Issues: problems}
 	}
 	return nil
 }

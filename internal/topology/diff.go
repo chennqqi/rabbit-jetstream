@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -22,8 +23,8 @@ type Diff struct {
 }
 
 func Compare(current, desired Queue) Diff {
-	current.Default()
-	desired.Default()
+	current = comparisonQueue(current)
+	desired = comparisonQueue(desired)
 	result := Diff{Queue: desired.Metadata.Name, Changes: []Change{}}
 	add := func(path string, from, to any, impact string) {
 		if reflect.DeepEqual(from, to) {
@@ -35,6 +36,7 @@ func Compare(current, desired Queue) Diff {
 	add("metadata.labels", sortedLabels(current.Metadata.Labels), sortedLabels(desired.Metadata.Labels), "safe")
 	add("spec.storage", current.Spec.Storage, desired.Spec.Storage, "destructive")
 	add("spec.replicas", current.Spec.Replicas, desired.Spec.Replicas, "disruptive")
+	add("spec.maxPriority", optionalPriority(current.Spec.MaxPriority), optionalPriority(desired.Spec.MaxPriority), "disruptive")
 	add("spec.subjects", current.Spec.Subjects, desired.Spec.Subjects, subjectsImpact(current.Spec.Subjects, desired.Spec.Subjects))
 	currentRouting, _, _ := routingPlan(current)
 	desiredRouting, _, _ := routingPlan(desired)
@@ -50,6 +52,27 @@ func Compare(current, desired Queue) Diff {
 }
 
 func (d Diff) HasChanges() bool { return len(d.Changes) > 0 }
+
+// Default sorts collections in place. Copy every sortable slice so comparison
+// cannot change a caller's draft, and normalize nil/empty collections equally.
+func comparisonQueue(queue Queue) Queue {
+	queue.Spec.Subjects = append([]string{}, queue.Spec.Subjects...)
+	bindings := make([]Binding, len(queue.Spec.Bindings))
+	for index, binding := range queue.Spec.Bindings {
+		bindings[index] = binding
+		bindings[index].Keys = append([]string{}, binding.Keys...)
+	}
+	queue.Spec.Bindings = bindings
+	queue.Default()
+	return queue
+}
+
+func optionalPriority(value *int) string {
+	if value == nil {
+		return "omitted"
+	}
+	return fmt.Sprint(*value)
+}
 
 func subjectsImpact(current, desired []string) string {
 	desiredSet := make(map[string]struct{}, len(desired))
@@ -79,16 +102,13 @@ func deadLetterName(policy *DeadLetterPolicy) string {
 }
 
 func sortedLabels(labels map[string]string) string {
-	keys := make([]string, 0, len(labels))
-	for key := range labels {
-		keys = append(keys, key)
+	if len(labels) == 0 {
+		return "{}"
 	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, key+"="+labels[key])
-	}
-	return strings.Join(parts, ",")
+	// JSON sorts map keys and escapes delimiters. Comma-joined key=value pairs
+	// conflate distinct maps, e.g. {a: "b,c=d"} and {a: "b", c: "d"}.
+	encoded, _ := json.Marshal(labels) // A map of strings cannot fail encoding.
+	return string(encoded)
 }
 
 func valueString(value any) string {
