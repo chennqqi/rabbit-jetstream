@@ -141,3 +141,24 @@ Week 9–12  A18 (security review) → A23 decision → start A24 or A25
 ## 10. Write-back obligation
 
 On completion of each item: mark Done + date + evidence link (screenshots/tests/drill records) in this file, linked with the `docs/webui-development.md` ledger; the two review documents keep their original text (reviews are snapshots).
+
+### Backfill record
+
+| Item | Status | Date | Evidence |
+|---|---|---|---|
+| A1 AlertRules nil guard + regression tests | Done | 2026-10-01 | `management/internal/prometheus/nil_client_test.go`, `management/internal/api/alerts_nil_backend_test.go`; 3 packages green |
+| A2 Session-expiry state fix | Done | 2026-10-01 | `admin-ui/src/main.jsx` expired branch rewrite; browser-verified one-click re-login, no draft JSON rendered |
+| A3 Operations companion checklist | Done | 2026-10-01 | `docs/operations-companion.{,zh-CN.}md`, `deploy/observability/alertmanager.yml`, prometheus alertmanager wiring, compose alertmanager service |
+| A4 Deployment safety note | Done | 2026-10-01 | `docs/configuration.md` Prometheus URL row; compose annotations; `docker compose config` valid |
+| A5 Status badge system | Done | 2026-10-01 | `admin-ui/src/status-badge.jsx` + token-derived badges; applied in Queue list/detail, Nodes, Alerts |
+| A6 Hash truncation + humanized bytes | Done | 2026-10-01 | `admin-ui/src/format.mjs` + tests; CopyValue short in lists; bytes humanized in Overview/QueuePanels/StreamDetail |
+| A7 Disclaimer folding + refresh indicator | Done | 2026-10-01 | PageNotes/RefreshStatus applied on QueueList/Overview/Nodes/StreamDetail |
+| A8 Login SSO fix + primary button | Done | 2026-10-01 | `read_auth.go` public oidc/config + test; silent SSO probe; `.primary-action` login button |
+| A9 Nav grouping + create in list header | Done | 2026-10-01 | ConsoleNavigation 3 groups; Queue-list header Create Queue; Compatibility moved to Settings |
+| A10 Top-bar weight fix | Done | 2026-10-01 | Flat identity, clear-session folded into panel, desktop brand dedupe |
+| A11 Form control governance | Done | 2026-10-01 | `form.filter-toolbar` single-row; creation-form width cap |
+| A12 Per-queue DLQ metrics | Done | 2026-10-01 | PerQueue attribution end-to-end; `rjs_dlq_queue_{moved,failed}_total`; DeadLetterFailures alert rewritten to `sum by (queue)` |
+| A13 Delete-preflight DLQ dependents | Done | 2026-10-01 | `DeadLetterDependents` in preflight + UI row; API-verified |
+| A14 Documentation hygiene | Done | 2026-10-01 | management-api read-only fix; release-work dates; backlog status backfill |
+| A15 rc.3 re-freeze | Done (soak gate) | 2026-10-03 | Local gates green (S-4 96 shots, Playwright 8/8 incl. axe zero violations, Go contract CRLF fix); frozen linux/amd64 artifacts checksum-verified on host (revision 033010ee); 24h bare-metal soak observed **42 h**: 5053 cycles all-200 health/queues API, zero crashes post-fix, zero errors in management log, 453,505 messages sustained — evidence in `docs/releases/v0.1.0-rc.3-soak-evidence.md`. An actual rc.3 release still needs the owner freeze decision + helm/Kind cluster qualification (see remaining-release-work) |
+
