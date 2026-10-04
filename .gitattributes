@@ -1,0 +1,17 @@
+# Normalize all text files to LF in the repository and on checkout.
+# Git auto-detects binary content and skips conversion for it; the explicit
+# binary rules below guard formats where misdetection would be costly.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.gz binary
+*.tgz binary
+*.tar binary
+*.zip binary
+*.exe binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
