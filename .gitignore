@@ -13,3 +13,10 @@
 /admin-ui/build-candidate/
 /.cache/
 /.tmp/
+
+# Dependency directories at any level (tests/admin-ui/node_modules etc.)
+node_modules/
+
+# Local tooling and test artifacts
+.zcodeignore
+tests/admin-ui/test-results/
