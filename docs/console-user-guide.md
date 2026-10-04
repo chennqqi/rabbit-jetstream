@@ -84,3 +84,39 @@ On the Queue detail page, **Edit draft and preview**: edit the JSON draft, click
 ## Tenant switching
 
 Accounts with several tenants switch via the identity panel's Active tenant selector; the URL carries the tenant (`/admin/tenants/<tenant>/…`). Switching discards the current tenant's drafts after confirmation.
+
+## Appendix: page reference
+
+Field-level reference for every console page (labels in English / 简体中文).
+
+**Login** (`/admin/`): Username 用户名 · Password 密码 · Sign in 登录 (primary) · Recovery or automation token 恢复或自动化 Token (collapsed; bearer-token sign-in for automation) · Sign in with SSO 使用企业 SSO 登录 (only when OIDC configured) · language switch top-right. Errors appear under the form (credentials-rejected, auth-disabled, expired).
+
+**Top bar** (all pages): brand · flat identity `actor / role · tenant` · Verified identity 已验证身份 disclosure (actor, role, expiry, resource-read policy, Active tenant selector, Clear local session 清除本机会话) · Evidence indicator (retained drafts/deletions count; red when an outcome is unknown) · language switch.
+
+**Overview 总览**: monitoring issues and coverage (configured endpoints, failed reads), management service and account (name, version, uptime, JetStream memory/storage/streams/consumers), declared Queue total, metric history chart (JetStream storage/messages; requires Prometheus). All cards fold their semantics into "About these numbers".
+
+**Queue list 队列**: Create Queue (primary) · search filter + sort + page size + Refresh · table: Queue, Observed state (badge), Stored messages, Consumers, Declared storage, Requested replicas, Plan revision (Copy) · pagination. Row click opens the detail.
+
+**Queue detail** tabs: 摘要 Summary (Plan revision, ETag, declared read time; observed Stream card with Stored messages 存储消息数 / 存储字节 / Consumers / retention; metrics Pending 待投递, Ack pending 待确认 with attention shading when > 0) · 配置 Configuration (declaration JSON, Plan raw data, DLQ diagnostics 诊断, Export) · 路由 Routing (subject/routing probe) · 消费者 Consumers (filter toolbar + table) · 事件 Events. Header actions: Refresh Queue 页面 · Edit draft and preview 编辑草稿与预览 · Review deletion 审阅删除影响.
+
+**Create Queue 创建 Queue**: form (name, subjects one-per-line, requested replicas 副本数, storage 存储类型, max stored messages) · template selector · JSON draft · Prepare creation draft 准备创建草稿 → Preview changes 预览变更 → authorization checkbox → Apply reviewed draft 应用已审阅草稿. Import single/plural JSON files. Parked drafts and creation history are retained in-page.
+
+**Delete page 删除**: preflight (Stream, ETag, ownership 所有权, Messages, Consumers, Default deletion blocked 默认删除被阻止, Dead-letter dependents 死信依赖方) · Force checkbox + exact-name box + impact acknowledgment · Delete this Queue (destructive, disabled until complete) · Deletion evidence JSON download · uncertain outcomes lock retry.
+
+**Stream list/detail**: observed streams incl. externally created; detail = observed configuration (subjects, storage, replicas, retention, discard), observed state (stored messages, bytes, consumers, first/last sequence), per-consumer table. Read-only.
+
+**Consumer detail**: precise consumer observation (mode, durable, filter, pending 待投递, ack pending 待确认, redelivered, waiting pull requests) + diagnosis hint.
+
+**Node list/detail**: monitoring endpoints, read-state badge, version/runtime/connections, JetStream metrics, source read evidence (varz/routez/jsz), View node connections 连接列表 with per-connection subscriptions.
+
+**Audit 审计**: filters (Request ID 请求 ID, Resource 资源, Actor 操作者, Phase 阶段 intent/outcome, Action 操作, Outcome 记录结果, From/Until 时间) · scanned-window table with evidence details · Prepare export 准备导出 JSON.
+
+**Diagnostics 诊断包**: Create metadata bundle → job manifest (sources/files/bytes) → Prepare download → Save diagnostic ZIP.
+
+**Operational alerts 运维告警**: rule table (Rule 规则, Severity 严重度, State 状态 badge, Threshold expression 阈值表达式, For duration), missing-rules warning, Prometheus console link.
+
+**Bulk changes 批量变更**: upload Queue update package → preview all targets → per-item confirm; no all-at-once submit by design.
+
+**Access and settings 访问与设置**: verified session card (identity, role, expiry, read policy) · permissions · server-side capabilities · language/refresh preferences · compatibility link · local-account management under Tenant access 租户访问管理 (create/edit/disable/delete accounts, tenant memberships and roles, platform admin flag).
+
+**Admin UI conventions**: destructive actions always require explicit confirmation dialogs; drafts/evidence live only in page memory; every page auto-refreshes (interval adjustable in settings) with visible data age; keyboard: skip-to-content link, visible focus rings, Esc closes disclosures/menus.
