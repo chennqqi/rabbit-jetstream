@@ -1,0 +1,7 @@
+{
+  "stopped_at": "2026-10-04T09:49:30Z",
+  "service_restored": true, "recovery_seconds": 1,
+  "canary_stream_messages": 1,
+  "duration_seconds": 1, "slo_seconds": 30,
+  "messages_reconciled": true, "passed": true
+}

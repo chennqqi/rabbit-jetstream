@@ -1,0 +1,22 @@
+{
+  "stage_percent": 1,
+  "started_at": "2026-10-04T09:15:11Z",
+  "ended_at": "2026-10-04T09:15:32Z",
+  "jetstream_available": true,
+  "controller_active": true,
+  "expected_nodes": 3, "current_nodes": 3,
+  "missing_messages": 0, "corrupt_messages": 0,
+  "published_messages": 20, "publish_errors": 0,
+  "dlq_transfer_failures": 0,
+  "management_5xx_percent": 0.0,
+  "storage_percent": 0.0,
+  "backlog_messages": 0, "backlog_limit_messages": 100000,
+  "publish_p99_millis": 1,
+  "publish_p99_slo_millis": 100.0,
+  "baseline_publish_p99_millis": 5.0,
+  "throughput_per_second": 1,
+  "baseline_throughput_per_second": 1,
+  "duplicate_rate_percent": 0.0, "duplicate_budget_percent": 1.0,
+  "pub_evidence": "canary-001-pub.json",
+  "sub_evidence": "canary-final-reconcile.json"
+}

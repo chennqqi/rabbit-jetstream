@@ -1,0 +1,11 @@
+{
+  "traffic_percent": 10,
+  "killed_at": "2026-10-04T09:48:03Z", "restored_at": "2026-10-04T09:48:18Z",
+  "published": 597, "publish_errors": 0,
+  "received": 1194,
+  "replicas_converged": true,
+  "puback_continued": true,
+  "consume_continued": true,
+  "recovery_seconds": 1, "recovery_slo_seconds": 60,
+  "passed": true
+}

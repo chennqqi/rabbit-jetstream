@@ -1,0 +1,11 @@
+{
+  "duration_s": 20.01,
+  "errors": 0,
+  "max_ms": 1,
+  "p50_ms": 1.17,
+  "p99_ms": 1,
+  "published": 20,
+  "rate_setting": 1,
+  "subject": "canary.traffic",
+  "throughput": 1
+}

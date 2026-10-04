@@ -1,0 +1,78 @@
+{
+  "schema": "rabbit-jetstream.io/local-rc/v1alpha1",
+  "generated_at": "2026-10-04T03:20:20.3017286Z",
+  "mode": "quick",
+  "server": {
+    "revision": "28adba81c9d4ec7a7065339dfbed4eec9119bf97",
+    "dirty": false
+  },
+  "sdk": {
+    "version": "0.1.0-rc.1",
+    "revision": "b7acd5285656b52756756b8b62e4d9a1e4d68bbc",
+    "dirty": false
+  },
+  "contract_version": "v1alpha1",
+  "nats_version": "v2.14.1",
+  "host": {
+    "os": "Microsoft Windows NT 10.0.26100.0",
+    "architecture": "X64"
+  },
+  "steps": [
+    {
+      "name": "admin-ui-clean-install",
+      "status": "passed",
+      "duration_seconds": 48.956
+    },
+    {
+      "name": "admin-ui-module-tests",
+      "status": "passed",
+      "duration_seconds": 8.415
+    },
+    {
+      "name": "admin-ui-candidate-build",
+      "status": "passed",
+      "duration_seconds": 12.707
+    },
+    {
+      "name": "admin-ui-promote",
+      "status": "passed",
+      "duration_seconds": 0.831
+    },
+    {
+      "name": "admin-ui-embedded-assets",
+      "status": "passed",
+      "duration_seconds": 0.775
+    },
+    {
+      "name": "server-test",
+      "status": "passed",
+      "duration_seconds": 133.962
+    },
+    {
+      "name": "server-vet",
+      "status": "passed",
+      "duration_seconds": 11.461
+    },
+    {
+      "name": "server-build",
+      "status": "passed",
+      "duration_seconds": 8.964
+    },
+    {
+      "name": "sdk-test",
+      "status": "passed",
+      "duration_seconds": 51.475
+    },
+    {
+      "name": "sdk-vet",
+      "status": "passed",
+      "duration_seconds": 6.44
+    },
+    {
+      "name": "sdk-build",
+      "status": "passed",
+      "duration_seconds": 2.036
+    }
+  ],
+  "performance_report": null
+}

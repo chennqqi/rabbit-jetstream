@@ -1,64 +1,152 @@
 {
   "schema": "rabbit-jetstream.io/release-approval/v1alpha1",
   "release_version": "v0.1.0-rc.3",
-  "server_revision": "f08af851590d5940f160c4151b1f023e1f2b210a",
-  "sdk_version": "0.1.0-rc.1",
-  "sdk_revision": "b7acd5285656b52756756b8b62e4d9a1e4d68bbc",
+  "server_revision": "749601bea1337fe048930d21e36543c0fc92e19f",
+  "sdk_version": "0.1.0-rc.3",
+  "sdk_revision": "53f612b8c1ece256869f83070ede73d08398b5de",
   "local_release_evidence": {
-    "file": "artifacts/local-rc.json",
+    "file": "evidence/local-rc.json",
     "sha256": "773f33774d10282335bb2d6655827add0439a09c786aefdca0881bc05b197f44"
   },
-  "native_preflights": [
-    {
-      "runtime": "linux/amd64",
-      "evidence": {
-        "file": "docs/releases/v0.1.0-rc.3-soak-evidence.md (bare-metal host jdcloudremote)",
-        "sha256": "67f69cb041b4f7544ddf9963fb70e5a89a4dce0e19c38522869b0aa1262d8784"
-      }
-    }
-  ],
+  "native_preflights": [],
   "soak_evidence": {
-    "file": "artifacts/rc3/soak-evidence-final.tar.gz (42h bare-metal soak, 5053 cycles)",
+    "file": "evidence/soak-evidence.tar.gz",
     "sha256": "67f69cb041b4f7544ddf9963fb70e5a89a4dce0e19c38522869b0aa1262d8784"
-  },
-  "cluster_qualification_evidence": {
-    "file": "artifacts/rc3/cluster-evidence.tar.gz",
-    "sha256": "e8048379fdf4d4fcdf8afb5d23aaa23af5888608ca90f4bea74ba87421dcc021"
   },
   "canary_stages": [
     {
       "traffic_percent": 1,
+      "started_at": "2026-10-04T09:15:11Z",
+      "ended_at": "2026-10-04T09:15:32Z",
+      "jetstream_available": true,
+      "controller_active": true,
+      "expected_nodes": 3,
+      "current_nodes": 3,
+      "missing_messages": 0,
+      "corrupt_messages": 0,
+      "dlq_transfer_failures": 0,
+      "management_5xx_percent": 0.0,
+      "storage_percent": 0.0,
+      "backlog_messages": 0,
+      "backlog_limit_messages": 100000,
+      "publish_p99_millis": 1,
+      "publish_p99_slo_millis": 100.0,
+      "baseline_publish_p99_millis": 5.0,
+      "throughput_per_second": 1,
+      "baseline_throughput_per_second": 1,
+      "duplicate_rate_percent": 0.0,
+      "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-001.json",
-        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+        "file": "evidence/canary-drill-evidence.tar.gz",
+        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
     {
       "traffic_percent": 10,
+      "started_at": "2026-10-04T09:15:32Z",
+      "ended_at": "2026-10-04T09:16:02Z",
+      "jetstream_available": true,
+      "controller_active": true,
+      "expected_nodes": 3,
+      "current_nodes": 3,
+      "missing_messages": 0,
+      "corrupt_messages": 0,
+      "dlq_transfer_failures": 0,
+      "management_5xx_percent": 0.0,
+      "storage_percent": 0.003,
+      "backlog_messages": 0,
+      "backlog_limit_messages": 100000,
+      "publish_p99_millis": 1.42,
+      "publish_p99_slo_millis": 100.0,
+      "baseline_publish_p99_millis": 5.0,
+      "throughput_per_second": 9.95,
+      "baseline_throughput_per_second": 10,
+      "duplicate_rate_percent": 0.0,
+      "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-010.json",
-        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+        "file": "evidence/canary-drill-evidence.tar.gz",
+        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
     {
       "traffic_percent": 25,
+      "started_at": "2026-10-04T09:16:02Z",
+      "ended_at": "2026-10-04T09:16:33Z",
+      "jetstream_available": true,
+      "controller_active": true,
+      "expected_nodes": 3,
+      "current_nodes": 3,
+      "missing_messages": 0,
+      "corrupt_messages": 0,
+      "dlq_transfer_failures": 0,
+      "management_5xx_percent": 0.0,
+      "storage_percent": 0.009,
+      "backlog_messages": 0,
+      "backlog_limit_messages": 100000,
+      "publish_p99_millis": 1.02,
+      "publish_p99_slo_millis": 100.0,
+      "baseline_publish_p99_millis": 5.0,
+      "throughput_per_second": 24.72,
+      "baseline_throughput_per_second": 25,
+      "duplicate_rate_percent": 0.0,
+      "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-025.json",
-        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+        "file": "evidence/canary-drill-evidence.tar.gz",
+        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
     {
       "traffic_percent": 50,
+      "started_at": "2026-10-04T09:16:33Z",
+      "ended_at": "2026-10-04T09:17:13Z",
+      "jetstream_available": true,
+      "controller_active": true,
+      "expected_nodes": 3,
+      "current_nodes": 3,
+      "missing_messages": 0,
+      "corrupt_messages": 0,
+      "dlq_transfer_failures": 0,
+      "management_5xx_percent": 0.0,
+      "storage_percent": 0.026,
+      "backlog_messages": 0,
+      "backlog_limit_messages": 100000,
+      "publish_p99_millis": 1.04,
+      "publish_p99_slo_millis": 100.0,
+      "baseline_publish_p99_millis": 5.0,
+      "throughput_per_second": 48.83,
+      "baseline_throughput_per_second": 50,
+      "duplicate_rate_percent": 0.0,
+      "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-050.json",
-        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+        "file": "evidence/canary-drill-evidence.tar.gz",
+        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
     {
       "traffic_percent": 100,
+      "started_at": "2026-10-04T09:17:13Z",
+      "ended_at": "2026-10-04T09:18:14Z",
+      "jetstream_available": true,
+      "controller_active": true,
+      "expected_nodes": 3,
+      "current_nodes": 3,
+      "missing_messages": 0,
+      "corrupt_messages": 0,
+      "dlq_transfer_failures": 0,
+      "management_5xx_percent": 0.0,
+      "storage_percent": 0.076,
+      "backlog_messages": 0,
+      "backlog_limit_messages": 100000,
+      "publish_p99_millis": 0.98,
+      "publish_p99_slo_millis": 100.0,
+      "baseline_publish_p99_millis": 5.0,
+      "throughput_per_second": 94.75,
+      "baseline_throughput_per_second": 100,
+      "duplicate_rate_percent": 0.0,
+      "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-100.json",
-        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+        "file": "evidence/canary-drill-evidence.tar.gz",
+        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     }
   ],
@@ -68,20 +156,22 @@
     "puback_continued": true,
     "consume_continued": true,
     "replicas_converged": true,
-    "recovery_cycles": 1,
+    "recovery_seconds": 1,
+    "recovery_slo_seconds": 60,
     "evidence": {
-      "file": "artifacts/rc3/canary-drill-evidence.tar.gz:node-failure.json",
-      "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      "file": "evidence/node-failure.json",
+      "sha256": "e1cb907f91fcb04fb1724f8d583ec440c016257b7619204987483eac77fd18f3"
     }
   },
   "rollback": {
     "passed": true,
     "messages_reconciled": true,
     "service_restored": true,
-    "recovery_cycles": 0,
+    "duration_seconds": 1,
+    "slo_seconds": 30,
     "evidence": {
-      "file": "artifacts/rc3/canary-drill-evidence.tar.gz:rollback.json",
-      "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      "file": "evidence/rollback.json",
+      "sha256": "a9a4a12e081e0b7294d83026cef783ba5737fdab8d634f25828b79d1e2450d53"
     }
   },
   "partial_dependencies": [
@@ -89,7 +179,7 @@
       "id": "priority-queue",
       "approved": true,
       "owner": "chennqqi (sole owner)",
-      "rationale": "Application accepts the qualified priority-queue semantics: at-least-once delivery with idempotent consumers, priorities bounded to 0-7 (MaxPriority <= 7), client access exclusively through the Native Go SDK (no AMQP wire compatibility), production qualification on linux/amd64 R3 only. Mitigations: idempotent consume handlers deployed; priority levels audited against the qualified range; SDK migration complete; out-of-range requirements (>8 levels, ARM64) explicitly deferred."
+      "rationale": "Application accepts the qualified priority-queue semantics: at-least-once delivery with idempotent consumers, priorities bounded to 0-7 (MaxPriority <= 7), client access exclusively through the Native Go SDK (no AMQP wire compatibility), production qualification on linux/amd64 R3 only."
     }
   ],
   "known_limitations": [
@@ -105,5 +195,9 @@
       "approved": true,
       "approved_at": "2026-10-04T07:20:00Z"
     }
-  ]
+  ],
+  "cluster_qualification_evidence": {
+    "file": "evidence/cluster-evidence.tar.gz",
+    "sha256": "e8048379fdf4d4fcdf8afb5d23aaa23af5888608ca90f4bea74ba87421dcc021"
+  }
 }

@@ -90,6 +90,7 @@ func pub(args []string) {
 		body, _ := json.Marshal(payload{Seq: seq, TS: time.Now().UTC().Format(time.RFC3339Nano)})
 		t0 := time.Now()
 		if _, err := js.Publish(context.Background(), *subject, body); err != nil {
+			fmt.Fprintf(os.Stderr, "canary: publish %d: %v\n", seq, err)
 			errors++
 		} else {
 			published++
@@ -122,6 +123,7 @@ func sub(args []string) {
 	duration := fs.Int("duration", 30, "seconds to drain")
 	expect := fs.Int64("expect", -1, "expected distinct message count (-1: report only)")
 	out := fs.String("out", "sub-reconcile.json", "reconcile output file")
+	subject := fs.String("subject", "canary.traffic", "subject")
 	fs.Parse(args)
 
 	options, optErr := natsclient.Options(natsclient.Config{TLSInsecure: true})
@@ -135,7 +137,7 @@ func sub(args []string) {
 	// helper returns empty batches against this durable.
 	oldJS, err := nc.JetStream()
 	fatal("legacy jetstream", err)
-	sub, err := oldJS.PullSubscribe("canary.>", "RJSQC_canary-drill")
+	sub, err := oldJS.PullSubscribe(*subject, "canary-acceptance")
 	fatal("pull subscribe", err)
 
 	corrupt := 0

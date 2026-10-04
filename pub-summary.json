@@ -1,0 +1,11 @@
+{
+  "duration_s": 5,
+  "errors": 1,
+  "max_ms": 0,
+  "p50_ms": 0,
+  "p99_ms": 0,
+  "published": 0,
+  "rate_setting": 5,
+  "subject": "telemetry.tick",
+  "throughput": 0
+}
