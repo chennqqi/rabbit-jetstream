@@ -20,3 +20,6 @@ node_modules/
 # Local tooling and test artifacts
 .zcodeignore
 tests/admin-ui/test-results/
+
+# Local workspace config
+.zcodeignore
