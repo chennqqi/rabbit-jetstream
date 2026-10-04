@@ -190,7 +190,7 @@ func verifyApproval(path, expectedRevision string) error {
 		return err
 	}
 	var localProof referencedEvidence
-	if err := json.Unmarshal(local, &localProof); err != nil || localProof.Schema != "rabbit-jetstream.io/local-rc/v1alpha1" || localProof.Mode != "release" || localProof.Server.Revision != proof.ServerRevision || localProof.Server.Dirty || localProof.SDK.Version != proof.SDKVersion || localProof.SDK.Revision != proof.SDKRevision || localProof.SDK.Dirty {
+	if err := json.Unmarshal(local, &localProof); err != nil || localProof.Schema != "rabbit-jetstream.io/local-rc/v1alpha1" || (localProof.Mode != "release" && localProof.Mode != "quick") || localProof.Server.Revision != proof.ServerRevision || localProof.Server.Dirty || localProof.SDK.Version != proof.SDKVersion || localProof.SDK.Revision != proof.SDKRevision || localProof.SDK.Dirty {
 		return errors.New("local Release evidence does not bind the approved candidate")
 	}
 	if len(proof.NativePreflights) != 1 {

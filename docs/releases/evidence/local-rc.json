@@ -1,14 +1,14 @@
 {
   "schema": "rabbit-jetstream.io/local-rc/v1alpha1",
-  "generated_at": "2026-10-04T03:20:20.3017286Z",
+  "generated_at": "2026-10-04T11:35:35.9946894Z",
   "mode": "quick",
   "server": {
-    "revision": "28adba81c9d4ec7a7065339dfbed4eec9119bf97",
+    "revision": "6a985c529e112557767b476dca314b61eb6c0154",
     "dirty": false
   },
   "sdk": {
-    "version": "0.1.0-rc.1",
-    "revision": "b7acd5285656b52756756b8b62e4d9a1e4d68bbc",
+    "version": "0.1.0-rc.3",
+    "revision": "53f612b8c1ece256869f83070ede73d08398b5de",
     "dirty": false
   },
   "contract_version": "v1alpha1",
@@ -21,57 +21,57 @@
     {
       "name": "admin-ui-clean-install",
       "status": "passed",
-      "duration_seconds": 48.956
+      "duration_seconds": 64.834
     },
     {
       "name": "admin-ui-module-tests",
       "status": "passed",
-      "duration_seconds": 8.415
+      "duration_seconds": 11.057
     },
     {
       "name": "admin-ui-candidate-build",
       "status": "passed",
-      "duration_seconds": 12.707
+      "duration_seconds": 17.131
     },
     {
       "name": "admin-ui-promote",
       "status": "passed",
-      "duration_seconds": 0.831
+      "duration_seconds": 0.828
     },
     {
       "name": "admin-ui-embedded-assets",
       "status": "passed",
-      "duration_seconds": 0.775
+      "duration_seconds": 0.803
     },
     {
       "name": "server-test",
       "status": "passed",
-      "duration_seconds": 133.962
+      "duration_seconds": 12.206
     },
     {
       "name": "server-vet",
       "status": "passed",
-      "duration_seconds": 11.461
+      "duration_seconds": 7.19
     },
     {
       "name": "server-build",
       "status": "passed",
-      "duration_seconds": 8.964
+      "duration_seconds": 10.495
     },
     {
       "name": "sdk-test",
       "status": "passed",
-      "duration_seconds": 51.475
+      "duration_seconds": 2.791
     },
     {
       "name": "sdk-vet",
       "status": "passed",
-      "duration_seconds": 6.44
+      "duration_seconds": 1.277
     },
     {
       "name": "sdk-build",
       "status": "passed",
-      "duration_seconds": 2.036
+      "duration_seconds": 1.849
     }
   ],
   "performance_report": null

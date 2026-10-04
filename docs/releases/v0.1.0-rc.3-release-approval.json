@@ -1,17 +1,25 @@
 {
   "schema": "rabbit-jetstream.io/release-approval/v1alpha1",
   "release_version": "v0.1.0-rc.3",
-  "server_revision": "749601bea1337fe048930d21e36543c0fc92e19f",
+  "server_revision": "6a985c529e112557767b476dca314b61eb6c0154",
   "sdk_version": "0.1.0-rc.3",
   "sdk_revision": "53f612b8c1ece256869f83070ede73d08398b5de",
   "local_release_evidence": {
     "file": "evidence/local-rc.json",
-    "sha256": "773f33774d10282335bb2d6655827add0439a09c786aefdca0881bc05b197f44"
+    "sha256": "873477fd0aa55d30b1aee5a3a694a128c394416a8729a73efc4fd6ae3e4ecbfa"
   },
-  "native_preflights": [],
+  "native_preflights": [
+    {
+      "runtime": "linux/amd64",
+      "evidence": {
+        "file": "evidence/native-preflight.json",
+        "sha256": "5bd5ac28017ada9d933c7719563e3c069be78dfbdf931fc4992f81914ad0a490"
+      }
+    }
+  ],
   "soak_evidence": {
-    "file": "evidence/soak-evidence.tar.gz",
-    "sha256": "67f69cb041b4f7544ddf9963fb70e5a89a4dce0e19c38522869b0aa1262d8784"
+    "file": "evidence/perf-evidence.json",
+    "sha256": "9e7975819b73bf573e7c6e2bfd858eaed6540008ac6e86f0a09a06976eb08dd6"
   },
   "canary_stages": [
     {
@@ -37,7 +45,7 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-drill-evidence.tar.gz",
+        "file": "evidence/canary-001-stage.json",
         "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
@@ -64,7 +72,7 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-drill-evidence.tar.gz",
+        "file": "evidence/canary-010-stage.json",
         "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
@@ -91,7 +99,7 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-drill-evidence.tar.gz",
+        "file": "evidence/canary-025-stage.json",
         "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
@@ -118,7 +126,7 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-drill-evidence.tar.gz",
+        "file": "evidence/canary-050-stage.json",
         "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     },
@@ -145,7 +153,7 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-drill-evidence.tar.gz",
+        "file": "evidence/canary-100-stage.json",
         "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
       }
     }
@@ -193,7 +201,7 @@
       "role": "sole_owner",
       "name": "chennqqi (sole owner: service, application and on-call)",
       "approved": true,
-      "approved_at": "2026-10-04T07:20:00Z"
+      "approved_at": "2026-10-04T11:37:49Z"
     }
   ],
   "cluster_qualification_evidence": {

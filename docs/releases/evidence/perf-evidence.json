@@ -1,0 +1,8 @@
+{
+  "schema": "rabbit-jetstream.io/performance-evidence/v1alpha1",
+  "source_revision": "6a985c529e112557767b476dca314b61eb6c0154",
+  "sdk_version": "0.1.0-rc.3",
+  "sdk_revision": "53f612b8c1ece256869f83070ede73d08398b5de",
+  "mode": "soak",
+  "notes": "42-hour bare-metal soak on jdcloudremote (5053 cycles, all-200, zero crashes, 453k messages)"
+}
