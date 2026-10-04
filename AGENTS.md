@@ -46,3 +46,8 @@ English is the default documentation language. User-facing README, changelog, te
 Use `ssh jdcloudremote` for native Linux release qualification. SSH logs in as `root`, but run ordinary validation as `sandbox`; use root only for necessary host-level installation or configuration. The `sandbox` account has rootless Podman. Prefer release binaries for simple checks, and use rootless Podman when isolated networking or container behavior is needed.
 
 Never copy the source tree to the remote host. Build all binaries, images, charts, and verification helpers locally with Docker Desktop, then transfer only frozen release artifacts and evidence inputs. Prefer configured Chinese package and container mirrors for any unavoidable remote installation or download. The first release currently requires native execution qualification only on `linux/amd64`; arm64 artifacts may be cross-built but are not production-qualified until an arm64 host is available.
+
+
+## Agent Skills
+
+Repo-shipped skills for autonomous operation live in `skills/` (SKILL.md each): `rjsctl-operations` (management-plane CLI/API operations and safety rules), `rjs-incident-response` (health/triage/backlog/DLQ/unknown-outcome procedures), `rjs-release-drills` (qualification gates: packaging, soak, cluster smoke, canary, node-failure, rollback), `rjs-console-automation` (admin-UI Playwright/agent automation with page map and traps). Consult the matching skill before operating the system as an agent. The documentation map for humans is `docs/README.md`.
