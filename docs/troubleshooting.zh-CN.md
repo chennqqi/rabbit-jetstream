@@ -59,6 +59,7 @@
 | `subjects overlap with an existing stream` | 声明 subject 与其他 Stream 冲突 | 修正 Queue subjects 或移除冲突 Stream；控制面会拒绝重叠。 |
 | npm test 出现 3 个 Windows 跳过 | Windows 上的 vite SSR 盘符缺陷 | 预期行为：断言由 Playwright e2e 覆盖。 |
 | LF/CRLF 警告 | Git autocrlf | 仓库已通过 `.gitattributes` 固定 LF；本地设置 `core.autocrlf=false`。 |
+| NATS jsz：stream 配置/副本详情缺失 | jsz 默认不含每流 config 详情；用 nats CLI 获取权威副本数 | `nats stream info <name>`（operator 镜像内），或 jsz 参数加 `streams=true&config=true`。 |
 
 ## 仍未解决
 

@@ -54,13 +54,10 @@ controller_active() {
   curl -s -m 5 http://127.0.0.1:9223/metrics | grep -E '^rjs_controller_leader\{.*\} 1$' | grep -q .
 }
 
+# jsz omits per-stream config details (subjects, replicas); the nats CLI
+# stream info command is the reliable source for replica counts.
 expected_nodes() {
-  curl -s -m 5 "http://127.0.0.1:8222/jsz?consumers=false" | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-streams=d.get("streams_detail") or []
-r3=[s for s in streams if s.get("config",{}).get("num_replicas",0)>=3]
-print(len(r3))' 2>/dev/null || echo 0
+  podman run --rm --network host --entrypoint /usr/local/bin/nats     rabbit-jetstream/operator:kubernetes-smoke --server nats://127.0.0.1:4222     stream info RJSQ_canary-drill 2>/dev/null     | grep -oE 'Replicas: [0-9]+' | grep -oE '[0-9]+' | head -1
 }
 
 stop_all

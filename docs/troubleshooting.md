@@ -59,6 +59,7 @@ Symptom → cause → action for the most common errors seen in the console, API
 | `subjects overlap with an existing stream` | Declared subjects collide with another Stream | Fix Queue subjects or remove the colliding stream; the control plane refuses overlaps. |
 | npm test: 3 Windows skips | vite SSR drive-letter defect on Windows | Expected: skips are covered by Playwright e2e. |
 | LF/CRLF warnings | Git autocrlf | Repo now pins LF via `.gitattributes`; set `core.autocrlf=false` locally. |
+| NATS jsz: stream config/replica details missing | jsz omits per-stream config by default; use nats CLI for authoritative replica counts | `nats stream info <name>` via operator image, or add `streams=true&config=true` to jsz params. |
 
 ## Still stuck
 
