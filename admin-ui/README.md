@@ -17,3 +17,7 @@ The qualified candidate is copied into `dist/`, embedded into `rjs-management`, 
 The 2026-09-11 promotion was exercised through the actual locally built Go binary in Chromium, including 127 real-service checks and 23 axe snapshots. Remaining production pages, approved architecture items and release qualification are still tracked in the [development ledger](../docs/webui-development.md); embedded promotion alone does not complete the console or approve a release. Default authenticated resource reads are defined by the [access policy](../docs/webui-access.md).
 
 Run `make test-admin-ui` for the current React standalone Compose browser gate. It runs authentication, reviewed Queue create/update/delete, session, mobile failure-state and axe checks in both Chromium and Firefox. Run `pwsh -NoProfile -File tests/admin-ui/run.ps1 -DeploymentProfile cluster` for the same gate against the official three-node cluster manifest; each mode asserts the matching server-declared profile. The local isolated harness can verify the Go-served assets with `RJS_TEST_EMBEDDED_UI=1` and an explicitly selected freshly built management binary.
+
+## User guide
+
+Operating the console (login, Queue lifecycle, badges, audit, diagnostics) is documented in the [Admin Console User Guide](../docs/console-user-guide.md).

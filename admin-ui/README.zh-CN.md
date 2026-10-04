@@ -17,3 +17,7 @@
 2026-09-11 的晋升已通过本机构建的真实 Go 二进制在 Chromium 中执行，覆盖 127 项真实服务检查和 23 个 axe 快照。其余生产页面、待批准架构项和发布资格仍记录在[开发记录](../docs/webui-development.zh-CN.md)中；完成内嵌晋升不等于控制台全部完成或版本获准发布。默认资源读取认证由[访问策略](../docs/webui-access.zh-CN.md)定义。
 
 `make test-admin-ui` 是当前 React standalone Compose 浏览器门禁，会在 Chromium 和 Firefox 中执行认证、经审阅的 Queue 创建/修改/删除、会话、移动端失败状态和 axe 检查。执行 `pwsh -NoProfile -File tests/admin-ui/run.ps1 -DeploymentProfile cluster` 可对官方三节点 cluster 清单运行同一门禁；两种模式都会断言服务端声明的对应模式。本机隔离测试可通过 `RJS_TEST_EMBEDDED_UI=1` 和显式指定的最新管理二进制验证 Go 实际提供的资源。
+
+## 用户手册
+
+控制台操作（登录、Queue 生命周期、状态徽章、审计、诊断包）见[管理控制台用户手册](../docs/console-user-guide.zh-CN.md)。
