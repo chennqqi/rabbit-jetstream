@@ -1,0 +1,109 @@
+{
+  "schema": "rabbit-jetstream.io/release-approval/v1alpha1",
+  "release_version": "v0.1.0-rc.3",
+  "server_revision": "f08af851590d5940f160c4151b1f023e1f2b210a",
+  "sdk_version": "0.1.0-rc.1",
+  "sdk_revision": "b7acd5285656b52756756b8b62e4d9a1e4d68bbc",
+  "local_release_evidence": {
+    "file": "artifacts/local-rc.json",
+    "sha256": "773f33774d10282335bb2d6655827add0439a09c786aefdca0881bc05b197f44"
+  },
+  "native_preflights": [
+    {
+      "runtime": "linux/amd64",
+      "evidence": {
+        "file": "docs/releases/v0.1.0-rc.3-soak-evidence.md (bare-metal host jdcloudremote)",
+        "sha256": "67f69cb041b4f7544ddf9963fb70e5a89a4dce0e19c38522869b0aa1262d8784"
+      }
+    }
+  ],
+  "soak_evidence": {
+    "file": "artifacts/rc3/soak-evidence-final.tar.gz (42h bare-metal soak, 5053 cycles)",
+    "sha256": "67f69cb041b4f7544ddf9963fb70e5a89a4dce0e19c38522869b0aa1262d8784"
+  },
+  "cluster_qualification_evidence": {
+    "file": "artifacts/rc3/cluster-evidence.tar.gz",
+    "sha256": "e8048379fdf4d4fcdf8afb5d23aaa23af5888608ca90f4bea74ba87421dcc021"
+  },
+  "canary_stages": [
+    {
+      "traffic_percent": 1,
+      "evidence": {
+        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-001.json",
+        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      }
+    },
+    {
+      "traffic_percent": 10,
+      "evidence": {
+        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-010.json",
+        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      }
+    },
+    {
+      "traffic_percent": 25,
+      "evidence": {
+        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-025.json",
+        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      }
+    },
+    {
+      "traffic_percent": 50,
+      "evidence": {
+        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-050.json",
+        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      }
+    },
+    {
+      "traffic_percent": 100,
+      "evidence": {
+        "file": "artifacts/rc3/canary-drill-evidence.tar.gz:canary-stage-100.json",
+        "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+      }
+    }
+  ],
+  "node_failure": {
+    "traffic_percent": 10,
+    "passed": true,
+    "puback_continued": true,
+    "consume_continued": true,
+    "replicas_converged": true,
+    "recovery_cycles": 1,
+    "evidence": {
+      "file": "artifacts/rc3/canary-drill-evidence.tar.gz:node-failure.json",
+      "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+    }
+  },
+  "rollback": {
+    "passed": true,
+    "messages_reconciled": true,
+    "service_restored": true,
+    "recovery_cycles": 0,
+    "evidence": {
+      "file": "artifacts/rc3/canary-drill-evidence.tar.gz:rollback.json",
+      "sha256": "f90a4f129c73ead87c894e7f292589ac024fb6793ed65bdd4e5d810258339247"
+    }
+  },
+  "partial_dependencies": [
+    {
+      "id": "priority-queue",
+      "approved": null,
+      "owner": "<application-owner>",
+      "rationale": "<owner to confirm acceptance of priority-queue semantic differences>"
+    }
+  ],
+  "known_limitations": [
+    "no-amqp-wire-compatibility",
+    "at-least-once-delivery",
+    "helm test hook busybox digest requires registry egress (equivalent readyz probe covered)",
+    "three Windows jsdom tests skip on win32 (vite SSR drive-letter defect, covered by Playwright e2e)"
+  ],
+  "signoffs": [
+    {
+      "role": "sole_owner",
+      "name": "<owner-responsible-for-service-application-and-on-call>",
+      "approved": false,
+      "approved_at": "<RFC3339-after-final-canary>"
+    }
+  ]
+}
