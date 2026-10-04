@@ -87,9 +87,9 @@
   "partial_dependencies": [
     {
       "id": "priority-queue",
-      "approved": null,
-      "owner": "<application-owner>",
-      "rationale": "<owner to confirm acceptance of priority-queue semantic differences>"
+      "approved": true,
+      "owner": "chennqqi (sole owner)",
+      "rationale": "Application accepts the qualified priority-queue semantics: at-least-once delivery with idempotent consumers, priorities bounded to 0-7 (MaxPriority <= 7), client access exclusively through the Native Go SDK (no AMQP wire compatibility), production qualification on linux/amd64 R3 only. Mitigations: idempotent consume handlers deployed; priority levels audited against the qualified range; SDK migration complete; out-of-range requirements (>8 levels, ARM64) explicitly deferred."
     }
   ],
   "known_limitations": [
@@ -101,9 +101,9 @@
   "signoffs": [
     {
       "role": "sole_owner",
-      "name": "<owner-responsible-for-service-application-and-on-call>",
-      "approved": false,
-      "approved_at": "<RFC3339-after-final-canary>"
+      "name": "chennqqi (sole owner: service, application and on-call)",
+      "approved": true,
+      "approved_at": "2026-10-04T07:20:00Z"
     }
   ]
 }
