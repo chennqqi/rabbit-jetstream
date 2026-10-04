@@ -38,4 +38,6 @@ Use overlapping operator/auditor tokens or OIDC signing keys: add the new creden
 
 ## Escalation Evidence
 
+Scaling or topology changes follow [Scaling and Topology Changes](scaling-topology.md).
+
 Attach the diagnostic ZIP, release/tag and image digests, incident window in UTC, affected Queues, client acknowledgement errors, node events, storage status, and actions already attempted. Do not attach message payloads unless explicitly approved and encrypted.

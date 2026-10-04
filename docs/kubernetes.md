@@ -55,6 +55,8 @@ The `operator.image` value records the digest-pinned, on-demand `rjsctl` image s
 
 ## Rolling Changes
 
+Planned scaling (node add/remove, replica changes) is documented in [Scaling and Topology Changes](scaling-topology.md).
+
 The StatefulSet uses ordered rolling updates and the NATS PDB retains quorum during voluntary disruption. Upgrade one NATS pod at a time, wait for JetStream replicas to become current, and only then continue. Management uses `maxUnavailable: 0`. Kubernetes primitives reduce risk but do not replace the release-specific rolling upgrade/rollback drill required by `docs/testing.md`.
 
 Validate all chart modes without a Kubernetes cluster:
