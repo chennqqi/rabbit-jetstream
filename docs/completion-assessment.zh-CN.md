@@ -36,7 +36,7 @@ Rabbit JetStream 是一个**在限定配置内已通过生产资格验证的发�
 
 ## 当前基线与剩余阻塞项
 
-旧评估中的 CRLF 问题已经过时且不准确。production values 契约测试已经通过，仓库完整测试在正常 CI 环境可通过。本次受管 Windows 会话中，`go test ./...` 已执行到所有包，仅 `tools/upstreamcheck` 的测试夹具因无法访问宿主全局 Git ignore 文件而失败；这是环境隔离问题，不是旧文所述换行符错误。
+旧评估中的 CRLF 问题已经过时且不准确。production values 契约测试已经通过。`tools/upstreamcheck` 现已分离成功命令的 stdout 与仅警告 stderr；本次受管 Windows 会话中的完整 `go test ./...` 和 `go vet ./...` 均已通过，且未弱化子树检查。
 
 当前记录中，revision `a85b839f` 的最新 CI 除 `rabbitmq-migration` 外全部通过。Definitions 转换已经通过，RabbitMQ 和 NATS 均正常 ready，两次三消息 dual-write 均成功。剩余失败是非 root distroless 容器生成 `dualwrite.ndjson` 后，宿主 PowerShell 读取该文件时遇到 Linux 文件属主权限问题。这属于测试夹具可移植性缺陷，不是 Queue 语义或迁移正确性失败，但正式发布前仍必须恢复全绿 CI。
 
