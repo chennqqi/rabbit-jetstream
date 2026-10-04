@@ -70,6 +70,7 @@ $NpmCommand = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
 Invoke-Checked 'admin-ui-clean-install' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('ci', '--ignore-scripts')
 Invoke-Checked 'admin-ui-module-tests' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('test')
 Invoke-Checked 'admin-ui-candidate-build' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('run', 'build')
+Invoke-Checked 'admin-ui-promote' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('run', 'promote')
 Invoke-Checked 'admin-ui-embedded-assets' (Join-Path $RepositoryRoot 'admin-ui') $NpmCommand @('run', 'verify:dist')
 Invoke-Checked 'server-test' $RepositoryRoot 'go' @('test', './...')
 Invoke-Checked 'server-vet' $RepositoryRoot 'go' @('vet', './...')
