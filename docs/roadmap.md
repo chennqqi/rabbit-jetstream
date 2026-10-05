@@ -55,6 +55,7 @@ Acceptance: `make verify-release-approval` passes at the tagged revision and the
 - [ ] Add longer capacity baselines, storage/CNI qualification matrices, and automated disaster-recovery objectives.
 - [ ] Improve dashboards, alert routing, audit export, and fleet-level diagnostics.
 - [ ] Production-qualify `linux/arm64` when native hardware is available.
+- [ ] Build a standalone website covering both introduction and functionality: a content side with project overview, documentation, release notes, and download guidance, and a functional side that decouples the embedded Admin UI console into an independently deployable web application, deployable and upgradable separately from the management service.
 
 The repository already contains OIDC bearer verification and a locally tested browser Authorization Code + PKCE implementation. The roadmap item above covers further real-provider integration and qualification only. Until that item is resumed, do not treat external IdP availability or production IdP acceptance as part of the active development completion criteria.
 
