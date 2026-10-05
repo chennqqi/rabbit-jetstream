@@ -213,7 +213,9 @@ try {
 		Invoke-Docker run -d --name $TLSManagement --network $TLSNetwork --network-alias tls-management -e 'RJS_NATS_URL=tls://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:4222,tls://production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless:4222,tls://production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless:4222' -e 'RJS_NATS_MONITOR_URLS=http://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:8222,http://production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless:8222,http://production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless:8222' -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD=$NATSPassword" -e RJS_NATS_TLS_CA=/etc/nats-tls/ca.crt -e RJS_NATS_TLS_CERT=/etc/nats-tls/tls.crt -e RJS_NATS_TLS_KEY=/etc/nats-tls/tls.key -e RJS_NATS_TLS_SERVER_NAME=production-rabbit-jetstream-nats -e RJS_ADMIN_TOKEN=test-admin-token -e RJS_METADATA_REPLICAS=3 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s -v "${TLSDirectory}:/etc/nats-tls:ro" rabbit-jetstream/management:helm-test
 		$TLSReady = $false
 		foreach ($Attempt in 1..45) {
-			$TLSStatus = & docker run --rm --network $TLSNetwork $BusyBoxImage wget -q -O - http://tls-management:8223/api/v1/nodes 2>$null
+			# /api/v1 reads require authorization since the review hardening
+			# (a683043); the readiness poll must present the admin token.
+			$TLSStatus = & docker run --rm --network $TLSNetwork $BusyBoxImage wget -q --header 'Authorization: Bearer test-admin-token' -O - http://tls-management:8223/api/v1/nodes 2>$null
 			if ($LASTEXITCODE -eq 0 -and ($TLSStatus -join '') -match '"available":3') { $TLSReady = $true; break }
 			Start-Sleep -Seconds 1
 		}
