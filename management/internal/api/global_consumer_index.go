@@ -212,21 +212,25 @@ func collectGlobalConsumers(parent context.Context, source globalConsumerSource,
 		}
 	}()
 	go func() { workers.Wait(); close(results) }()
+	// Abandon the collection: stop the feeder and wait for the in-flight
+	// workers so no goroutine (or source read) outlives this function.
+	abandon := func(err error) (*globalConsumerGeneration, error) {
+		cancel()
+		workers.Wait()
+		return nil, err
+	}
 	observed := make(map[string]map[string]jetstream.Consumer, len(streams))
 	for result := range results {
 		if result.err != nil {
-			cancel()
-			return nil, fmt.Errorf("list Consumers for Stream %s: %w", result.stream, result.err)
+			return abandon(fmt.Errorf("list Consumers for Stream %s: %w", result.stream, result.err))
 		}
 		members := make(map[string]jetstream.Consumer, len(result.consumers))
 		for _, consumer := range result.consumers {
 			if consumer.Stream != result.stream || consumer.Name == "" {
-				cancel()
-				return nil, errors.New("inconsistent Consumer enumeration")
+				return abandon(errors.New("inconsistent Consumer enumeration"))
 			}
 			if _, duplicate := members[consumer.Name]; duplicate {
-				cancel()
-				return nil, errors.New("duplicate observed Consumer identity")
+				return abandon(errors.New("duplicate observed Consumer identity"))
 			}
 			members[consumer.Name] = consumer
 		}
