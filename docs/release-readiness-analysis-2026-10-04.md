@@ -310,3 +310,23 @@ runuser -u sandbox -- systemd-run --uid=sandbox --unit=rjs-soak-tier1 \
 - **启动核验**：cycle 1-2 即 health=200、queues_api=200、nats_up=3/3、bench=up；jsz 显示 ha_assets=3（R3 流已成形）、API 请求速率 ~5k/s（PubAck 逐条确认流量正常）。
 - **验收标准**（完成后核对 `soak-tier1.json` + 证据日志）：integrity 零丢失/重复/损坏；吞吐 ≥ 3,000 msg/s；P99 ≤ 10 ms；health/queues_api 全周期 200；nats 零崩溃、mgmt 零非受控重启。
 - **查看进度**：`ssh jdcloudremote 'tail -5 /home/sandbox/rc3/soak-tier1/logs/soak-evidence.log'`
+
+## D.6 档位 1 soak 最终结果（2026-10-05 21:40 CST 完成）——全部验收标准通过
+
+报告 `artifacts/rc3-soak-tier1/soak-tier1.json`（sha256 `0438142f…`），证据日志 `soak-evidence.log`（sha256 `064c0914…`，2,927 行）：
+
+| 验收项 | 门禁 | 实测 | 结果 |
+|---|---|---|---|
+| 时长 | ≥ 24h | 86,400.009 s（精确 24h） | ✅ |
+| 完整性 | 零丢失/重复/损坏 | published = consumed = **426,418,937**，missing/duplicates/corrupt = **0** | ✅ |
+| 重试 | — | publish_retries = 0，consume_retries = 0 | ✅ |
+| 吞吐 | ≥ 3,000 msg/s | **4,935.4 msg/s**（发布与消费并发，2 vCPU）——门禁的 164%，亦达档位 2 门禁的 98.7% | ✅ |
+| P99 | ≤ 10 ms | **7.35 ms**（P50 1.25 / P95 3.57；max 302 ms 单次离群，疑 fsync/checkpoint 停顿，不影响 P99） | ✅ |
+| 管理面健康 | 全周期 200 | **2,926/2,926 周期 health=200、queues_api=200**，零非 200 | ✅ |
+| 稳定性 | 零崩溃/零非受控重启 | 全周期 nats_up=3/3，mgmt_restarts=0 | ✅ |
+
+**结论**：2C/4G 主机等级上，最终修订 `616b66d` 以 4,935 msg/s 满速持续 24 小时，完整性零缺陷、P99 达标——档位 1 声明包络（3,000 msg/s @ 2C/4G）的证据缺口**已关闭**，且余量极大（实测为声明的 164%）。峰值积压 8,353 条、结束积压 0（WorkQueue 实时排水）。
+
+**档位 2 说明**：本次 2C/4G 实测 4,935/s 已几乎触及档位 2 的 5,000/s 声明——4C/8G 主机达成该包络已无悬念，但按证据纪律，档位 2 仍应在 4C 级主机上以 24h soak 正式化（或由所有者决定以本次 2C 结果 + 32 核锚点替代，并在 known_limitations 记录）。
+
+**遗留的发布链事项**（承接附录 A）：批准 JSON 重绑最终修订、local-rc 以 Release 模式重跑（恢复工具严格断言）、五份同字节 gzip 证据文件 hygiene——三项均未变。

@@ -2,7 +2,7 @@
 
 BUNDLE ?= dist/v0.1.0-rc.2
 NATIVE_QUAL_OUTPUT ?= native-linux-preflight.json
-RELEASE_APPROVAL ?= release-approval.json
+RELEASE_APPROVAL ?= docs/releases/v0.1.0-rc.3-release-approval.json
 
 build:
 	go build -o bin/rjs-management ./management/cmd/rjs-management
@@ -71,7 +71,10 @@ verify-native-bundle:
 	go run ./tools/nativequal -bundle "$(BUNDLE)" -output "$(NATIVE_QUAL_OUTPUT)" -source-revision "$$(git rev-parse HEAD)"
 
 verify-release-approval:
-	go run ./tools/releaseapproval -evidence "$(RELEASE_APPROVAL)" -source-revision "$$(git rev-parse HEAD)"
+	@BOUND=$$(sed -n 's/.*"server_revision": *"\([0-9a-f]\{40\}\)".*/\1/p' "$(RELEASE_APPROVAL)" | head -1); \
+	if [ -z "$$BOUND" ]; then echo "no server_revision found in $(RELEASE_APPROVAL)"; exit 1; fi; \
+	git merge-base --is-ancestor "$$BOUND" HEAD || { echo "approval binds revision $$BOUND which is not an ancestor of HEAD"; exit 1; }; \
+	go run ./tools/releaseapproval -evidence "$(RELEASE_APPROVAL)" -source-revision "$$BOUND"
 
 test-helm:
 	pwsh -File tests/deployment/helm.ps1

@@ -45,8 +45,8 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-001-stage.json",
-        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
+        "file": "evidence/canary-stage-001.json",
+        "sha256": "9e862de246a213b5a9d079b04f0a72bce674b934fae5151a92abf5642a0ecb9e"
       }
     },
     {
@@ -72,8 +72,8 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-010-stage.json",
-        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
+        "file": "evidence/canary-stage-010.json",
+        "sha256": "42fd8bb4b8a058e84a429f62c0357d44af9ca9ce1dc3fa09c0293f4d7a9eb92b"
       }
     },
     {
@@ -99,8 +99,8 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-025-stage.json",
-        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
+        "file": "evidence/canary-stage-025.json",
+        "sha256": "e199229a1fe5e351b032a7311826180afe991ff9f9b968c9109bf61faaf5918c"
       }
     },
     {
@@ -126,8 +126,8 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-050-stage.json",
-        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
+        "file": "evidence/canary-stage-050.json",
+        "sha256": "2c6ce4a3f1e22e56d4af987da3e9e41913f9cc7b155f2885b93ed3036b5d02ba"
       }
     },
     {
@@ -153,8 +153,8 @@
       "duplicate_rate_percent": 0.0,
       "duplicate_budget_percent": 1.0,
       "evidence": {
-        "file": "evidence/canary-100-stage.json",
-        "sha256": "9ff6d7370ff7c6069ae364943b44512d2efff35ad5f5db651357fcfc4d2bb05d"
+        "file": "evidence/canary-stage-100.json",
+        "sha256": "4364dc4645193db022af18312f68a493d5aa26f3ca36bbfb8cb2745161589176"
       }
     }
   ],
