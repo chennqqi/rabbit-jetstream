@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,7 +54,18 @@ func helperMain() {
 		}
 		_ = http.ListenAndServe(os.Getenv("RJS_HTTP_ADDR"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{}`) }))
 	case "resource-sampler":
-		time.Sleep(6500 * time.Millisecond)
+		// Outlive the workload by construction instead of by a sleep margin:
+		// exit only after the workload's report exists (30s backstop for a
+		// failed workload). A fixed short sleep made this racy under load —
+		// the sampler could exit before the bench and trip the supervisor's
+		// "exited before workload" guard.
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(filepath.Join(filepath.Dir(args["-output"]), "report.json")); err == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		_ = save(args["-output"], map[string]any{})
 	case "jetstream-bench":
 		time.Sleep(6 * time.Second)
@@ -120,15 +130,13 @@ func TestSupervisedLifecycle(t *testing.T) {
 				}
 			}
 			base := 0
-			for attempt := 0; attempt < 20; attempt++ {
-				l, err := net.Listen("tcp4", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
-				port := l.Addr().(*net.TCPAddr).Port
-				l.Close()
-				if port <= 65525 && availablePorts(port) == nil {
-					base = port
+			// Bind a fixed low port block instead of the ephemeral range:
+			// Windows (Hyper-V/WSL) dynamically excludes ephemeral ports, so a
+			// block that validated at allocation time can be forbidden by the
+			// time the supervisor re-checks it. Low ports are not auto-excluded.
+			for _, candidate := range []int{24220, 24240, 24260, 24280, 24300, 24320} {
+				if availablePorts(candidate) == nil {
+					base = candidate
 					break
 				}
 			}
@@ -150,8 +158,17 @@ func TestSupervisedLifecycle(t *testing.T) {
 			if err != nil || !strings.Contains(string(raw), `"completed"`) {
 				t.Fatalf("completion: %s %v", raw, err)
 			}
-			if err := availablePorts(base); err != nil {
-				t.Fatalf("test children leaked: %v", err)
+			// Child teardown on Windows is asynchronous; allow a short grace
+			// window before declaring the children leaked.
+			leaked := error(nil)
+			for attempt := 0; attempt < 50; attempt++ {
+				if leaked = availablePorts(base); leaked == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			if leaked != nil {
+				t.Fatalf("test children leaked: %v", leaked)
 			}
 			if run(ctx, o) == nil {
 				t.Fatal("reused state")
