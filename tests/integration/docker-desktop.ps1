@@ -34,7 +34,7 @@ function Wait-Healthy([string]$ContainerName) {
 function Get-HTTPStatusEventually([string]$Uri, [hashtable]$Headers) {
     foreach ($Attempt in 1..15) {
         try {
-            return (Invoke-WebRequest -Uri $Uri -Headers $Headers -TimeoutSec 5 -SkipHttpErrorCheck -DisableKeepAlive).StatusCode
+            return (Invoke-WebRequest -UseBasicParsing -Uri $Uri -Headers $Headers -TimeoutSec 5 -SkipHttpErrorCheck -DisableKeepAlive).StatusCode
         } catch {
             if ($Attempt -eq 15) { throw }
             Start-Sleep -Milliseconds 500
@@ -42,16 +42,19 @@ function Get-HTTPStatusEventually([string]$Uri, [hashtable]$Headers) {
     }
 }
 
-function Get-NetworkJson([string]$Network, [string]$Uri) {
-    $Value = & docker run --rm --network $Network $AlpineImage wget -q -O - $Uri | ConvertFrom-Json
+function Get-NetworkJson([string]$Network, [string]$Uri, [hashtable]$Headers = @{}) {
+    $WgetArgs = @('wget', '-q', '-O', '-')
+    foreach ($Header in $Headers.GetEnumerator()) { $WgetArgs += @('--header', "$($Header.Key): $($Header.Value)") }
+    $WgetArgs += $Uri
+    $Value = & docker run --rm --network $Network $AlpineImage @WgetArgs | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) { throw "failed to query $Uri on $Network" }
     return $Value
 }
 
-function Wait-NetworkControllerLeader([string]$Network, [string]$Uri) {
+function Wait-NetworkControllerLeader([string]$Network, [string]$Uri, [hashtable]$Headers = @{}) {
     foreach ($Attempt in 1..30) {
         try {
-            $Status = Get-NetworkJson $Network $Uri
+            $Status = Get-NetworkJson $Network $Uri $Headers
             if ($Status.leader) { return $Status }
         } catch {}
         Start-Sleep -Seconds 1
@@ -68,7 +71,8 @@ try {
 		$PreviousAdminTokens = $env:RJS_ADMIN_TOKENS
 		$PreviousAuditTokens = $env:RJS_AUDIT_TOKENS
 		$DiagnosticBundle = Join-Path $RepositoryRoot ".tmp-rjs-diagnostics-$PID.zip"
-		if ($Scenario -in @('apply', 'delete', 'audit', 'routing', 'dlq')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -in @('api', 'apply', 'delete', 'audit', 'routing', 'dlq', 'reconcile', 'diagnostics')) { $env:RJS_ADMIN_TOKEN = 'desktop-test-token' }
+		if ($Scenario -in @('api', 'apply', 'delete', 'audit', 'routing', 'dlq', 'reconcile', 'diagnostics')) { $Auth = @{Authorization = 'Bearer desktop-test-token'} } else { $Auth = @{} }
 		if ($Scenario -eq 'auth') {
 			$env:RJS_ADMIN_TOKEN = 'legacy-operator'
 			$env:RJS_ADMIN_TOKENS = 'next-operator'
@@ -84,7 +88,7 @@ try {
             if ($Ready.status -ne 'ready') { throw 'management API is not ready' }
             if ($Scenario -eq 'api') {
                 $Network = "${Project}_default"
-				$Admin = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/admin/' -TimeoutSec 5
+				$Admin = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/admin/' -TimeoutSec 5
 				foreach ($Header in @{
 					'Cross-Origin-Resource-Policy' = 'same-origin'
 					'Permissions-Policy' = 'camera=(), microphone=(), geolocation=()'
@@ -95,23 +99,23 @@ try {
 					$Actual = [string]($Admin.Headers[$Header.Key] | Select-Object -First 1)
 					if ($Actual -ne $Header.Value) { throw "Admin UI $($Header.Key) is '$Actual', expected '$($Header.Value)'" }
 				}
-				$OpenAPIResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/openapi.yaml' -TimeoutSec 5
+				$OpenAPIResponse = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/api/v1/openapi.yaml' -TimeoutSec 5
 				$OpenAPI = if ($OpenAPIResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($OpenAPIResponse.Content) } else { [string]$OpenAPIResponse.Content }
 				if (-not $OpenAPI.StartsWith('openapi: 3.1.0') -or -not $OpenAPI.Contains('/api/v1/queues/{queue}:')) { throw 'embedded OpenAPI contract is unavailable or incomplete' }
-				$SDKContractResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/native-sdk-contract.json' -TimeoutSec 5
+				$SDKContractResponse = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/api/v1/native-sdk-contract.json' -TimeoutSec 5
 				$SDKContractContent = if ($SDKContractResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($SDKContractResponse.Content) } else { [string]$SDKContractResponse.Content }
 				$SDKContract = $SDKContractContent | ConvertFrom-Json
 				if ($SDKContract.schema -ne 'rabbit-jetstream.io/native-sdk-contract/v1alpha1' -or $SDKContract.availability -ne 'native-sdk-implemented-unreleased' -or $SDKContract.priority.scheduler.select_is_sufficient -ne $false) { throw 'native SDK contract is unavailable or unsafe' }
 				if ([string]($SDKContractResponse.Headers['Cache-Control'] | Select-Object -First 1) -ne 'public, max-age=300') { throw 'native SDK contract cache policy is incorrect' }
-				$InfoResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/info' -TimeoutSec 5
+				$InfoResponse = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/api/v1/info' -Headers $Auth -TimeoutSec 5
 				if ([string]($InfoResponse.Headers['Cache-Control'] | Select-Object -First 1) -ne 'no-store' -or [string]($InfoResponse.Headers['X-Content-Type-Options'] | Select-Object -First 1) -ne 'nosniff') { throw 'management API security headers are incomplete' }
                 Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream add RJS_API --subjects rjs.api --storage file --replicas 1 --defaults
                 Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 consumer add RJS_API WORKER --filter rjs.api --ack explicit --pull --defaults
-                $Cluster = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/cluster' -TimeoutSec 5
-                $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
-                $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API' -TimeoutSec 5
-                $Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers' -TimeoutSec 5
-                $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 5
+                $Cluster = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/cluster' -Headers $Auth -TimeoutSec 5
+                $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -Headers $Auth -TimeoutSec 5
+                $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API' -Headers $Auth -TimeoutSec 5
+                $Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_API/consumers' -Headers $Auth -TimeoutSec 5
+                $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -Headers $Auth -TimeoutSec 5
                 if ($Cluster.account.streams -lt 1) { throw 'cluster stream count is incorrect' }
 				$APIStream = $Streams.items | Where-Object name -eq 'RJS_API' | Select-Object -First 1
 				if ($null -eq $APIStream) { throw 'stream list does not contain RJS_API' }
@@ -121,11 +125,11 @@ try {
             }
             if ($Scenario -eq 'reconcile') {
                 $Network = "${Project}_default"
-                $Result = & docker run --rm @GoCacheArgs --network $Network -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
+                $Result = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue reconcile --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
                 if ($LASTEXITCODE -ne 0) { throw 'Linux rjsctl reconcile failed' }
                 if ($Result.status -ne 'ready' -or $Result.blocked) { throw 'reconcile did not produce a ready plan' }
                 if (@($Result.operations | Where-Object action -eq 'create').Count -ne 2) { throw 'reconcile did not plan two creates' }
-                $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -TimeoutSec 5
+                $Streams = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams' -Headers $Auth -TimeoutSec 5
                 if (@($Streams.items | Where-Object name -Like 'RJSQ_*').Count -ne 0) { throw 'reconcile unexpectedly wrote Queue-owned JetStream resources' }
             }
 			if ($Scenario -eq 'apply') {
@@ -134,28 +138,28 @@ try {
 				if ($LASTEXITCODE -ne 0 -or $First.status -ne 'ready') { throw 'first apply failed' }
 				$Second = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Second.status -ne 'noop') { throw 'second apply was not idempotent' }
-				$OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
+				$OldETag = [string]((Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers $Auth -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
 				$Updated = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic-updated.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready' -or @($Updated.operations | Where-Object action -eq 'update').Count -ne 2) { throw 'safe update apply failed' }
 				$StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='basic'}; spec=@{subjects=@('basic.>'); replicas=1; storage='file'}} | ConvertTo-Json -Depth 8
-				$StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
+				$StaleResponse = Invoke-WebRequest -UseBasicParsing -Method Put -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
 				if ($StaleResponse.StatusCode -ne 409) { throw "stale Queue revision returned $($StaleResponse.StatusCode), expected 409" }
-				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
-				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 5
+				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -Headers $Auth -TimeoutSec 5
+				$Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -Headers $Auth -TimeoutSec 5
 				if ($Stream.replicas -ne 1 -or $Stream.max_bytes -ne 16777216 -or $Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic' -or $Consumers.items[0].max_deliver -ne 7) { throw 'applied resources are incorrect' }
 				$PriorityApply = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-priority.yaml | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $PriorityApply.status -ne 'ready') { throw 'priority Queue apply failed' }
-				$PriorityStream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders' -TimeoutSec 5
-				$PriorityConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders/consumers' -TimeoutSec 5
+				$PriorityStream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders' -Headers $Auth -TimeoutSec 5
+				$PriorityConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_priority_orders/consumers' -Headers $Auth -TimeoutSec 5
 				$PriorityNames = @($PriorityConsumers.items | ForEach-Object name | Sort-Object)
 				if ($PriorityStream.subjects.Count -ne 3 -or $PriorityConsumers.total -ne 3 -or ($PriorityNames -join ',') -ne 'RJSQC_priority_orders_P0,RJSQC_priority_orders_P1,RJSQC_priority_orders_P2') { throw 'priority resources are incorrect' }
-				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 5
+				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -Headers $Auth -TimeoutSec 5
 				$BasicDeclaration = $Declarations.items | Where-Object queue -eq 'basic' | Select-Object -First 1
 				$PriorityDeclaration = $Declarations.items | Where-Object queue -eq 'priority_orders' | Select-Object -First 1
 				if ($Declarations.total -ne 2 -or $null -eq $BasicDeclaration -or $BasicDeclaration.revision -ne $Updated.revision -or $null -eq $PriorityDeclaration) { throw 'Queue declarations were not persisted' }
 				Invoke-Docker compose -p $Project -f $Compose restart management
 				Wait-Healthy "${Project}-management-1"
-				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 10
+				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -Headers $Auth -TimeoutSec 10
 				if ($Declarations.total -ne 2 -or $null -eq ($Declarations.items | Where-Object queue -eq 'basic') -or $null -eq ($Declarations.items | Where-Object queue -eq 'priority_orders')) { throw 'Queue declarations did not survive management restart' }
 			}
 			if ($Scenario -eq 'delete') {
@@ -164,18 +168,18 @@ try {
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish basic.test retained-message
 				& docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic 2>$null
 				if ($LASTEXITCODE -eq 0) { throw 'non-empty Queue deletion unexpectedly succeeded without force' }
-				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 5
+				$Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -Headers $Auth -TimeoutSec 5
 				if ($Stream.messages -ne 1) { throw 'blocked delete changed the Stream' }
 				$Deleted = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic --force basic | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Deleted.status -ne 'deleted' -or $Deleted.messages -ne 1) { throw 'forced delete failed' }
 				$Again = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm basic basic | ConvertFrom-Json
 				if ($LASTEXITCODE -ne 0 -or $Again.status -ne 'noop') { throw 'repeated delete was not idempotent' }
-				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 5
+				$Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -Headers $Auth -TimeoutSec 5
 				if ($Declarations.total -ne 0) { throw 'Queue declaration was not deleted' }
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 stream add RJSQ_foreign --subjects foreign.serve --storage file --replicas 1 --defaults
 				& docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue delete --url http://management:8223 --confirm foreign --force foreign 2>$null
 				if ($LASTEXITCODE -eq 0) { throw 'foreign Stream deletion unexpectedly succeeded' }
-				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -TimeoutSec 5
+				$Foreign = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_foreign' -Headers $Auth -TimeoutSec 5
 				if ($Foreign.name -ne 'RJSQ_foreign') { throw 'foreign Stream ownership protection failed' }
 			}
 			if ($Scenario -eq 'audit') {
@@ -197,10 +201,10 @@ try {
 				$Network = "${Project}_default"
 				Invoke-Docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=next-operator -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-basic.yaml
 				foreach ($Token in @('legacy-operator', 'next-operator', 'audit-reader')) {
-					$Response = Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -SkipHttpErrorCheck
+					$Response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/api/v1/audit?limit=10' -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -SkipHttpErrorCheck
 					if ($Response.StatusCode -ne 200) { throw "$Token could not read audit events" }
 				}
-				$AuditorWrite = Invoke-WebRequest -Method Delete -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer audit-reader'; 'If-Match'='"1"'; 'X-RJS-Confirm-Queue'='basic'} -TimeoutSec 5 -SkipHttpErrorCheck
+				$AuditorWrite = Invoke-WebRequest -UseBasicParsing -Method Delete -Uri 'http://127.0.0.1:8223/api/v1/queues/basic' -Headers @{Authorization='Bearer audit-reader'; 'If-Match'='"1"'; 'X-RJS-Confirm-Queue'='basic'} -TimeoutSec 5 -SkipHttpErrorCheck
 				if ($AuditorWrite.StatusCode -ne 403) { throw "auditor write returned $($AuditorWrite.StatusCode), expected 403" }
 				$env:RJS_ADMIN_TOKEN = ''
 				$env:RJS_ADMIN_TOKENS = 'next-operator'
@@ -224,10 +228,10 @@ try {
 				# Native SDK/gateway resolves fanout to both queue-scoped targets.
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_fanout_a.x.announcements.fanout fanout-message
 				Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats:4222 publish rjs.q.routing_fanout_b.x.announcements.fanout fanout-message
-				$Direct = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_direct' -TimeoutSec 5
-				$Topic = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_topic' -TimeoutSec 5
-				$FanoutA = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_a' -TimeoutSec 5
-				$FanoutB = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_b' -TimeoutSec 5
+				$Direct = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_direct' -Headers $Auth -TimeoutSec 5
+				$Topic = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_topic' -Headers $Auth -TimeoutSec 5
+				$FanoutA = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_a' -Headers $Auth -TimeoutSec 5
+				$FanoutB = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_routing_fanout_b' -Headers $Auth -TimeoutSec 5
 				if ($Direct.messages -ne 1) { throw "direct routing stored $($Direct.messages), expected 1" }
 				if ($Topic.messages -ne 3) { throw "topic routing stored $($Topic.messages), expected 3" }
 				if ($FanoutA.messages -ne 1 -or $FanoutB.messages -ne 1) { throw 'fanout did not copy to both Queues' }
@@ -249,9 +253,9 @@ try {
 				if ($LASTEXITCODE -notin @(0, 1)) { throw "DLQ exhaustion probe failed with exit code $LASTEXITCODE" }
 				$Moved = $false
 				for ($Attempt = 0; $Attempt -lt 15; $Attempt++) {
-					$Source = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_orders' -TimeoutSec 5
-					$Target = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_orders' -TimeoutSec 5
-					$Controller = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/controller' -TimeoutSec 5
+					$Source = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_orders' -Headers $Auth -TimeoutSec 5
+					$Target = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_orders' -Headers $Auth -TimeoutSec 5
+					$Controller = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/controller' -Headers $Auth -TimeoutSec 5
 					if ($Source.messages -eq 0 -and $Target.messages -eq 1 -and $Controller.dlqMoved -ge 1) { $Moved = $true; break }
 					Start-Sleep -Seconds 1
 				}
@@ -268,9 +272,9 @@ try {
 				if ($LASTEXITCODE -notin @(0, 1)) { throw "priority DLQ exhaustion probe failed with exit code $LASTEXITCODE" }
 				$PriorityMoved = $false
 				for ($Attempt = 0; $Attempt -lt 15; $Attempt++) {
-					$PrioritySource = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_priority_orders' -TimeoutSec 5
-					$PriorityTarget = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_priority_orders' -TimeoutSec 5
-					$PriorityTargetConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_priority_orders/consumers' -TimeoutSec 5
+					$PrioritySource = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_retry_priority_orders' -Headers $Auth -TimeoutSec 5
+					$PriorityTarget = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_priority_orders' -Headers $Auth -TimeoutSec 5
+					$PriorityTargetConsumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_failed_priority_orders/consumers' -Headers $Auth -TimeoutSec 5
 					$PriorityTwo = $PriorityTargetConsumers.items | Where-Object name -eq 'RJSQC_failed_priority_orders_P2' | Select-Object -First 1
 					if ($PrioritySource.messages -eq 0 -and $PriorityTarget.messages -eq 1 -and $PriorityTwo.pending -eq 1) { $PriorityMoved = $true; break }
 					Start-Sleep -Seconds 1
@@ -278,7 +282,7 @@ try {
 				if (-not $PriorityMoved) { throw 'priority DLQ did not preserve priority level 2' }
 			}
 			if ($Scenario -eq 'metrics') {
-				$Metrics = (Invoke-WebRequest -Uri 'http://127.0.0.1:8223/metrics' -TimeoutSec 5).Content
+				$Metrics = (Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/metrics' -TimeoutSec 5).Content
 				foreach ($Name in @('rjs_build_info', 'rjs_jetstream_up 1', 'rjs_controller_leader', 'rjs_http_requests_total')) {
 					if (-not $Metrics.Contains($Name)) { throw "metrics output is missing $Name" }
 				}
@@ -298,7 +302,7 @@ try {
 			}
 			if ($Scenario -eq 'diagnostics') {
 				$ContainerOutput = "/src/$([IO.Path]::GetFileName($DiagnosticBundle))"
-				Invoke-Docker run --rm @GoCacheArgs --network "${Project}_default" -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
+				Invoke-Docker run --rm @GoCacheArgs --network "${Project}_default" -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl diagnostics collect --url http://management:8223 --output $ContainerOutput
 				if ($IsLinux) { Invoke-Docker run --rm -v "${DiagnosticBundle}:/bundle.zip" $AlpineImage chmod a+r /bundle.zip }
 				$Archive = [IO.Compression.ZipFile]::OpenRead($DiagnosticBundle)
 				try {
@@ -339,6 +343,7 @@ try {
         $PreviousInterval = $env:RJS_CONTROLLER_INTERVAL
         $PreviousLeaseTTL = $env:RJS_CONTROLLER_LEASE_TTL
         $env:RJS_ADMIN_TOKEN = 'desktop-test-token'
+        $ControllerAuth = @{Authorization = 'Bearer desktop-test-token'}
         $env:RJS_CONTROLLER_INTERVAL = '1s'
         $env:RJS_CONTROLLER_LEASE_TTL = '4s'
         try {
@@ -346,17 +351,17 @@ try {
             Invoke-Docker run -d --name $Second --network $Network -p 28223:8223 -e 'RJS_NATS_URL=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222' -e 'RJS_NATS_MONITOR_URLS=http://nats-1:8222,http://nats-2:8222,http://nats-3:8222' -e RJS_ADMIN_TOKEN=desktop-test-token -e RJS_METADATA_REPLICAS=3 -e RJS_INSTANCE_ID=management-2 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s rabbit-jetstream/management:local
             $Apply = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Apply.status -ne 'ready') { throw 'cluster Queue apply failed' }
-            $OldETag = [string]((Invoke-WebRequest -Uri 'http://127.0.0.1:8223/api/v1/queues/cluster' -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
+            $OldETag = [string]((Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8223/api/v1/queues/cluster' -Headers $ControllerAuth -TimeoutSec 5).Headers.ETag | Select-Object -First 1)
             $Updated = & docker run --rm @GoCacheArgs --network $Network -e RJS_ADMIN_TOKEN=desktop-test-token -v "${RepositoryRoot}:/src" -w /src $GoToolImage go run ./tools/rjsctl queue apply --url http://management:8223 tests/fixtures/queue-cluster-updated.yaml | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $Updated.status -ne 'ready') { throw 'cluster Queue update failed' }
             $StaleBody = @{apiVersion='rabbit-jetstream.io/v1alpha1'; kind='Queue'; metadata=@{name='cluster'}; spec=@{subjects=@('cluster.>'); replicas=3; storage='file'}} | ConvertTo-Json -Depth 8
-            $StaleResponse = Invoke-WebRequest -Method Put -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
+            $StaleResponse = Invoke-WebRequest -UseBasicParsing -Method Put -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -Headers @{Authorization='Bearer desktop-test-token'; 'If-Match'=$OldETag} -ContentType 'application/json' -Body $StaleBody -TimeoutSec 5 -SkipHttpErrorCheck
             if ($StaleResponse.StatusCode -ne 409) { throw "cross-instance stale update returned $($StaleResponse.StatusCode), expected 409" }
-            $SharedDeclaration = Invoke-RestMethod -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -TimeoutSec 5
+            $SharedDeclaration = Invoke-RestMethod -Uri 'http://127.0.0.1:28223/api/v1/queues/cluster' -Headers $ControllerAuth -TimeoutSec 5
             if ($SharedDeclaration.revision -ne $Updated.revision) { throw 'management instances do not share the latest declaration revision' }
             Start-Sleep -Seconds 3
-            $FirstStatus = Get-NetworkJson $Network 'http://management:8223/api/v1/controller'
-            $SecondStatus = Get-NetworkJson $Network "http://${Second}:8223/api/v1/controller"
+            $FirstStatus = Get-NetworkJson $Network 'http://management:8223/api/v1/controller' $ControllerAuth
+            $SecondStatus = Get-NetworkJson $Network "http://${Second}:8223/api/v1/controller" $ControllerAuth
             if ([int]$FirstStatus.leader + [int]$SecondStatus.leader -ne 1) { throw 'expected exactly one controller leader' }
             if ($FirstStatus.leader) {
                 Invoke-Docker compose -p $Project -f $Compose stop management
@@ -365,7 +370,7 @@ try {
                 Invoke-Docker stop $Second
                 $SurvivorController = 'http://management:8223/api/v1/controller'
             }
-            $Leader = Wait-NetworkControllerLeader $Network $SurvivorController
+            $Leader = Wait-NetworkControllerLeader $Network $SurvivorController $ControllerAuth
             Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 consumer rm RJSQ_cluster RJSQC_cluster --force
             $Recovered = $false
             foreach ($Attempt in 1..20) {
@@ -387,9 +392,12 @@ try {
     $Project = 'rjs-desktop-fault'
     $Compose = 'deploy/compose/cluster.yml'
     $Network = "${Project}_default"
+    $PreviousAdminToken = $env:RJS_ADMIN_TOKEN
+    $env:RJS_ADMIN_TOKEN = 'desktop-test-token'
+    $FaultAuth = @{Authorization = 'Bearer desktop-test-token'}
     try {
         Invoke-Docker compose -p $Project -f $Compose up -d --build --wait
-        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 5
+        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -Headers $FaultAuth -TimeoutSec 5
         if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'initial node monitoring is incorrect' }
         Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 stream add RJS_E2E --subjects rjs.e2e --storage file --replicas 3 --defaults
         Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 publish rjs.e2e before-failure
@@ -398,7 +406,7 @@ try {
         Invoke-Docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-2:4222 publish rjs.e2e during-failure
         $Ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/readyz' -TimeoutSec 5
         if ($Ready.status -ne 'ready') { throw 'management API failed during node outage' }
-        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
+        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -Headers $FaultAuth -TimeoutSec 8
         if ($Nodes.status -ne 'degraded' -or $Nodes.available -ne 2 -or $Nodes.unavailable -ne 1) { throw 'node outage was not reported correctly' }
         Invoke-Docker compose -p $Project -f $Compose start nats-1
         Wait-Healthy "${Project}-nats-1-1"
@@ -407,14 +415,15 @@ try {
         if ($Info.state.messages -ne 2) { throw "expected 2 messages, got $($Info.state.messages)" }
         $CurrentReplicas = @($Info.cluster.replicas | Where-Object current).Count
         if ($CurrentReplicas -ne 2) { throw "expected 2 current followers, got $CurrentReplicas" }
-        $ManagedStream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_E2E' -TimeoutSec 5
+        $ManagedStream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJS_E2E' -Headers $FaultAuth -TimeoutSec 5
         if ($ManagedStream.messages -ne 2) { throw 'management API message count is incorrect' }
         if ([string]::IsNullOrWhiteSpace($ManagedStream.cluster.leader)) { throw 'management API did not report a leader' }
         if (@($ManagedStream.cluster.replicas | Where-Object current).Count -ne 2) { throw 'management API replica state is incorrect' }
-        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
+        $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -Headers $FaultAuth -TimeoutSec 8
         if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'recovered node monitoring is incorrect' }
     } finally {
         Invoke-Docker compose -p $Project -f $Compose down -v --remove-orphans
+        $env:RJS_ADMIN_TOKEN = $PreviousAdminToken
     }
 } finally {
     Pop-Location

@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] | audit list [flags] | diagnostics collect [flags] | backup create|verify|restore [flags] | migrate rabbitmq-definitions|dual-write|capture|reconcile|cutover [flags] | queue list|validate|plan|diff|reconcile|apply|delete [flags] | version")
+		fmt.Fprintln(stdout, "Usage: rjsctl status [--url URL] [--token TOKEN] | audit list [flags] | diagnostics collect [flags] | backup create|verify|restore [flags] | migrate rabbitmq-definitions|dual-write|capture|reconcile|cutover [flags] | queue list|validate|plan|diff|reconcile|apply|delete [flags] | version")
 		return nil
 	}
 	if args[0] == "version" {
@@ -55,11 +55,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+	token := fs.String("token", os.Getenv("RJS_ADMIN_TOKEN"), "management API bearer token")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	response, err := client.Get(*baseURL + "/api/v1/info")
+	request, err := http.NewRequest(http.MethodGet, *baseURL+"/api/v1/info", nil)
+	if err != nil {
+		return err
+	}
+	if *token != "" {
+		request.Header.Set("Authorization", "Bearer "+*token)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
@@ -189,6 +197,7 @@ func runDiagnostics(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("diagnostics collect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+	token := fs.String("token", os.Getenv("RJS_ADMIN_TOKEN"), "management API bearer token")
 	now := time.Now().UTC()
 	output := fs.String("output", defaultDiagnosticOutput(now), "diagnostics ZIP path")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -198,7 +207,7 @@ func runDiagnostics(args []string, stdout, stderr io.Writer) error {
 		return errors.New("usage: rjsctl diagnostics collect [--url URL] [--output FILE]")
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
-	if err := collectDiagnostics(client, *baseURL, *output, now); err != nil {
+	if err := collectDiagnostics(client, *baseURL, *token, *output, now); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "diagnostics bundle written to %s\n", *output)
@@ -207,22 +216,23 @@ func runDiagnostics(args []string, stdout, stderr io.Writer) error {
 
 func runQueue(args []string, stdout, stderr io.Writer) error {
 	if len(args) < 1 {
-		return errors.New("usage: rjsctl queue list [--url URL] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] FILE | queue apply [--url URL] [--token TOKEN] FILE")
+		return errors.New("usage: rjsctl queue list [--url URL] [--token TOKEN] | queue validate FILE | queue plan FILE | queue diff CURRENT DESIRED | queue reconcile [--url URL] [--token TOKEN] FILE | queue apply [--url URL] [--token TOKEN] FILE | queue delete [--url URL] [--token TOKEN] --confirm NAME [--force] NAME")
 	}
 	switch args[0] {
 	case "list":
 		fs := flag.NewFlagSet("queue list", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+		token := fs.String("token", os.Getenv("RJS_ADMIN_TOKEN"), "management API bearer token")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return errors.New("usage: rjsctl queue list [--url URL]")
+			return errors.New("usage: rjsctl queue list [--url URL] [--token TOKEN]")
 		}
 		client := &http.Client{Timeout: 5 * time.Second}
 		var declarations any
-		status, err := getJSON(client, strings.TrimRight(*baseURL, "/")+"/api/v1/queues?limit=200", &declarations)
+		status, err := getJSON(client, *token, strings.TrimRight(*baseURL, "/")+"/api/v1/queues?limit=200", &declarations)
 		if err != nil {
 			return err
 		}
@@ -276,11 +286,12 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 		fs := flag.NewFlagSet("queue reconcile", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		baseURL := fs.String("url", "http://127.0.0.1:8223", "management API base URL")
+		token := fs.String("token", os.Getenv("RJS_ADMIN_TOKEN"), "management API bearer token")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 1 {
-			return errors.New("usage: rjsctl queue reconcile [--url URL] FILE")
+			return errors.New("usage: rjsctl queue reconcile [--url URL] [--token TOKEN] FILE")
 		}
 		queue, err := readQueue(fs.Arg(0))
 		if err != nil {
@@ -290,7 +301,7 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		observed, err := readObservedTopology(*baseURL, plan)
+		observed, err := readObservedTopology(*baseURL, *token, plan)
 		if err != nil {
 			return err
 		}
@@ -321,7 +332,7 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 		}
 		endpoint := strings.TrimRight(*baseURL, "/") + "/api/v1/queues/" + url.PathEscape(queue.Metadata.Name)
 		client := &http.Client{Timeout: 15 * time.Second}
-		ifMatch, ifNoneMatch, err := queueRevisionHeaders(client, endpoint)
+		ifMatch, ifNoneMatch, err := queueRevisionHeaders(client, endpoint, *token)
 		if err != nil {
 			return err
 		}
@@ -376,7 +387,7 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 		}
 		endpoint := strings.TrimRight(*baseURL, "/") + "/api/v1/queues/" + url.PathEscape(name)
 		client := &http.Client{Timeout: 15 * time.Second}
-		ifMatch, ifNoneMatch, err := queueRevisionHeaders(client, endpoint)
+		ifMatch, ifNoneMatch, err := queueRevisionHeaders(client, endpoint, *token)
 		if err != nil {
 			return err
 		}
@@ -414,8 +425,15 @@ func runQueue(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
-func queueRevisionHeaders(client *http.Client, endpoint string) (string, string, error) {
-	lookup, err := client.Get(endpoint)
+func queueRevisionHeaders(client *http.Client, endpoint, token string) (string, string, error) {
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("read Queue revision: %w", err)
+	}
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	lookup, err := client.Do(request)
 	if err != nil {
 		return "", "", fmt.Errorf("read Queue revision: %w", err)
 	}
@@ -442,12 +460,12 @@ func readErrorBody(reader io.Reader) string {
 	return strings.TrimSpace(string(value))
 }
 
-func readObservedTopology(baseURL string, plan topology.Plan) (topology.ObservedTopology, error) {
+func readObservedTopology(baseURL, token string, plan topology.Plan) (topology.ObservedTopology, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	baseURL = strings.TrimRight(baseURL, "/")
 	streamPath := "/api/v1/streams/" + url.PathEscape(plan.Stream.Name)
 	var observed topology.ObservedTopology
-	status, err := getJSON(client, baseURL+streamPath, &observed.Stream)
+	status, err := getJSON(client, token, baseURL+streamPath, &observed.Stream)
 	if err != nil {
 		return observed, fmt.Errorf("read Stream state: %w", err)
 	}
@@ -461,7 +479,7 @@ func readObservedTopology(baseURL string, plan topology.Plan) (topology.Observed
 	var consumers struct {
 		Items []topology.ObservedConsumer `json:"items"`
 	}
-	status, err = getJSON(client, baseURL+streamPath+"/consumers?limit=200", &consumers)
+	status, err = getJSON(client, token, baseURL+streamPath+"/consumers?limit=200", &consumers)
 	if err != nil {
 		return observed, fmt.Errorf("read Consumer state: %w", err)
 	}
@@ -477,8 +495,15 @@ func readObservedTopology(baseURL string, plan topology.Plan) (topology.Observed
 	return observed, nil
 }
 
-func getJSON(client *http.Client, endpoint string, target any) (int, error) {
-	response, err := client.Get(endpoint)
+func getJSON(client *http.Client, token, endpoint string, target any) (int, error) {
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, err
+	}
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return 0, err
 	}

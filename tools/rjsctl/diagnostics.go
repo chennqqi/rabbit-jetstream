@@ -51,7 +51,7 @@ type diagnosticEntry struct {
 	Error      string `json:"error,omitempty"`
 }
 
-func collectDiagnostics(client *http.Client, baseURL, output string, now time.Time) error {
+func collectDiagnostics(client *http.Client, baseURL, token, output string, now time.Time) error {
 	if output == "" {
 		return errors.New("diagnostics output path is required")
 	}
@@ -81,7 +81,14 @@ func collectDiagnostics(client *http.Client, baseURL, output string, now time.Ti
 	baseURL = strings.TrimRight(baseURL, "/")
 	for _, endpoint := range diagnosticEndpoints {
 		entry := diagnosticEntry{Path: endpoint.Path}
-		response, requestErr := client.Get(baseURL + endpoint.Path)
+		request, requestErr := http.NewRequest(http.MethodGet, baseURL+endpoint.Path, nil)
+		if requestErr == nil && token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		var response *http.Response
+		if requestErr == nil {
+			response, requestErr = client.Do(request)
+		}
 		if requestErr != nil {
 			entry.Error = safeDiagnosticError(requestErr)
 			manifest.Entries = append(manifest.Entries, entry)

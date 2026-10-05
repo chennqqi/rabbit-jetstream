@@ -88,21 +88,21 @@ type signoff struct {
 }
 
 type approval struct {
-	Schema                          string                  `json:"schema"`
-	ReleaseVersion                  string                  `json:"release_version"`
-	ServerRevision                  string                  `json:"server_revision"`
-	SDKVersion                      string                  `json:"sdk_version"`
-	SDKRevision                     string                  `json:"sdk_revision"`
-	LocalReleaseEvidence            artifact                `json:"local_release_evidence"`
-	NativePreflights                []preflight             `json:"native_preflights"`
-	SoakEvidence                    artifact                `json:"soak_evidence"`
-	CanaryStages                    []stage                 `json:"canary_stages"`
-	NodeFailure                     nodeFailure             `json:"node_failure"`
-	Rollback                        rollback                `json:"rollback"`
-	ClusterQualificationEvidence    artifact                `json:"cluster_qualification_evidence,omitempty"`
-	PartialDependencies             []compatibilityApproval `json:"partial_dependencies"`
-	KnownLimitations                []string                `json:"known_limitations"`
-	Signoffs                        []signoff               `json:"signoffs"`
+	Schema                       string                  `json:"schema"`
+	ReleaseVersion               string                  `json:"release_version"`
+	ServerRevision               string                  `json:"server_revision"`
+	SDKVersion                   string                  `json:"sdk_version"`
+	SDKRevision                  string                  `json:"sdk_revision"`
+	LocalReleaseEvidence         artifact                `json:"local_release_evidence"`
+	NativePreflights             []preflight             `json:"native_preflights"`
+	SoakEvidence                 artifact                `json:"soak_evidence"`
+	CanaryStages                 []stage                 `json:"canary_stages"`
+	NodeFailure                  nodeFailure             `json:"node_failure"`
+	Rollback                     rollback                `json:"rollback"`
+	ClusterQualificationEvidence artifact                `json:"cluster_qualification_evidence,omitempty"`
+	PartialDependencies          []compatibilityApproval `json:"partial_dependencies"`
+	KnownLimitations             []string                `json:"known_limitations"`
+	Signoffs                     []signoff               `json:"signoffs"`
 }
 
 type referencedEvidence struct {

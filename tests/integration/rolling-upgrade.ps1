@@ -14,6 +14,8 @@ $Compose = 'deploy/compose/cluster.yml'
 $Network = "${Project}_default"
 $PreviousNATSImage = $env:RJS_NATS_IMAGE
 $PreviousManagementImage = $env:RJS_MANAGEMENT_IMAGE
+$PreviousAdminToken = $env:RJS_ADMIN_TOKEN
+$env:RJS_ADMIN_TOKEN = 'desktop-test-token'
 
 function Invoke-Docker {
     & docker @args
@@ -86,12 +88,13 @@ try {
     if ($Final.state.messages -ne 7) { throw "rolling drill retained $($Final.state.messages) messages, expected 7" }
     $Consumer = & docker run --rm --network $Network $NATSBoxImage nats --server nats://nats-1:4222 consumer info RJS_ROLLING ROLLING --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $Consumer.num_pending -ne 7) { throw 'Consumer metadata or pending count was not preserved' }
-    $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -TimeoutSec 8
+    $Nodes = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/nodes' -Headers @{Authorization = 'Bearer desktop-test-token'} -TimeoutSec 8
     if ($Nodes.status -ne 'available' -or $Nodes.available -ne 3) { throw 'cluster did not fully recover after rollback' }
     Write-Output "rolling upgrade and rollback verified: messages=7 replicas=3"
 } finally {
     & docker compose -p $Project -f $Compose down -v --remove-orphans 2>$null | Out-Null
     $env:RJS_NATS_IMAGE = $PreviousNATSImage
     $env:RJS_MANAGEMENT_IMAGE = $PreviousManagementImage
+    $env:RJS_ADMIN_TOKEN = $PreviousAdminToken
     Pop-Location
 }

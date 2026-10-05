@@ -103,7 +103,7 @@ try {
 		Invoke-Docker run -d --name $ClusterManagement --network $ClusterNetwork --network-alias cluster-management -e 'RJS_NATS_URL=nats://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:4222,nats://production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless:4222,nats://production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless:4222' -e 'RJS_NATS_MONITOR_URLS=http://production-rabbit-jetstream-nats-0.production-rabbit-jetstream-nats-headless:8222,http://production-rabbit-jetstream-nats-1.production-rabbit-jetstream-nats-headless:8222,http://production-rabbit-jetstream-nats-2.production-rabbit-jetstream-nats-headless:8222' -e "RJS_NATS_USER=$NATSUsername" -e "RJS_NATS_PASSWORD=$NATSPassword" -e RJS_ADMIN_TOKEN=test-admin-token -e RJS_METADATA_REPLICAS=3 -e RJS_CONTROLLER_INTERVAL=1s -e RJS_CONTROLLER_LEASE_TTL=4s -e RJS_INSTANCE_ID=helm-cluster-test rabbit-jetstream/management:helm-test
 		$Leader = $false
 		foreach ($Attempt in 1..45) {
-			$Status = & docker run --rm --network $ClusterNetwork $BusyBoxImage wget -q -O - http://cluster-management:8223/api/v1/controller 2>$null
+			$Status = & docker run --rm --network $ClusterNetwork $BusyBoxImage wget -q --header 'Authorization: Bearer test-admin-token' -O - http://cluster-management:8223/api/v1/controller 2>$null
 			if ($LASTEXITCODE -eq 0 -and ($Status -join '') -match '"leader":true') { $Leader = $true; break }
 			Start-Sleep -Seconds 1
 		}

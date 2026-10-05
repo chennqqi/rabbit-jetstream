@@ -21,7 +21,7 @@ wait_for_api() {
   local expected="$2"
   local response=''
   for _ in $(seq 1 30); do
-    response="$(curl --fail --silent --show-error "http://127.0.0.1:8223${path}" || true)"
+    response="$(curl --fail --silent --show-error -H 'Authorization: Bearer smoke-test-token' "http://127.0.0.1:8223${path}" || true)"
     if grep -F "$expected" >/dev/null <<<"$response"; then
       return 0
     fi
@@ -31,10 +31,11 @@ wait_for_api() {
   return 1
 }
 
+export RJS_ADMIN_TOKEN=smoke-test-token
 docker compose -p "$project" -f "$compose_file" up -d --build --wait
 curl --fail --silent --show-error http://127.0.0.1:8223/healthz
 curl --fail --silent --show-error http://127.0.0.1:8223/readyz
-curl --fail --silent --show-error http://127.0.0.1:8223/api/v1/info
+curl --fail --silent --show-error -H 'Authorization: Bearer smoke-test-token' http://127.0.0.1:8223/api/v1/info
 
 network="${project}_default"
 docker run --rm --network "$network" "$nats_box_image" \
@@ -47,7 +48,7 @@ wait_for_api /api/v1/streams/RJS_API '"replicas":1'
 wait_for_api /api/v1/streams/RJS_API/consumers '"name":"WORKER"'
 wait_for_api /api/v1/nodes '"available":1'
 
-docker run --rm --network "$network" -v "$repo_root:/src" -w /src "$go_tool_image" \
+docker run --rm --network "$network" -e RJS_ADMIN_TOKEN=smoke-test-token -v "$repo_root:/src" -w /src "$go_tool_image" \
   go run ./tools/rjsctl diagnostics collect --url http://management:8223 \
   --output "/src/$(basename "$bundle")"
 docker run --rm -v "$bundle:/bundle.zip" "$alpine_image" chmod a+r /bundle.zip

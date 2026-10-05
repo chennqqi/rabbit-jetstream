@@ -310,10 +310,24 @@ func TestQueueRevisionHeadersFailures(t *testing.T) {
 				w.WriteHeader(test.status)
 			}))
 			defer server.Close()
-			if _, _, err := queueRevisionHeaders(server.Client(), server.URL); err == nil {
+			if _, _, err := queueRevisionHeaders(server.Client(), server.URL, "secret"); err == nil {
 				t.Fatal("lookup unexpectedly succeeded")
 			}
 		})
+	}
+}
+
+func TestQueueRevisionHeadersSendsBearerToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("ETag", `"1"`)
+	}))
+	defer server.Close()
+	ifMatch, ifNoneMatch, err := queueRevisionHeaders(server.Client(), server.URL, "secret")
+	if err != nil || ifMatch != `"1"` || ifNoneMatch != "" {
+		t.Fatalf("ifMatch=%q ifNoneMatch=%q err=%v", ifMatch, ifNoneMatch, err)
 	}
 }
 
@@ -323,6 +337,9 @@ func TestReadObservedTopologyFindsConsumer(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
+		}
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/consumers"):
 			_, _ = w.Write([]byte(`{"items":[{"name":"other"},{"name":"` + plan.Consumer.Name + `"}]}`))
@@ -331,7 +348,7 @@ func TestReadObservedTopologyFindsConsumer(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	observed, err := readObservedTopology(server.URL, plan)
+	observed, err := readObservedTopology(server.URL, "secret", plan)
 	if err != nil || observed.Stream == nil || observed.Consumer == nil || observed.Consumer.Name != plan.Consumer.Name {
 		t.Fatalf("observed=%#v err=%v", observed, err)
 	}
@@ -344,7 +361,7 @@ func TestReadObservedTopologyRejectsBackendFailures(t *testing.T) {
 	}
 	for _, status := range []int{http.StatusUnauthorized, http.StatusServiceUnavailable} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
-		_, err := readObservedTopology(server.URL, plan)
+		_, err := readObservedTopology(server.URL, "secret", plan)
 		server.Close()
 		if err == nil {
 			t.Fatalf("status %d unexpectedly succeeded", status)

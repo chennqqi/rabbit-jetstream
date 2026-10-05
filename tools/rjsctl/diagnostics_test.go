@@ -41,7 +41,7 @@ func TestCollectDiagnosticsCreatesRedactedVerifiableBundle(t *testing.T) {
 
 	output := filepath.Join(t.TempDir(), "diagnostics.zip")
 	now := time.Date(2026, 8, 1, 12, 30, 0, 0, time.FixedZone("test", 8*60*60))
-	if err := collectDiagnostics(server.Client(), "http://user:secret@"+strings.TrimPrefix(server.URL, "http://"), output, now); err != nil {
+	if err := collectDiagnostics(server.Client(), "http://user:secret@"+strings.TrimPrefix(server.URL, "http://"), "", output, now); err != nil {
 		t.Fatal(err)
 	}
 	archive, err := zip.OpenReader(output)
@@ -90,7 +90,7 @@ func TestCollectDiagnosticsRefusesOverwrite(t *testing.T) {
 	if err := os.WriteFile(output, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := collectDiagnostics(http.DefaultClient, "http://127.0.0.1", output, time.Now()); err == nil {
+	if err := collectDiagnostics(http.DefaultClient, "http://127.0.0.1", "", output, time.Now()); err == nil {
 		t.Fatal("existing bundle was overwritten")
 	}
 	value, err := os.ReadFile(output)
@@ -112,7 +112,7 @@ func TestCollectDiagnosticsRefusesOutputCreatedDuringCollection(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Status: "200 OK", Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: request}, nil
 	})
-	if err := collectDiagnostics(&http.Client{Transport: transport}, "http://example.test", output, time.Now()); err == nil {
+	if err := collectDiagnostics(&http.Client{Transport: transport}, "http://example.test", "", output, time.Now()); err == nil {
 		t.Fatal("publication replaced a concurrently created output")
 	}
 	value, err := os.ReadFile(output)
@@ -139,7 +139,7 @@ func TestCollectDiagnosticsOmitsMalformedJSONAndPreservesExactCounters(t *testin
 	}))
 	defer server.Close()
 	output := filepath.Join(t.TempDir(), "safe.zip")
-	if err := collectDiagnostics(server.Client(), server.URL, output, time.Now()); err != nil {
+	if err := collectDiagnostics(server.Client(), server.URL, "", output, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	archive, err := zip.OpenReader(output)
@@ -194,7 +194,7 @@ func TestCollectDiagnosticsRecordsRequestAndSizeFailures(t *testing.T) {
 		return http.DefaultTransport.RoundTrip(request)
 	})
 	output := filepath.Join(t.TempDir(), "partial.zip")
-	if err := collectDiagnostics(&http.Client{Transport: transport}, server.URL, output, time.Now()); err != nil {
+	if err := collectDiagnostics(&http.Client{Transport: transport}, server.URL, "", output, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	archive, err := zip.OpenReader(output)
@@ -222,11 +222,11 @@ func TestCollectDiagnosticsRecordsRequestAndSizeFailures(t *testing.T) {
 }
 
 func TestCollectDiagnosticsRejectsMissingOutput(t *testing.T) {
-	if err := collectDiagnostics(http.DefaultClient, "http://127.0.0.1", "", time.Now()); err == nil {
+	if err := collectDiagnostics(http.DefaultClient, "http://127.0.0.1", "", "", time.Now()); err == nil {
 		t.Fatal("empty output succeeded")
 	}
 	missing := filepath.Join(t.TempDir(), "missing", "bundle.zip")
-	if err := collectDiagnostics(http.DefaultClient, "http://127.0.0.1", missing, time.Now()); err == nil {
+	if err := collectDiagnostics(http.DefaultClient, "http://127.0.0.1", "", missing, time.Now()); err == nil {
 		t.Fatal("missing directory succeeded")
 	}
 }

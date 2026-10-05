@@ -18,20 +18,20 @@ type Backend interface {
 }
 
 type Status struct {
-	InstanceID   string    `json:"instanceId"`
-	Enabled      bool      `json:"enabled"`
-	Leader       bool      `json:"leader"`
-	LastRun      time.Time `json:"lastRun,omitempty"`
-	LastSuccess  time.Time `json:"lastSuccess,omitempty"`
-	Declarations int       `json:"declarations"`
-	Reconciled   int       `json:"reconciled"`
-	Blocked      int       `json:"blocked"`
-	DLQProcessed int       `json:"dlqProcessed"`
-	DLQMoved     int       `json:"dlqMoved"`
-	DLQFailed    int       `json:"dlqFailed"`
-	DLQIgnored   int       `json:"dlqIgnored"`
+	InstanceID   string                                    `json:"instanceId"`
+	Enabled      bool                                      `json:"enabled"`
+	Leader       bool                                      `json:"leader"`
+	LastRun      time.Time                                 `json:"lastRun,omitempty"`
+	LastSuccess  time.Time                                 `json:"lastSuccess,omitempty"`
+	Declarations int                                       `json:"declarations"`
+	Reconciled   int                                       `json:"reconciled"`
+	Blocked      int                                       `json:"blocked"`
+	DLQProcessed int                                       `json:"dlqProcessed"`
+	DLQMoved     int                                       `json:"dlqMoved"`
+	DLQFailed    int                                       `json:"dlqFailed"`
+	DLQIgnored   int                                       `json:"dlqIgnored"`
 	DLQByQueue   map[string]topology.DeadLetterQueueCounts `json:"dlqByQueue,omitempty"`
-	LastError    string    `json:"lastError,omitempty"`
+	LastError    string                                    `json:"lastError,omitempty"`
 }
 
 type Controller struct {

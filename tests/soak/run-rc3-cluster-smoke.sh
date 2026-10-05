@@ -147,7 +147,7 @@ port_forward_pid=$!
 ready='false'
 for _ in $(seq 1 30); do
   if curl --fail --silent --show-error "http://127.0.0.1:$local_port/readyz" | grep -F '"status":"ready"' >/dev/null; then
-    curl --fail --silent --show-error "http://127.0.0.1:$local_port/admin/" | grep -F '<title>Rabbit JetStream · Operations</title>' >/dev/null
+    curl --fail --silent --show-error "http://127.0.0.1:$local_port/admin/" | grep -F '<title>Rabbit JetStream</title>' >/dev/null
     capabilities="$(curl --fail --silent --show-error \
       -H "Authorization: Bearer $admin_token" \
       "http://127.0.0.1:$local_port/api/v1/console/capabilities")"

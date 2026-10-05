@@ -2,7 +2,7 @@
 
 [English](roadmap.md) | [简体中文](roadmap.zh-CN.md)
 
-Milestones are accepted by evidence, not by unreviewed dates. The roadmap keeps two views of the same work: the [Version Plan](#version-plan) records feature planning per version, and the [Features Plan](#features-plan) records feature planning per capability area. Version status and release gates live in the Version Plan; feature detail and acceptance records live in the Features Plan.
+Milestones are accepted by evidence, not by unreviewed dates. The roadmap keeps two views of the same work: the [Version Plan](#version-plan) records feature planning per version, and the [Features Plan](#features-plan) records feature planning per capability area. Version status and release gates live in the Version Plan; feature detail and acceptance records live in the Features Plan. The first stable release uses the separate native `rabbit-jetstream-go` SDK and targets RabbitMQ-style priority Queue behavior, management, operations, and deployment. It does not accept AMQP clients unchanged.
 
 ## Version Plan
 
@@ -155,6 +155,10 @@ This milestone covers full RabbitMQ/AMQP protocol compatibility. It is not part 
 - An explicit gateway performance budget and horizontal scaling model.
 
 This stage may require deeper NATS integration, but any JetStream source change must be recorded as a separate decision; it remains outside the current project boundary.
+
+## Future: RabbitMQ/AMQP Compatibility
+
+Full AMQP 0-9-1 compatibility is explicitly outside the first release. The research record lives in M5 of the [Features Plan](#features-plan). Future work may introduce an independent protocol gateway for exchange/queue/binding, confirm, QoS, cancel, transaction, exclusive, and auto-delete semantics. Any need to modify upstream NATS must be proposed as a separate architecture decision with compatibility and performance budgets.
 
 ## Quality Policy
 

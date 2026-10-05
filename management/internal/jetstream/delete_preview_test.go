@@ -144,7 +144,6 @@ func TestDeletePreviewReadOnly(t *testing.T) {
 	}
 }
 
-
 func TestDeletePreviewReportsDeadLetterDependents(t *testing.T) {
 	client, backend := testClient()
 	ctx, cancel := context.WithCancel(context.Background())

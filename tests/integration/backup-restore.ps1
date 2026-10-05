@@ -31,9 +31,10 @@ try {
     Invoke-Docker run --rm --network $Network -v "${BackupRoot}:/backup:ro" rabbit-jetstream/operator:local backup restore --server nats://nats:4222 --input /backup/account --confirm RESTORE --replicas 1
     Invoke-Docker compose -p $Project -f $Compose up -d management --wait
 
-    $Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -TimeoutSec 10
-    $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -TimeoutSec 10
-    $Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -TimeoutSec 10
+    $Auth = @{Authorization = 'Bearer desktop-test-token'}
+    $Declarations = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/queues' -Headers $Auth -TimeoutSec 10
+    $Stream = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic' -Headers $Auth -TimeoutSec 10
+    $Consumers = Invoke-RestMethod -Uri 'http://127.0.0.1:8223/api/v1/streams/RJSQ_basic/consumers' -Headers $Auth -TimeoutSec 10
     if ($Declarations.total -ne 1 -or $Declarations.items[0].queue -ne 'basic') { throw 'Queue declaration was not restored' }
     if ($Stream.messages -ne 3) { throw "restored Stream has $($Stream.messages) messages, expected 3" }
     if ($Consumers.total -ne 1 -or $Consumers.items[0].name -ne 'RJSQC_basic') { throw 'durable Consumer was not restored' }
