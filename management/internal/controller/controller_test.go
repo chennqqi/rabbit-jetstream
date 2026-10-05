@@ -129,6 +129,26 @@ func TestControllerAccumulatesDeadLetterCounters(t *testing.T) {
 	}
 }
 
+func TestControllerAccumulatesPerQueueDeadLetterAttribution(t *testing.T) {
+	backend := &fakeBackend{leader: true, dlqResult: topology.DeadLetterProcessResult{Processed: 2, Moved: 1, Failed: 1, PerQueue: map[string]topology.DeadLetterQueueCounts{
+		"orders": {Moved: 1},
+		"events": {Failed: 1},
+	}}}
+	control := testController(backend)
+	control.runOnce(context.Background())
+	backend.dlqResult = topology.DeadLetterProcessResult{Processed: 1, Moved: 1, PerQueue: map[string]topology.DeadLetterQueueCounts{
+		"orders": {Moved: 1},
+	}}
+	control.runOnce(context.Background())
+	status := control.Status()
+	if status.DLQByQueue["orders"].Moved != 2 || status.DLQByQueue["events"].Failed != 1 {
+		t.Fatalf("per-queue attribution lost or misattributed: %#v", status)
+	}
+	if status.DLQMoved != 2 || status.DLQFailed != 1 {
+		t.Fatalf("per-queue attribution must not replace global counters: %#v", status)
+	}
+}
+
 func TestControllerRetainsPartialDeadLetterResults(t *testing.T) {
 	for _, batchErr := range []error{errors.New("ack DLQ advisory: unavailable"), errors.New("read DLQ advisory batch: unavailable"), context.DeadlineExceeded} {
 		t.Run(batchErr.Error(), func(t *testing.T) {
