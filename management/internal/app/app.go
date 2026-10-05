@@ -179,6 +179,18 @@ func New(cfg config.Config, logger *slog.Logger, version string, revision ...str
 			return nil, fmt.Errorf("configure Prometheus history: %w", err)
 		}
 	}
+	var localIssuer identity.PasswordIssuer
+	var localVerifier identity.Verifier
+	var localAccounts identity.LocalAccountManager
+	if localAuthenticator != nil {
+		// Assign the concrete pointer to the interface fields only when it is
+		// non-nil: assigning a nil *LocalAuthenticator would store a typed nil
+		// in the interfaces, the `!= nil` guards in the API layer would pass,
+		// and the first invalid bearer token would panic the process.
+		localIssuer = localAuthenticator
+		localVerifier = localAuthenticator
+		localAccounts = localAuthenticator
+	}
 	consoleConfig := api.ConsoleConfig{DeploymentProfile: cfg.DeploymentProfile, RuntimeRevision: runtimeRevision, RuntimeClean: runtimeClean, Qualification: consoleQualification}
 	if history != nil {
 		consoleConfig.History = history
@@ -187,14 +199,14 @@ func New(cfg config.Config, logger *slog.Logger, version string, revision ...str
 	handler := api.NewWithControllerAuth(backend, logger, cfg.Name, version, monitor, control, api.AuthConfig{
 		OperatorTokens:   operatorTokens,
 		AuditorTokens:    cfg.AuditTokens,
-		Local:            localAuthenticator,
-		LocalVerifier:    localAuthenticator,
+		Local:            localIssuer,
+		LocalVerifier:    localVerifier,
 		OIDC:             oidcVerifier,
 		BrowserOIDC:      browserOIDC,
 		RequireReadAuth:  !cfg.LocalDemo,
 		DefaultTenant:    defaultTenant,
 		TenantIDs:        tenantIDs,
-		LocalAccounts:    localAuthenticator,
+		LocalAccounts:    localAccounts,
 		TrustedProxyHops: cfg.TrustedProxyHops,
 	}, consoleConfig)
 	server := newHTTPServer(cfg.HTTPAddr, handler, cfg.ConnectTimeout)

@@ -158,6 +158,11 @@ func HashLocalPassword(password string) (string, error) {
 }
 
 func (a *LocalAuthenticator) Issue(_ context.Context, username, password string) (string, identity.Principal, error) {
+	if a == nil {
+		// A typed nil must never authenticate: fail closed instead of
+		// dereferencing the nil receiver (see the app wiring guard).
+		return "", identity.Principal{}, ErrInvalidLocalCredentials
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	account, exists := a.accounts[username]
@@ -189,6 +194,11 @@ func (a *LocalAuthenticator) Issue(_ context.Context, username, password string)
 }
 
 func (a *LocalAuthenticator) Verify(_ context.Context, token string) (identity.Principal, error) {
+	if a == nil {
+		// A typed nil must never authenticate: fail closed instead of
+		// dereferencing the nil receiver (see the app wiring guard).
+		return identity.Principal{}, ErrInvalidLocalCredentials
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	parts := strings.Split(token, ".")
