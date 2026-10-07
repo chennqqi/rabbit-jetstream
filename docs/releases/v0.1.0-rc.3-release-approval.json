@@ -6,7 +6,7 @@
   "sdk_revision": "53f612b8c1ece256869f83070ede73d08398b5de",
   "local_release_evidence": {
     "file": "evidence/local-rc.json",
-    "sha256": "55c3e71fa405a2352646c6797e390181195378520f05ca81d14b74d2dbedf85c"
+    "sha256": "8b1796218bf02e84353a8f99e3218774f6531989e3d40d8de34001cad3d6a05b"
   },
   "native_preflights": [
     {
