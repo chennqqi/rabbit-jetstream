@@ -2,11 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      evidence_release:
-        description: Draft release tag containing performance-soak.json evidence assets
-        required: true
-        type: string
 
 permissions:
   actions: read
@@ -84,15 +79,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Download and verify native-Linux soak evidence
+      - name: Verify the release approval chain
         env:
-          GH_TOKEN: ${{ github.token }}
-          EVIDENCE_RELEASE: ${{ inputs.evidence_release }}
+          APPROVAL_RECORD: docs/releases/v0.1.0-rc.3-release-approval.json
         run: |
-          mkdir -p evidence
-          gh release download "$EVIDENCE_RELEASE" --repo "$GITHUB_REPOSITORY" --pattern 'performance-soak.json*' --dir evidence
-          go run ./tools/perfevidence -evidence evidence/performance-soak.json.evidence.json -require-soak -source-revision "$GITHUB_SHA"
-          test "$(jq -r .source_revision evidence/performance-soak.json.evidence.json)" = "$GITHUB_SHA"
+          BOUND=$(sed -n 's/.*"server_revision": *"\([0-9a-f]\{40\}\)".*/\1/p' "$APPROVAL_RECORD" | head -1)
+          test -n "$BOUND" || { echo "no server_revision found in $APPROVAL_RECORD"; exit 1; }
+          git merge-base --is-ancestor "$BOUND" "$GITHUB_SHA" || { echo "approval binds revision $BOUND which is not an ancestor of the tagged commit $GITHUB_SHA"; exit 1; }
+          go run ./tools/releaseapproval -evidence "$APPROVAL_RECORD" -source-revision "$BOUND"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
@@ -178,7 +172,10 @@ jobs:
           mkdir -p dist
           docker run --rm -v "$PWD:/src" -w /src alpine/helm:3.18.4@sha256:e7ecbf4a200dea73d64bfb8cb0936829164945f2b4d02a0274093073ee8d264f package deploy/helm/rabbit-jetstream --version "$version" --app-version "$GITHUB_REF_NAME" --destination dist
           printf 'nats:\n  image:\n    repository: %s\n    digest: %s\nmanagement:\n  image:\n    repository: %s\n    digest: %s\noperator:\n  image:\n    repository: %s\n    digest: %s\n' "$NATS_IMAGE" "$NATS_DIGEST" "$MANAGEMENT_IMAGE" "$MANAGEMENT_DIGEST" "$OPERATOR_IMAGE" "$OPERATOR_DIGEST" > dist/release-images.yaml
-          cp evidence/performance-soak.json.evidence.json dist/
+          cp docs/releases/v0.1.0-rc.3-release-approval.json dist/
+          cp docs/releases/evidence/perf-evidence.json dist/
+          cp docs/releases/evidence/soak-tier1.json dist/
+          cp docs/releases/evidence/soak-evidence.log dist/
           (cd dist && sha256sum ./* > SHA256SUMS)
       - name: Attest release files
         uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0

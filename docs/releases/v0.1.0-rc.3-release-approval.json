@@ -19,7 +19,7 @@
   ],
   "soak_evidence": {
     "file": "evidence/perf-evidence.json",
-    "sha256": "b6e03ebed38efdc06ccf2cd859a512cce3a46653fea2f7caa4540ddcddf7df80"
+    "sha256": "8c01b19a0e298ebc1d8532912470c120846b9391c7961f0fd290300243c44dee"
   },
   "canary_stages": [
     {
