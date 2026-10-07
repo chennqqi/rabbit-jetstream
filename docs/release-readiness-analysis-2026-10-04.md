@@ -356,10 +356,19 @@ runuser -u sandbox -- systemd-run --uid=sandbox --unit=rjs-soak-tier1 \
 5. **CVE-2026-84445**（`c768eb9`）——gRPC v1.83.1（rc.3 安全更新的版本）被新披露的 HIGH DoS 漏洞命中，fail-closed 扫描门禁正确拦截；升级 v1.83.2。
 6. **baremetal-run 测试负载抖动**（`421454f`）——假采样器固定 6.5s vs 假负载 6s（500ms 余量）在负载下翻转；临时端口块被 Windows 动态排除。修复：采样器等待负载报告出现（构造性保证存活期）+ 固定低位端口块 + 泄漏检查宽限轮询。
 
-## E.3 最终修订 24h soak（进行中）
+## E.3 最终修订 24h soak（已完成，链路闭合）
 
-- **单元**：`rjs-soak-tier1.service`，启动 2026-10-05 18:30 CST，**预计完成 2026-10-06 18:30 CST**
+- **单元**：`rjs-soak-tier1.service`，运行 2026-10-05T18:30:15Z → 2026-10-06T18:30:25Z（精确 24h），**2026-10-07 10:10 CST 验收通过**
 - 绑定：全部组件以 `5c7fcab` 干净树构建（含 crypto v0.55.0 qualified 配方），SHA256SUMS 主机端核验通过（= 最终修订 native preflight 事件）
-- 启动核验：cycle 1-2 全绿（health=200、queues_api=200、nats 3/3、bench up）
-- **完成后**：以实测数字定稿 `evidence/perf-evidence.json`（绑定 `5c7fcab`）→ 提交 → `make verify-release-approval` 应全绿 → 重打 `v0.1.0-rc.3` 标签
-- 当前链路状态实测：`soak evidence does not bind the approved candidate`（唯一未闭合环节，符合预期）
+- **验收结果**（`artifacts/rc3-soak-tier1/soak-tier1.json`，sha256 `f8632b7e…`）：391,034,712 条发布=消费，零丢失/重复/损坏/重试；持续 **4,525.9 msg/s** 并发发布+消费（档位 1 声明包络 3,000/s 的 **151%**）；P99 **7.03 ms**（SLO 10 ms）；**3,779/3,779** 监督周期 health=200、queues_api=200、nats 3/3、mgmt 零重启
+- **链路闭合**（`a311258`）：`release approval evidence verified` —— 身份、Release 模式 local-rc（37 门禁）、native preflight、24h 精确修订 soak、五阶段金丝雀、节点故障、回滚、集群认证、唯一所有者签署全部通过
+- **标签**：`v0.1.0-rc.3` 已重打至 `a311258`（标签消息列出完整证据集）；注：soak 完成时间曾被我误报为"10-06 18:30 CST"——日志时间戳为 UTC，实际完成 10-07 02:30 CST
+
+## E.4 发布前剩余事项（全部为发布动作，非工程缺口）
+
+1. 推送 main + 标签（本环境无 SSH 凭据，由所有者执行）
+2. 确认 GitHub CI 在 `a311258` 全绿（尤其 rabbitmq-migration、kubernetes-smoke）
+3. 触发 `release.yml`：ghcr 镜像发布（SBOM/provenance attestation）、Helm 打包、SHA256SUMS、草稿 release → 发布
+4. 公开签名（GPG/cosign）与再分发条款决策
+5. 将双档性能包络（附录 D.1）合入 `v0.1.0-rc.3.md` 及 zh-CN 版的 Qualified Profile 段落
+6. 回填 `remaining-release-work.md` / `completion-assessment.md`
