@@ -197,7 +197,7 @@ func TestReleaseBuildsAndCIRetainSecurityGate(t *testing.T) {
 	if releaseGateStart < 0 || releaseGateEnd <= releaseGateStart || !strings.Contains(release[releaseGateStart:releaseGateEnd], "fetch-depth: 0") {
 		t.Error("release provenance gate must fetch the historical subtree commit")
 	}
-	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "tests/deployment/kubernetes-smoke.sh", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "-require-soak", "-source-revision", ".source_revision", "platforms: linux/amd64,linux/arm64", "alpine/helm:3.18.4@sha256:", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
+	for _, requirement := range []string{"needs: release-gates", "make verify-upstream-online", "./tests/security/scan.ps1", "./tests/deployment/helm.ps1", "tests/deployment/kubernetes-smoke.sh", "./tests/integration/rolling-upgrade.ps1", "./tests/integration/backup-restore.ps1", "tools/releaseapproval", "git merge-base --is-ancestor", "docs/releases/v0.1.0-rc.3-release-approval.json", "-source-revision", "docs/releases/evidence/soak-tier1.json", "docs/releases/evidence/soak-evidence.log", "platforms: linux/amd64,linux/arm64", "alpine/helm:3.18.4@sha256:", "sbom: true", "provenance: mode=max", "push-to-registry: true", "SHA256SUMS"} {
 		if !strings.Contains(release, requirement) {
 			t.Errorf("release workflow lost requirement %q", requirement)
 		}
