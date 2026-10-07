@@ -1,12 +1,12 @@
 {
   "schema": "rabbit-jetstream.io/native-linux-preflight/v1alpha1",
-  "source_revision": "6a985c529e112557767b476dca314b61eb6c0154",
+  "source_revision": "5c7fcab82f81655199c56199430e7d737c1960d6",
   "sdk_version": "0.1.0-rc.3",
   "sdk_revision": "53f612b8c1ece256869f83070ede73d08398b5de",
   "runtime": "linux/amd64",
   "host": {
     "os": "Ubuntu 22.04 (el9 kernel 5.14)",
     "architecture": "amd64",
-    "notes": "bare-metal qualification host jdcloudremote, sandbox user"
+    "notes": "bare-metal qualification host jdcloudremote, sandbox user; frozen linux/amd64 binaries (nats-server, rjs-management, rjsctl, jetstream-bench) SHA256SUMS-verified on the host after transfer during the final-revision 24h throughput soak deployment (2026-10-05)"
   }
 }

@@ -1,9 +1,9 @@
 {
   "schema": "rabbit-jetstream.io/local-rc/v1alpha1",
-  "generated_at": "2026-10-04T11:35:35.9946894Z",
-  "mode": "quick",
+  "generated_at": "2026-10-05T18:26:43.1470097Z",
+  "mode": "release",
   "server": {
-    "revision": "6a985c529e112557767b476dca314b61eb6c0154",
+    "revision": "5c7fcab82f81655199c56199430e7d737c1960d6",
     "dirty": false
   },
   "sdk": {
@@ -21,58 +21,191 @@
     {
       "name": "admin-ui-clean-install",
       "status": "passed",
-      "duration_seconds": 64.834
+      "duration_seconds": 101.634
     },
     {
       "name": "admin-ui-module-tests",
       "status": "passed",
-      "duration_seconds": 11.057
+      "duration_seconds": 13.654
     },
     {
       "name": "admin-ui-candidate-build",
       "status": "passed",
-      "duration_seconds": 17.131
+      "duration_seconds": 14.411
     },
     {
       "name": "admin-ui-promote",
       "status": "passed",
-      "duration_seconds": 0.828
+      "duration_seconds": 0.89
     },
     {
       "name": "admin-ui-embedded-assets",
       "status": "passed",
-      "duration_seconds": 0.803
+      "duration_seconds": 0.809
     },
     {
       "name": "server-test",
       "status": "passed",
-      "duration_seconds": 12.206
+      "duration_seconds": 28.776
     },
     {
       "name": "server-vet",
       "status": "passed",
-      "duration_seconds": 7.19
+      "duration_seconds": 11.291
     },
     {
       "name": "server-build",
       "status": "passed",
-      "duration_seconds": 10.495
+      "duration_seconds": 13.534
     },
     {
       "name": "sdk-test",
       "status": "passed",
-      "duration_seconds": 2.791
+      "duration_seconds": 2.388
     },
     {
       "name": "sdk-vet",
       "status": "passed",
-      "duration_seconds": 1.277
+      "duration_seconds": 2.098
     },
     {
       "name": "sdk-build",
       "status": "passed",
-      "duration_seconds": 1.849
+      "duration_seconds": 2.67
+    },
+    {
+      "name": "admin-ui-browser-standalone-e2e",
+      "status": "passed",
+      "duration_seconds": 132.38
+    },
+    {
+      "name": "admin-ui-browser-cluster-e2e",
+      "status": "passed",
+      "duration_seconds": 59.366
+    },
+    {
+      "name": "sdk-docker-integration",
+      "status": "passed",
+      "duration_seconds": 8.643
+    },
+    {
+      "name": "server-sdk-contract",
+      "status": "passed",
+      "duration_seconds": 24.211
+    },
+    {
+      "name": "server-docker-standalone",
+      "status": "passed",
+      "duration_seconds": 18.927
+    },
+    {
+      "name": "server-docker-api",
+      "status": "passed",
+      "duration_seconds": 19.61
+    },
+    {
+      "name": "server-docker-reconcile",
+      "status": "passed",
+      "duration_seconds": 20.272
+    },
+    {
+      "name": "server-docker-apply",
+      "status": "passed",
+      "duration_seconds": 66.224
+    },
+    {
+      "name": "server-docker-delete",
+      "status": "passed",
+      "duration_seconds": 66.379
+    },
+    {
+      "name": "server-docker-audit",
+      "status": "passed",
+      "duration_seconds": 32.746
+    },
+    {
+      "name": "server-docker-auth",
+      "status": "passed",
+      "duration_seconds": 26.513
+    },
+    {
+      "name": "server-docker-routing",
+      "status": "passed",
+      "duration_seconds": 32.092
+    },
+    {
+      "name": "server-docker-dlq",
+      "status": "passed",
+      "duration_seconds": 51.928
+    },
+    {
+      "name": "server-docker-metrics",
+      "status": "passed",
+      "duration_seconds": 60.581
+    },
+    {
+      "name": "server-docker-diagnostics",
+      "status": "passed",
+      "duration_seconds": 47.887
+    },
+    {
+      "name": "server-docker-controller",
+      "status": "passed",
+      "duration_seconds": 71.571
+    },
+    {
+      "name": "server-docker-fault",
+      "status": "passed",
+      "duration_seconds": 68.512
+    },
+    {
+      "name": "linux-race",
+      "status": "passed",
+      "duration_seconds": 92.203
+    },
+    {
+      "name": "coverage-gate",
+      "status": "passed",
+      "duration_seconds": 59.081
+    },
+    {
+      "name": "backup-restore",
+      "status": "passed",
+      "duration_seconds": 73.562
+    },
+    {
+      "name": "rolling-upgrade-rollback",
+      "status": "passed",
+      "duration_seconds": 87.155
+    },
+    {
+      "name": "rabbitmq-migration",
+      "status": "passed",
+      "duration_seconds": 8.586
+    },
+    {
+      "name": "shadow-migration",
+      "status": "passed",
+      "duration_seconds": 58.937
+    },
+    {
+      "name": "helm-gate",
+      "status": "passed",
+      "duration_seconds": 102.751
+    },
+    {
+      "name": "security-gate",
+      "status": "passed",
+      "duration_seconds": 81.909
+    },
+    {
+      "name": "performance-ci",
+      "status": "passed",
+      "duration_seconds": 36.634
     }
   ],
-  "performance_report": null
+  "performance_report": {
+    "path": "artifacts\\performance-ci-20261005T182606Z.json",
+    "sha256": "83e4c3ea979418eb2130ecf9aadd6a49c000c9bd98a3fc3fa4de01c7a69f4760"
+  }
 }

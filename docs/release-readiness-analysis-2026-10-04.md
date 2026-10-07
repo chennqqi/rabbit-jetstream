@@ -330,3 +330,36 @@ runuser -u sandbox -- systemd-run --uid=sandbox --unit=rjs-soak-tier1 \
 **档位 2 说明**：本次 2C/4G 实测 4,935/s 已几乎触及档位 2 的 5,000/s 声明——4C/8G 主机达成该包络已无悬念，但按证据纪律，档位 2 仍应在 4C 级主机上以 24h soak 正式化（或由所有者决定以本次 2C 结果 + 32 核锚点替代，并在 known_limitations 记录）。
 
 **遗留的发布链事项**（承接附录 A）：批准 JSON 重绑最终修订、local-rc 以 Release 模式重跑（恢复工具严格断言）、五份同字节 gzip 证据文件 hygiene——三项均未变。
+
+---
+
+# 附录 E：发布链收尾执行记录（2026-10-05）
+
+附录 A 三项遗留 + 执行中发现并修复的连锁缺陷。全部提交在 main（`f2085a9` → `5c7fcab`）。
+
+## E.1 三项遗留的完成状态
+
+| 事项 | 状态 | 提交 |
+|---|---|---|
+| 证据文件 hygiene | ✅ 删除 11 个字节相同的 gzip 伪造 stage 文件；批准 JSON 改指向真实独立 stage 记录（canary-stage-*.json，哈希各异） | `f2085a9` |
+| 工具严格断言恢复 | ✅ releaseapproval 重新拒绝 quick 模式（Release 模式才跑 race/coverage/helm/security 等门禁） | `f2085a9` |
+| Makefile 验证目标 | ✅ 改为"验证批准记录绑定的修订且该修订是 HEAD 祖先"——提交无法包含自身哈希，原 HEAD 等值设计对已提交记录永不可通过 | `f2085a9` |
+| local-rc Release 模式 | ✅ 37 步全过，绑定 `5c7fcab` 干净树（e2e 8/8×2、13 场景、race、coverage 80.3%、helm mTLS、security 清零、perf-ci） | 证据已就位 |
+| 批准 JSON 重绑 | ✅ server_revision → `5c7fcab`；local-rc/preflight 哈希更新；**仅剩 soak 绑定待 24h soak 完成后闭合** | 待最终提交 |
+
+## E.2 执行中发现并修复的真实缺陷
+
+1. **P0：无效令牌 panic**（`bd8205e`）——无本地账户文件时 nil `*LocalAuthenticator` 以 typed-nil 存入接口字段，`!= nil` 守卫失效，首个未识别 bearer 令牌即 panic 断连（与 A1 同类）。修复：接线处仅非 nil 赋值 + Verify/Issue nil 接收者防御 + 回归测试。**该缺陷自 a683043（10-01）即存在**——e2e 的无效令牌用例自那时起不可能通过。
+2. **helm mTLS 门禁结构性损坏**（`d612245`）——a683043 将 /api/v1 读收紧为需认证后，就绪轮询未带令牌，401 永远匹配不上 available:3。修复：轮询携带管理令牌。
+3. **api 收集竞态**（`5c7fcab`）——collectGlobalConsumers 错误路径返回时 worker 仍在飞行（goroutine 比函数活得久，race detector 检出）。修复：abandon 助手等待 worker 结束。
+4. **覆盖基线回归**（`1107497`）——review-hardening 合并后从未跑过 Release 覆盖门禁：总量 74.7% < 80%、controller 89.2% < 90%。修复：apigen（oapi-codegen 生成代码，DO NOT EDIT）从分母排除（恢复历史基线口径：80.3% ≈ 80.4%）+ controller per-queue DLQ 归因测试（96.4%）。
+5. **CVE-2026-84445**（`c768eb9`）——gRPC v1.83.1（rc.3 安全更新的版本）被新披露的 HIGH DoS 漏洞命中，fail-closed 扫描门禁正确拦截；升级 v1.83.2。
+6. **baremetal-run 测试负载抖动**（`421454f`）——假采样器固定 6.5s vs 假负载 6s（500ms 余量）在负载下翻转；临时端口块被 Windows 动态排除。修复：采样器等待负载报告出现（构造性保证存活期）+ 固定低位端口块 + 泄漏检查宽限轮询。
+
+## E.3 最终修订 24h soak（进行中）
+
+- **单元**：`rjs-soak-tier1.service`，启动 2026-10-05 18:30 CST，**预计完成 2026-10-06 18:30 CST**
+- 绑定：全部组件以 `5c7fcab` 干净树构建（含 crypto v0.55.0 qualified 配方），SHA256SUMS 主机端核验通过（= 最终修订 native preflight 事件）
+- 启动核验：cycle 1-2 全绿（health=200、queues_api=200、nats 3/3、bench up）
+- **完成后**：以实测数字定稿 `evidence/perf-evidence.json`（绑定 `5c7fcab`）→ 提交 → `make verify-release-approval` 应全绿 → 重打 `v0.1.0-rc.3` 标签
+- 当前链路状态实测：`soak evidence does not bind the approved candidate`（唯一未闭合环节，符合预期）
