@@ -5,6 +5,7 @@
 /data/
 /artifacts/
 *.log
+!/docs/releases/evidence/*.log
 /coverage
 /coverage.out
 /outlink/
