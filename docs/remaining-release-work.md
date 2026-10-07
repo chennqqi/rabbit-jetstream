@@ -2,7 +2,17 @@
 
 [English](remaining-release-work.md) | [简体中文](remaining-release-work.zh-CN.md)
 
-The original planning estimate was 92%; the current engineering estimate is approximately **95%** for the explicitly bounded first release. This is not a release-approval score. Remaining work is primarily qualification and release closure, not missing core Queue functionality. The original 8% breakdown below is retained for traceability.
+**Status 2026-10-07: `v0.1.0-rc.3` is PUBLISHED with the full evidence chain.** The first-release scope is complete; the remaining work is GA promotion and post-release hardening (see the current status below). The original planning estimate was 92%, then ~95%; the release-closure items below are now closed. The historical sections are retained for traceability.
+
+## Current status: 2026-10-07 — rc.3 released
+
+- **The release approval chain is closed and verified**: `tools/releaseapproval` passes the committed record (`docs/releases/v0.1.0-rc.3-release-approval.json`, bound revision `5c7fcab`, ancestor of the tag). The Makefile target now verifies the bound revision's ancestry (a commit cannot contain its own hash, so the previous HEAD-equality design could never pass on a committed record).
+- **Release-mode local gates: 37 steps green** at the exact candidate (e2e 8/8 × standalone/cluster, 13 management scenarios, Linux race, coverage, backup/restore, rolling upgrade, migration, shadow, helm mTLS, security, performance CI).
+- **24h exact-revision bare-metal throughput soak** (jdcloudremote, tier-1 minimum host class 2 vCPU / 3.7 GB): 391,034,712 messages published and consumed, zero missing/duplicates/corrupt/retries, sustained 4,525.9 msg/s concurrent publish+consume (151% of the declared tier-1 envelope), publish P99 7.03 ms (SLO 10 ms), 3,779/3,779 supervisor cycles health=200/queues_api=200/nats 3/3, zero management restarts. Evidence: `docs/releases/evidence/soak-tier1.json` + `soak-evidence.log`.
+- **Two-tier performance envelope declared** in the qualified profile: tier-1 minimum (2 vCPU/4 GB) 3,000 msg/s sustained, P99 ≤ 10 ms; tier-2 recommended (4 vCPU/8 GB) 5,000 msg/s, anchored by the 32-core 24h soak, to be formalized by a 4-core-class 24h soak when a host is available.
+- **Published**: the Release workflow ran green end to end — ghcr images (`rabbit-jetstream-{nats,management,operator}:v0.1.0-rc.3`) with SBOM + provenance, GitHub attestations, the Helm chart, `SHA256SUMS`, and the approval/soak evidence shipped as release assets. The repository is now public (attestations require it; the history was scanned — the NKEY/JWT/KEY blocks are upstream NATS test fixtures).
+- **Defects fixed on the way to green** (each surfaced by a gate): management panic on unrecognized bearer tokens via a typed-nil authenticator (P0, present since a683043); the helm mTLS readiness poll missing the now-required authorization header; a collection goroutine outliving `collectGlobalConsumers` on the error path (data race); the coverage baseline regression (74.7% → 80.3% via the generated-code exclusion + controller per-queue DLQ attribution tests); CVE-2026-84445 (gRPC v1.83.2); two load-induced `baremetal-run` test flakes.
+- **Remaining for GA (`v0.1.0`)**: the staged observation period on a real deployment, the tier-2 envelope formalization, public artifact signing (cosign/GPG) if desired beyond the built-in attestations, and the M2/M3 improvement-plan items (`review-improvement-plan.md`).
 
 ## Current status: 2026-10-01
 

@@ -6,18 +6,18 @@
 
 ## 结论
 
-Rabbit JetStream 是一个**在限定配置内已通过生产资格验证的发布候选版本**，并非仅完成约 75% 的原型。首版功能范围已经基本完成：Native Go SDK 在不修改 NATS JetStream 源码的前提下提供 RabbitMQ 风格优先级 Queue，并配套管理控制面、CLI、Admin UI、部署资源、迁移工具和运维文档。
+Rabbit JetStream **v0.1.0-rc.3 已发布**，批准链完整验证：Release 模式本地门禁（37 步）、24 小时精确修订裸机吞吐 soak（3.91 亿条消息、4,525.9 条/秒、P99 7.03 ms、完整性零缺陷、最低主机等级）、五阶段 Canary、节点故障与回滚演练、helm/Kind 集群资格认证、唯一负责人签署——全部绑定到发布的精确修订，并随发布交付（镜像含 SBOM/provenance/attestation、Helm Chart、SHA256SUMS、证据文件）。首版功能范围已经完成：Native Go SDK 在不修改 NATS JetStream 源码的前提下提供 RabbitMQ 风格优先级 Queue，并配套管理控制面、CLI、Admin UI、部署资源、迁移工具和运维文档。
 
-已取得资格的生产配置为 Linux/AMD64、三个 JetStream 节点、三副本和最多八个优先级（`0..7`）。剩余工作主要是发布闭环，而不是产品核心功能缺失。
+已取得资格的生产配置为 Linux/AMD64、三个 JetStream 节点、三副本和最多八个优先级（`0..7`），并已声明双档性能包络（2 vCPU/4 GB 上 3,000 msg/s；4 vCPU/8 GB 上 5,000 msg/s）。剩余工作为 GA 晋级，而非发布闭环。
 
 | 维度 | 完成度 | 判断 |
 | --- | ---: | --- |
 | Queue 拓扑与管理 | 95% | apply/update/delete、路由、DLQ、reconcile、审计、认证、诊断和 controller 均已实现并测试。 |
 | Native SDK 与消息语义 | 95% | 严格优先级、有界公平、PubAck、Ack/Nak/Term、背压、重投、重连和故障恢复均已验证。 |
-| Admin UI | 90% | 内嵌控制台及 Docker 化 Chromium/Firefox E2E 覆盖生命周期、错误、响应式布局、凭据处理和可访问性；仍应为最终版本重新生成证据。 |
+| Admin UI | 90% | 内嵌控制台及 Docker 化 Chromium/Firefox E2E 覆盖生命周期、错误、响应式布局、凭据处理和可访问性。 |
 | 部署与运维 | 95% | 单机/集群 Compose、生产 Helm、Kind 安装、备份恢复、滚动升级、故障、安全门禁和运维手册均已具备并通过测试。 |
-| 发布闭环 | 70% | 已有 `rc.1`，但 `rc.2` 仍需最终提交全绿、提交绑定证据/制品、分阶段 Canary 和审批。 |
-| 首版总体范围 | **约 92%** | 在既定边界内功能完整且通过生产资格验证，剩余为正式发布控制。 |
+| 发布闭环 | 100% | `v0.1.0-rc.3` 已发布，批准链验证通过，证据绑定精确修订。 |
+| 首版总体范围 | **已完成** | 在既定边界内功能完整且通过生产资格验证，剩余为 GA 晋级标准。 |
 
 ## 已完成的验证
 
@@ -34,21 +34,18 @@ Rabbit JetStream 是一个**在限定配置内已通过生产资格验证的发�
 
 证据索引见[原生 Linux 资格测试报告](native-linux-qualification-report-v0.1.0-rc.1.md)，原始证据保存在本地忽略目录 `artifacts/highhost/` 和 `artifacts/qualification-v2/`。
 
-## 当前基线与剩余阻塞项
+## 当前基线与 GA 标准
 
-旧评估中的 CRLF 问题已经过时且不准确。production values 契约测试已经通过。`tools/upstreamcheck` 现已分离成功命令的 stdout 与仅警告 stderr；本次受管 Windows 会话中的完整 `go test ./...` 和 `go vet ./...` 均已通过，且未弱化子树检查。
+上一评估中的发布闭环阻塞项已全部关闭：发布线 CI 全绿；最终 server/SDK revision 已冻结并绑定（`5c7fcab` / SDK `53f612b`，`0.1.0-rc.3`）；不可变制品（镜像 digest、SBOM、provenance、attestation、`SHA256SUMS`）已发布；分阶段 Canary、节点故障与回滚演练已记录；唯一负责人已签署；`make verify-release-approval` 通过已提交记录。
 
-当前记录中，revision `a85b839f` 的最新 CI 除 `rabbitmq-migration` 外全部通过。Definitions 转换已经通过，RabbitMQ 和 NATS 均正常 ready，两次三消息 dual-write 均成功。剩余失败是非 root distroless 容器生成 `dualwrite.ndjson` 后，宿主 PowerShell 读取该文件时遇到 Linux 文件属主权限问题。这属于测试夹具可移植性缺陷，不是 Queue 语义或迁移正确性失败，但正式发布前仍必须恢复全绿 CI。
+晋级 `v0.1.0` GA 需要：
 
-修复后，发布闭环仍需：
+1. 真实部署上的分阶段观察期且无回归。
+2. 档位 2 包络（4 vCPU/8 GB 上 5,000 msg/s）待 4 核级主机可用后以 24 小时 soak 正式化。
+3. 如需超出内置 attestation 的公开制品签名（cosign/GPG）。
+4. 改进计划 M2/M3 项（`review-improvement-plan.md`）作为 GA 后工作。
 
-1. 冻结最终 server 和 SDK revision，并重新生成与这些 revision 精确绑定的发布证据。
-2. 生成并验证不可变 bundle、镜像 digest、SBOM、attestation、许可证和 `SHA256SUMS`。
-3. 执行文档规定的 1%、10%、25%、50% 和 100% Canary，并保存回滚证据。
-4. 获得服务负责人、应用负责人和 on-call 审批，并通过 `make verify-release-approval`。
-5. 发布 `v0.1.0-rc.2`；只有 RC 观察期和审批标准通过后才晋级 GA。
-
-此前两轮 24 小时结果对各自冻结 revision 仍是有效证据，但发布工作流会有意拒绝将其作为后续运行时或打包变更的“精确 revision 证据”。
+此前各轮 24 小时结果对各自冻结 revision 仍是有效证据，但发布工作流会有意拒绝将其作为后续运行时或打包变更的"精确 revision 证据"。
 
 ## 产品边界
 
@@ -60,4 +57,4 @@ Rabbit JetStream 是一个**在限定配置内已通过生产资格验证的发�
 
 ## 最终评估
 
-项目已经完成首个明确边界版本绝大部分工程和生产资格工作。准确描述应为：**高成熟度、在限定配置内已通过生产资格验证、等待发布流程闭环的 RC**。它尚不是无限制 RabbitMQ 替代品，也不是 GA；但剩余缺口约占首版范围的 8%，主要集中在 CI 可移植性、最终制品绑定、Canary 和审批，而不是核心 Queue 功能缺失或生产测试未执行。
+明确边界的首版**已发布**：`v0.1.0-rc.3` 带验证通过、修订绑定的批准链和声明的双档性能包络正式发布。它是在限定配置内通过生产资格验证的发布——尚不是无限制 RabbitMQ 替代品，也不是 GA。剩余缺口为 GA 晋级：分阶段观察期、档位 2 包络正式化和 GA 后改进计划——而不是核心 Queue 功能缺失或生产测试未执行。

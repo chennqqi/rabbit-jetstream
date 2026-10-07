@@ -2,7 +2,17 @@
 
 [English](remaining-release-work.md) | [简体中文](remaining-release-work.zh-CN.md)
 
-初始计划估算为 92%；按照已经明确的首版边界，当前工程完成度约为 **95%**，这不是发布审批得分。剩余主要是资格验收与发布闭环，而不是核心 Queue 功能缺失。下方保留最初 8% 的拆分以便追溯。
+**状态 2026-10-07：`v0.1.0-rc.3` 已带完整证据链发布。** 首版范围已完成；剩余工作为 GA 晋级与发布后加固（见下方当前状态）。初始计划估算 92%，随后约 95%；下方发布闭环项现已全部关闭。历史章节保留以便追溯。
+
+## 当前状态：2026-10-07 —— rc.3 已发布
+
+- **发布批准链已闭合并验证**：`tools/releaseapproval` 通过已提交的批准记录（`docs/releases/v0.1.0-rc.3-release-approval.json`，绑定修订 `5c7fcab`，为标签祖先）。Makefile 目标现验证绑定修订的祖先关系（提交无法包含自身哈希，原 HEAD 等值设计对已提交记录永不可通过）。
+- **Release 模式本地门禁：37 步全绿**（精确候选：e2e 8/8 × standalone/cluster、13 个管理场景、Linux race、覆盖率、备份恢复、滚动升级、迁移、影子迁移、helm mTLS、安全、性能 CI）。
+- **24 小时精确修订裸机吞吐 soak**（jdcloudremote，档位 1 最低主机等级 2 vCPU / 3.7 GB）：391,034,712 条消息发布并消费，丢失/重复/损坏/重试均为零；持续 4,525.9 条/秒并发发布+消费（声明档位 1 包络的 151%），发布 P99 7.03 ms（SLO 10 ms）；3,779/3,779 监督周期 health=200/queues_api=200/nats 3/3，管理服务零重启。证据：`docs/releases/evidence/soak-tier1.json` + `soak-evidence.log`。
+- **双档性能包络已声明**（合格 Profile）：档位 1 最低（2 vCPU/4 GB）持续 3,000 msg/s、P99 ≤ 10 ms；档位 2 推荐（4 vCPU/8 GB）5,000 msg/s，以 32 核 24h soak 为锚，待 4 核级主机可用后正式化。
+- **已发布**：Release 工作流全程绿——ghcr 镜像（`rabbit-jetstream-{nats,management,operator}:v0.1.0-rc.3`，含 SBOM + provenance）、GitHub attestation、Helm Chart、`SHA256SUMS`，批准与 soak 证据随发布资产交付。仓库已转为公开（attestation 功能要求；历史已扫描——NKEY/JWT/KEY 块均为上游 NATS 测试夹具）。
+- **通往全绿途中修复的缺陷**（均由门禁暴露）：无本地账户配置时未识别 bearer 令牌触发管理面 panic（typed-nil，自 a683043 存在，P0）；helm mTLS 就绪轮询缺失现要求的认证头；`collectGlobalConsumers` 错误路径收集 goroutine 比函数存活更久（数据竞争）；覆盖基线回归（74.7% → 80.3%，生成代码排除 + controller 按队列 DLQ 归因测试）；CVE-2026-84445（gRPC v1.83.2）；两处负载诱发的 `baremetal-run` 测试抖动。
+- **GA（`v0.1.0`）剩余**：真实部署上的分阶段观察期、档位 2 包络正式化、如需超出内置 attestation 的公开制品签名（cosign/GPG）、以及改进计划的 M2/M3 项（`review-improvement-plan.md`）。
 
 ## 当前状态：2026-10-01
 
